@@ -1,0 +1,28 @@
+
+======================================================================
+  {{ "dbt Diagnostics -- Lint Report" | bold_white }}
+  {{ findings | length }} finding(s) across {{ model_count }} model(s)
+======================================================================
+{% for finding in findings %}
+
+{% if finding.severity == "error" %}
+  {{ ("ERROR [" + finding.check_name + "]:") | bold_red }} {{ finding.model_id.split('.')[-1] | bold }}
+{% else %}
+  {{ ("WARNING [" + finding.check_name + "]:") | bold_yellow }} {{ finding.model_id.split('.')[-1] | bold }}
+{% endif %}
+{% if finding.file_path %}
+    {{ "File:" | cyan }} {{ finding.file_path }}
+{% endif %}
+{% if finding.line_number %}
+    {{ "Line:" | cyan }} {{ finding.line_number }}
+{% endif %}
+    {{ finding.message }}
+{% if finding.fix_suggestion %}
+  {{ "FIX:" | bold_white }}
+    {{ finding.fix_suggestion | green }}
+{% endif %}
+{% endfor %}
+{% if not findings %}
+
+  No lint issues found. All models pass pre-execution checks.
+{% endif %}

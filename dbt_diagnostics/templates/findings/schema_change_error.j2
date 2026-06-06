@@ -6,6 +6,11 @@
 {% endif %}
     {{ "Problem:" | cyan }}    {{ finding.summary }}
 
+{% if finding.upstream_origin and not verbose %}
+  NOTE: Column expected from upstream model {{ finding.upstream_origin.model_id | short_name }}.
+        Use --verbose for full upstream trace.
+
+{% endif %}
 {% if finding.fix_suggestion %}
   {{ "FIX:" | bold_white }}
 {% for line in finding.fix_suggestion.splitlines() %}
@@ -14,6 +19,15 @@
 
 {% endif %}
 {% if verbose %}
+{% if finding.upstream_origin %}
+  UPSTREAM ORIGIN:
+    Expected from: {{ finding.upstream_origin.model_id }}
+{% if finding.upstream_origin.file_path %}
+    Upstream file: {{ finding.upstream_origin.file_path }}
+{% endif %}
+    The column may have been renamed or removed in that upstream model/source.
+{% endif %}
+
 {% if finding.explanation %}
   {{ "EXPLANATION:" | bold_white }}
 {% for line in finding.explanation.split('. ') %}

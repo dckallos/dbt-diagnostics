@@ -26,6 +26,7 @@ class DiagnosticContext:
     column_tracer: ColumnTracer
     models_dir: Path
     compiled_dir: Path
+    manifest: Optional[dict] = None
 
 
 class BaseClassifier(ABC):

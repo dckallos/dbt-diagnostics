@@ -1,10 +1,10 @@
 
-  ROOT CAUSE:
-    File:       {{ finding.location.file_path }}
+  {{ "ROOT CAUSE:" | bold_white }}
+    {{ "File:" | cyan }}       {{ finding.location.file_path }}
 {% if finding.location.line_number %}
-    Line:       {{ finding.location.line_number }}
+    {{ "Line:" | cyan }}       {{ finding.location.line_number }}
 {% endif %}
-    Problem:    {{ finding.summary }}
+    {{ "Problem:" | cyan }}    {{ finding.summary }}
 
 {% if finding.upstream_origin and not verbose %}
   NOTE: This identifier originates from upstream model {{ finding.upstream_origin.model_id | short_name }}.
@@ -12,9 +12,9 @@
 
 {% endif %}
 {% if finding.fix_suggestion %}
-  FIX:
+  {{ "FIX:" | bold_white }}
 {% for line in finding.fix_suggestion.splitlines() %}
-    {{ line }}
+    {{ line | green }}
 {% endfor %}
 
 {% endif %}
@@ -56,9 +56,9 @@
 {% endif %}
 
 {% if finding.explanation %}
-  EXPLANATION:
+  {{ "EXPLANATION:" | bold_white }}
 {% for line in finding.explanation.split('. ') %}
-    {{ line }}{{ '.' if not line.endswith('.') else '' }}
+    {{ line | dim }}{{ '.' if not line.endswith('.') else '' }}
 {% endfor %}
 {% endif %}
 {% endif %}

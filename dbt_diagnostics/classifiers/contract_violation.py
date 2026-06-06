@@ -16,6 +16,7 @@ from dbt_diagnostics.models import (
     TraceLocation,
     UpstreamOrigin,
 )
+from dbt_diagnostics.tracers.column_tracer import build_schema_from_manifest
 
 
 # Regex for pipe-delimited mismatch table rows
@@ -100,8 +101,11 @@ class ContractViolationClassifier(BaseClassifier):
         # Trace the column through compiled SQL (sqlglot)
         location = TraceLocation()
         if self.compiled_code:
+            schema = None
+            if self.context.manifest:
+                schema = build_schema_from_manifest(self.context.manifest)
             trace_result = self.context.column_tracer.trace_column(
-                col, self.compiled_code
+                col, self.compiled_code, schema=schema
             )
             if trace_result:
                 location.cte_name = trace_result.cte_name

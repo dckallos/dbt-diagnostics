@@ -1,9 +1,6 @@
 
   {{ "ROOT CAUSE:" | bold_white }}
     {{ "File:" | cyan }}       {{ finding.location.file_path }}
-{% if finding.location.line_number %}
-    {{ "Line:" | cyan }}       {{ finding.location.line_number }}
-{% endif %}
     {{ "Problem:" | cyan }}    {{ finding.summary }}
 
 {% if finding.fix_suggestion %}
@@ -18,6 +15,13 @@
   {{ "EXPLANATION:" | bold_white }}
 {% for line in finding.explanation.split('. ') %}
     {{ line | dim }}{{ '.' if not line.endswith('.') else '' }}
+{% endfor %}
+{% endif %}
+
+{% if finding.session_params_to_check %}
+  SESSION PARAMETERS TO VERIFY:
+{% for param in finding.session_params_to_check %}
+    SHOW PARAMETERS LIKE '{{ param }}' IN ACCOUNT;
 {% endfor %}
 {% endif %}
 {% endif %}

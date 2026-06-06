@@ -79,6 +79,40 @@ class DiagnosticFinding:
 
 
 @dataclass
+class DiffResult:
+    """Result of comparing a model against a previous manifest version."""
+    node_changed: bool
+    changed_lines: list[str] = field(default_factory=list)  # unified diff (max 20)
+    upstream_changes: list[dict] = field(default_factory=list)  # [{model_id, change_summary}]
+    columns_added: list[str] = field(default_factory=list)
+    columns_removed: list[str] = field(default_factory=list)
+    columns_type_changed: list[dict] = field(default_factory=list)  # [{name, old_type, new_type}]
+
+
+@dataclass
+class LintFinding:
+    """One issue found by pre-execution linting."""
+    severity: str  # "warning" or "error"
+    check_name: str  # e.g. "type_hazard", "missing_contract_column"
+    model_id: str
+    file_path: Optional[str]
+    line_number: Optional[int]
+    message: str
+    fix_suggestion: Optional[str] = None
+
+    def to_json_dict(self) -> dict:
+        return {
+            "severity": self.severity,
+            "check_name": self.check_name,
+            "model_id": self.model_id,
+            "file_path": self.file_path,
+            "line_number": self.line_number,
+            "message": self.message,
+            "fix_suggestion": self.fix_suggestion,
+        }
+
+
+@dataclass
 class DiagnosticReport:
     """
     The full diagnostic output for one error result from run_results.json.
@@ -90,6 +124,7 @@ class DiagnosticReport:
     findings: list[DiagnosticFinding] = field(default_factory=list)
     skipped_downstream: list[str] = field(default_factory=list)
     cascade_note: Optional[str] = None
+    diff: Optional["DiffResult"] = None
 
     @property
     def has_findings(self) -> bool:

@@ -2,19 +2,19 @@
   {{ finding.summary }}
 
 {% if finding.location and finding.location.file_path %}
-  Location:
-    File: {{ finding.location.file_path }}
+  {{ "Location:" | bold_white }}
+    {{ "File:" | cyan }} {{ finding.location.file_path }}
 {% if finding.location.line_number %}
-    Line: {{ finding.location.line_number }}
+    {{ "Line:" | cyan }} {{ finding.location.line_number }}
 {% endif %}
 {% endif %}
 
 {% if finding.explanation %}
-  Details:
-    {{ finding.explanation }}
+  {{ "Details:" | bold_white }}
+    {{ finding.explanation | dim }}
 {% endif %}
 
 {% if finding.fix_suggestion %}
-  Fix:
-    {{ finding.fix_suggestion }}
+  {{ "Fix:" | bold_white }}
+    {{ finding.fix_suggestion | green }}
 {% endif %}

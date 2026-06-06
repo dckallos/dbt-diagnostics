@@ -1,16 +1,16 @@
 
 ======================================================================
-  dbt Diagnostics
+  {{ "dbt Diagnostics" | bold_white }}
   {{ total }} result(s) | {{ errors }} error(s) | {{ skipped }} skipped
 ======================================================================
 {% for report in reports %}
 
-  ERROR: {{ report.unique_id }}
-  Class: {{ report.error_class }}
+  {{ "ERROR:" | bold_red }} {{ report.unique_id | bold }}
+  {{ "Class:" | bold_white }} {{ report.error_class }}
   ======================================================================
 {% if report.cascade_note %}
-  CASCADE:
-    {{ report.cascade_note }}
+  {{ "CASCADE:" | bold_yellow }}
+    {{ report.cascade_note | dim }}
 
 {% endif %}
 {% if not report.has_findings %}
@@ -20,6 +20,9 @@
 {% for finding in report.findings %}
 {% include 'findings/' + report.error_class + '.j2' ignore missing %}
 {% endfor %}
+{% endif %}
+{% if report.diff %}
+{% include 'findings/diff_section.j2' ignore missing %}
 {% endif %}
 {% endfor %}
 {% if skipped_models %}

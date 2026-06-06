@@ -43,6 +43,76 @@ class ColumnTraceResult:
         )
 
 
+def build_schema_from_manifest(manifest: dict) -> dict:
+    """
+    Build a sqlglot-compatible schema dict from a dbt manifest.
+
+    Format: {"db": {"schema": {"table": {"col": "type"}}}}
+    Uses relation_name from manifest nodes to determine db.schema.table,
+    and the columns dict for column names/types.
+    """
+    schema: dict = {}
+    nodes = manifest.get("nodes", {})
+    sources = manifest.get("sources", {})
+
+    for node in list(nodes.values()) + list(sources.values()):
+        relation_name = node.get("relation_name", "")
+        columns = node.get("columns", {})
+        if not relation_name or not columns:
+            continue
+
+        # relation_name is like "ARTWORK_DB.SILVER.STG_MET__ARTWORKS"
+        parts = relation_name.replace('"', "").split(".")
+        if len(parts) != 3:
+            continue
+
+        db, sch, table = parts[0].upper(), parts[1].upper(), parts[2].upper()
+
+        if db not in schema:
+            schema[db] = {}
+        if sch not in schema[db]:
+            schema[db][sch] = {}
+
+        table_cols: dict = {}
+        for col_name, col_info in columns.items():
+            dtype = col_info.get("data_type", "VARCHAR") or "VARCHAR"
+            table_cols[col_name.upper()] = dtype.upper()
+
+        schema[db][sch][table] = table_cols
+
+    return schema
+
+
+def qualify_sql(
+    parsed: exp.Expression,
+    schema: Optional[dict] = None,
+) -> exp.Expression:
+    """
+    Run sqlglot's qualify optimizer pass on the parsed AST.
+
+    This expands SELECT *, qualifies ambiguous columns with table names,
+    and resolves CTE column references. Falls back to the original AST
+    if qualification fails for any reason.
+    """
+    if not schema:
+        return parsed
+
+    try:
+        from sqlglot.optimizer.qualify import qualify
+
+        qualified = qualify(
+            parsed,
+            schema=schema,
+            dialect="snowflake",
+            validate_qualify_columns=False,
+        )
+        return qualified
+    except Exception:
+        # Graceful fallback: if qualify fails (missing schema, unsupported SQL),
+        # return the original unmodified AST
+        return parsed
+
+
 class ColumnTracer:
     """Traces columns through SQL using sqlglot AST parsing."""
 
@@ -55,12 +125,16 @@ class ColumnTracer:
         column_name: str,
         compiled_sql: str,
         source_file_path: Optional[str] = None,
+        schema: Optional[dict] = None,
     ) -> Optional[ColumnTraceResult]:
         """
         Parse compiled SQL and find the expression that produces column_name.
 
         Uses sqlglot's scope module to correctly identify the outermost SELECT
         (handles CTEs, UNIONs, and subqueries without DFS ordering issues).
+
+        When a schema dict is provided, runs sqlglot qualify first to expand
+        SELECT * and resolve ambiguous column references.
 
         Search order:
           1. Outer SELECT's direct projection list (not recursing into CTEs)
@@ -70,6 +144,9 @@ class ColumnTracer:
             parsed = sqlglot.parse_one(compiled_sql, dialect="snowflake")
         except sqlglot.errors.ParseError:
             return None
+
+        # Run qualify to expand SELECT * and resolve ambiguity
+        parsed = qualify_sql(parsed, schema=schema)
 
         # Use build_scope to find the true outermost SELECT.
         # For UNION statements, build_scope returns the Union as root;

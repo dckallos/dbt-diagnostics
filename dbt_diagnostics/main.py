@@ -31,6 +31,7 @@ from typing import Optional
 import yaml
 
 from dbt_diagnostics.classifiers import classify, DiagnosticContext
+from dbt_diagnostics.colors import should_use_color
 from dbt_diagnostics.discover import (
     find_dbt_project,
     read_profile_name,
@@ -40,6 +41,7 @@ from dbt_diagnostics.discover import (
 )
 from dbt_diagnostics.models import DiagnosticReport
 from dbt_diagnostics.renderer import render_text
+from dbt_diagnostics.tracers.diff_tracer import diff_node
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
 
@@ -145,6 +147,7 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
         column_tracer=column_tracer,
         models_dir=paths["models_dir"],
         compiled_dir=paths["compiled_dir"],
+        manifest=manifest,
     )
 
     errors = []
@@ -280,9 +283,22 @@ def cmd_diagnose(args):
 
     reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
 
+    # Diff-aware diagnosis (optional)
+    prev_manifest_path = getattr(args, "previous_manifest", None)
+    if prev_manifest_path:
+        prev_manifest = load_json(Path(prev_manifest_path), "previous manifest")
+        for report in reports:
+            report.diff = diff_node(report.unique_id, manifest, prev_manifest)
+
     # Live enrichment (optional)
     if args.live:
         _try_enrich(reports, paths, run_results, args.env_file)
+
+    color_enabled = should_use_color(
+        force_color=getattr(args, "color", False),
+        no_color=getattr(args, "no_color", False),
+        is_json=args.json,
+    )
 
     if args.json:
         output = {
@@ -301,6 +317,7 @@ def cmd_diagnose(args):
             skipped=len(skipped_ids),
             skipped_models=skipped_ids,
             verbose=args.verbose,
+            color_enabled=color_enabled,
         )
         print(text)
 
@@ -312,6 +329,12 @@ def cmd_diagnose(args):
 def cmd_demo(args):
     """Demo command: run against bundled fixtures to show capabilities."""
     fixtures_dir = Path(__file__).parent / "fixtures"
+
+    color_enabled = should_use_color(
+        force_color=getattr(args, "color", False),
+        no_color=getattr(args, "no_color", False),
+        is_json=getattr(args, "json", False),
+    )
 
     fixture_files = [
         ("contract_type_mismatch.json", "manifest_minimal.json"),
@@ -342,8 +365,75 @@ def cmd_demo(args):
             skipped=len(skipped_ids),
             skipped_models=skipped_ids,
             verbose=args.verbose,
+            color_enabled=color_enabled,
         )
         print(text)
+
+
+def cmd_lint(args):
+    """Lint command: check compiled SQL for issues before dbt build."""
+    from dbt_diagnostics.linters import LINTER_REGISTRY
+    from dbt_diagnostics.renderer import render_lint
+
+    paths = _resolve_from_args(args)
+
+    manifest_path = paths.get("manifest")
+    if not manifest_path or not manifest_path.exists():
+        print("Error: manifest.json not found. Run `dbt compile` first.", file=sys.stderr)
+        sys.exit(2)
+
+    manifest = load_json(manifest_path, "manifest.json")
+    compiled_dir = paths.get("compiled_dir")
+
+    # Collect compiled SQL from manifest nodes (compiled_code field)
+    nodes = manifest.get("nodes", {})
+    model_count = 0
+    all_findings = []
+
+    for node_id, node in nodes.items():
+        if node.get("resource_type") != "model":
+            continue
+        compiled_sql = node.get("compiled_code", "") or ""
+        if not compiled_sql:
+            # Try loading from target/compiled/ directory
+            if compiled_dir:
+                rel_path = node.get("path", "")
+                compiled_file = compiled_dir / rel_path
+                if compiled_file.exists():
+                    compiled_sql = compiled_file.read_text()
+            if not compiled_sql:
+                continue
+
+        model_count += 1
+        for linter_cls in LINTER_REGISTRY:
+            linter = linter_cls()
+            findings = linter.lint(node_id, compiled_sql, node)
+            all_findings.extend(findings)
+
+    color_enabled = should_use_color(
+        force_color=getattr(args, "color", False),
+        no_color=getattr(args, "no_color", False),
+        is_json=getattr(args, "json", False),
+    )
+
+    if getattr(args, "json", False):
+        output = {
+            "schema_version": "1.0",
+            "lint_findings": [f.to_json_dict() for f in all_findings],
+            "model_count": model_count,
+            "total_findings": len(all_findings),
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        text = render_lint(
+            findings=all_findings,
+            model_count=model_count,
+            color_enabled=color_enabled,
+        )
+        print(text)
+
+    if all_findings and not getattr(args, "no_fail", False):
+        sys.exit(1)
 
 
 def main():
@@ -360,6 +450,14 @@ def main():
     parser.add_argument(
         "--json", action="store_true",
         help="Output as JSON instead of human-readable text",
+    )
+    parser.add_argument(
+        "--no-color", action="store_true",
+        help="Disable colored output",
+    )
+    parser.add_argument(
+        "--color", action="store_true",
+        help="Force colored output even when piped (for less -R, etc.)",
     )
 
     # Project discovery (diagnose mode)
@@ -384,6 +482,10 @@ def main():
     parser.add_argument(
         "--manifest", metavar="PATH",
         help="Explicit path to manifest.json (overrides --project-dir)",
+    )
+    parser.add_argument(
+        "--previous-manifest", metavar="PATH",
+        help="Path to a previous manifest.json for diff-aware diagnosis",
     )
 
     # Environment and config
@@ -412,6 +514,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("demo", help="Run against bundled fixtures to show capabilities")
     subparsers.add_parser("diagnose", help="Diagnose errors from dbt build artifacts (default)")
+    subparsers.add_parser("lint", help="Pre-execution lint: check compiled SQL for issues without running dbt")
 
     args = parser.parse_args()
 
@@ -421,6 +524,8 @@ def main():
 
     if args.command == "demo":
         cmd_demo(args)
+    elif args.command == "lint":
+        cmd_lint(args)
     else:
         cmd_diagnose(args)
 

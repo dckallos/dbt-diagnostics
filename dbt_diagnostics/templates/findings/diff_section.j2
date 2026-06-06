@@ -1,0 +1,33 @@
+
+{% if report.diff %}
+  {{ "WHAT CHANGED:" | bold_yellow }}
+{% if report.diff.node_changed %}
+    This model's compiled SQL changed since the previous build.
+{% if report.diff.changed_lines %}
+{% for line in report.diff.changed_lines %}
+    {{ line }}
+{% endfor %}
+{% endif %}
+{% else %}
+    This model's SQL did NOT change. Looking upstream...
+{% endif %}
+{% if report.diff.upstream_changes %}
+    Upstream models with changes:
+{% for change in report.diff.upstream_changes %}
+    - {{ change.model_id.split('.')[-1] }}: {{ change.change_summary }}
+{% endfor %}
+{% endif %}
+{% if report.diff.columns_added %}
+    Columns ADDED: {{ report.diff.columns_added | join(', ') }}
+{% endif %}
+{% if report.diff.columns_removed %}
+    Columns REMOVED: {{ report.diff.columns_removed | join(', ') }}
+{% endif %}
+{% if report.diff.columns_type_changed %}
+    Columns with TYPE changes:
+{% for col in report.diff.columns_type_changed %}
+    - {{ col.name }}: {{ col.old_type }} -> {{ col.new_type }}
+{% endfor %}
+{% endif %}
+
+{% endif %}

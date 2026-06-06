@@ -1,20 +1,20 @@
 
-  ROOT CAUSE:
+  {{ "ROOT CAUSE:" | bold_white }}
     {{ finding.summary }}
-    File:       {{ finding.location.file_path }}
+    {{ "File:" | cyan }}       {{ finding.location.file_path }}
 {% if finding.location.line_number %}
-    Line:       {{ finding.location.line_number }}
+    {{ "Line:" | cyan }}       {{ finding.location.line_number }}
 {% endif %}
 {% if finding.location.cte_name %}
-    CTE:        {{ finding.location.cte_name }}
+    {{ "CTE:" | cyan }}        {{ finding.location.cte_name }}
 {% endif %}
 {% if finding.location.expression %}
-    Expression: {{ finding.location.expression }}
+    {{ "Expression:" | cyan }} {{ finding.location.expression }}
 {% endif %}
 
 {% if finding.fix_suggestion %}
-  FIX:
-    {{ finding.fix_suggestion }}
+  {{ "FIX:" | bold_white }}
+    {{ finding.fix_suggestion | green }}
 
 {% endif %}
 {% if finding.enrichment and finding.enrichment.actual_param_values %}
@@ -60,9 +60,9 @@
 {% endif %}
 
 {% if finding.explanation %}
-  EXPLANATION:
+  {{ "EXPLANATION:" | bold_white }}
 {% for line in finding.explanation.split('. ') %}
-    {{ line }}{{ '.' if not line.endswith('.') else '' }}
+    {{ line | dim }}{{ '.' if not line.endswith('.') else '' }}
 {% endfor %}
 {% endif %}
 
