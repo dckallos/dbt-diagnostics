@@ -2,26 +2,17 @@
 dbt_diagnostics/tracers/dag_walker.py
 
 Walks the dbt DAG (from manifest.json) to trace column origins upstream.
-Uses dbt-artifacts-parser for typed access to manifest nodes.
+Works directly with the raw manifest dict (stable across dbt versions).
 """
 
 import re
 from typing import Optional
 
-try:
-    from dbt_artifacts_parser.parser import parse_manifest
-
-    ARTIFACTS_PARSER_AVAILABLE = True
-except ImportError:
-    ARTIFACTS_PARSER_AVAILABLE = False
-
 
 class DagWalker:
     """
     Navigates the dbt DAG to find upstream dependencies and column origins.
-
-    Wraps manifest.json (loaded as a dict). If dbt-artifacts-parser is
-    available, uses typed access; otherwise works with raw dicts.
+    Wraps manifest.json loaded as a raw dict.
     """
 
     def __init__(self, manifest: dict):

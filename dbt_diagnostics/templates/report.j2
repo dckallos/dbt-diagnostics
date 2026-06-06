@@ -1,0 +1,30 @@
+
+======================================================================
+  dbt Diagnostics
+  {{ total }} result(s) | {{ errors }} error(s) | {{ skipped }} skipped
+======================================================================
+{% for report in reports %}
+
+  ERROR: {{ report.unique_id }}
+  Class: {{ report.error_class }}
+  ======================================================================
+{% if not report.has_findings %}
+  Could not classify. Raw message:
+    {{ report.raw_message[:500] }}
+{% else %}
+{% for finding in report.findings %}
+{% include 'findings/' + report.error_class + '.j2' ignore missing %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if skipped_models %}
+
+  ----------------------------------------------------------------------
+  SKIPPED ({{ skipped_models | length }} model(s) downstream of the above):
+{% for model_id in skipped_models[:5] %}
+    - {{ model_id }}
+{% endfor %}
+{% if skipped_models | length > 5 %}
+    ... and {{ skipped_models | length - 5 }} more
+{% endif %}
+{% endif %}

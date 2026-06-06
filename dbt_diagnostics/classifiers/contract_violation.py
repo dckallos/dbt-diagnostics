@@ -7,11 +7,15 @@ find the root cause (file, line, CTE, expression).
 """
 
 import re
-from pathlib import Path
 from typing import Optional
 
-from dbt_diagnostics.tracers.dag_walker import DagWalker
-from dbt_diagnostics.tracers.column_tracer import ColumnTracer
+from dbt_diagnostics.classifiers.base import BaseClassifier, DiagnosticContext
+from dbt_diagnostics.models import (
+    DiagnosticReport,
+    DiagnosticFinding,
+    TraceLocation,
+    UpstreamOrigin,
+)
 
 
 # Regex for pipe-delimited mismatch table rows
@@ -51,105 +55,147 @@ def parse_mismatch_table(message: str) -> list[dict]:
     return records
 
 
-class ContractViolationClassifier:
+class ContractViolationClassifier(BaseClassifier):
     """Diagnoses a dbt contract violation with full root cause tracing."""
 
-    def __init__(self, result: dict, dag_walker: DagWalker, column_tracer: ColumnTracer):
-        self.result = result
-        self.dag_walker = dag_walker
-        self.column_tracer = column_tracer
-        self.unique_id = result.get("unique_id", "unknown")
-        self.message = result.get("message", "")
-        self.compiled_code = result.get("compiled_code", "")
+    error_class = "contract_violation"
 
-    def diagnose(self):
-        """Run the full diagnosis and print results."""
+    @classmethod
+    def matches(cls, message: str) -> bool:
+        return "enforced contract that failed" in message
+
+    def diagnose(self) -> DiagnosticReport:
+        """Run the full diagnosis and return a structured report."""
+        report = DiagnosticReport(
+            unique_id=self.unique_id,
+            error_class=self.error_class,
+            raw_message=self.message,
+        )
+
         mismatches = parse_mismatch_table(self.message)
-
         if not mismatches:
-            print("\n  Could not parse mismatch table from error message.")
-            return
+            report.findings.append(DiagnosticFinding(
+                summary="Could not parse mismatch table from error message.",
+            ))
+            return report
 
         for mismatch in mismatches:
-            self._diagnose_single_mismatch(mismatch)
+            finding = self._diagnose_single_mismatch(mismatch)
+            report.findings.append(finding)
 
-    def _diagnose_single_mismatch(self, mismatch: dict):
+        return report
+
+    def _diagnose_single_mismatch(self, mismatch: dict) -> DiagnosticFinding:
         """Diagnose one column mismatch: trace the column, find root cause."""
         col = mismatch["column_name"]
         def_type = mismatch["definition_type"] or "(missing)"
         con_type = mismatch["contract_type"] or "(missing)"
         reason = mismatch["mismatch_reason"]
 
-        print(f"\n  MISMATCH:")
-        print(f"    Column:          {col}")
-        print(f"    Model produces:  {def_type}")
-        print(f"    Contract expects: {con_type}")
-        print(f"    Reason:          {reason}")
+        summary = (
+            f"Column {col}: model produces {def_type}, "
+            f"contract expects {con_type} ({reason})"
+        )
 
         # Trace the column through compiled SQL (sqlglot)
-        trace_result = None
+        location = TraceLocation()
         if self.compiled_code:
-            trace_result = self.column_tracer.trace_column(col, self.compiled_code)
+            trace_result = self.context.column_tracer.trace_column(
+                col, self.compiled_code
+            )
+            if trace_result:
+                location.cte_name = trace_result.cte_name
+                location.expression = trace_result.expression
 
         # Find the source file and line number
-        model_path = self.dag_walker.get_model_path(self.unique_id)
-        line_number = None
+        model_path = self.context.dag_walker.get_model_path(self.unique_id)
         if model_path:
-            # model_path is relative to the dbt project (e.g. "models/marts/dim_artists.sql")
-            source_file = self.column_tracer.models_dir.parent / model_path
-            line_number = self.column_tracer.find_line_number(source_file, col)
+            location.file_path = model_path
+            source_file = self.context.models_dir.parent / model_path
+            line = self.context.column_tracer.find_line_number(source_file, col)
+            if line:
+                location.line_number = line
 
         # Trace upstream to find if column is inherited or introduced here
-        upstream_origin = self.dag_walker.find_column_origin(self.unique_id, col)
+        upstream_origin = None
+        origin = self.context.dag_walker.find_column_origin(self.unique_id, col)
+        if origin:
+            upstream_origin = UpstreamOrigin(
+                model_id=origin["model"],
+                file_path=origin.get("file"),
+            )
 
-        # Print ROOT CAUSE
-        print(f"\n  ROOT CAUSE:")
+        # Build explanation
+        explanation = self._build_explanation(
+            col, def_type, con_type, reason, location, upstream_origin
+        )
 
-        if model_path:
-            print(f"    File:       {model_path}")
-        if line_number:
-            print(f"    Line:       {line_number}")
-        if trace_result and trace_result.cte_name:
-            print(f"    CTE:        {trace_result.cte_name}")
-        if trace_result:
-            print(f"    Expression: {trace_result.expression} AS {col.lower()}")
+        # Build fix suggestion
+        fix = self._build_fix_suggestion(col, def_type, con_type, location)
 
-        # Explain WHY the type mismatch occurs
-        print()
-        if trace_result and trace_result.is_function_call:
-            self._explain_function_type(trace_result, def_type, con_type)
-        elif reason == "missing in definition":
-            print(f"    The contract declares {col} but the model SQL does not produce it.")
-        elif reason == "missing in contract":
-            print(f"    The model SQL produces {col} but the contract does not declare it.")
-
-        # Report origin (inherited vs introduced here)
-        if upstream_origin:
-            print(f"\n    This column is INHERITED from: {upstream_origin['model']}")
-            if upstream_origin["file"]:
-                print(f"    Upstream file: {upstream_origin['file']}")
-        else:
-            print(f"\n    This column is INTRODUCED in this model (not inherited from upstream).")
-
-        # Session params to check (if timestamp-related)
+        # Session params
+        params = []
         if "TIMESTAMP" in def_type or "TIMESTAMP" in con_type:
-            print(f"\n  SESSION PARAMS TO VERIFY:")
-            for param in TIMESTAMP_PARAMS:
-                print(f"    SHOW PARAMETERS LIKE '{param}' IN ACCOUNT;")
+            params = TIMESTAMP_PARAMS
 
-    def _explain_function_type(self, trace_result, def_type: str, con_type: str):
-        """Explain why a function call produces an unexpected type."""
-        expr = trace_result.expression
+        return DiagnosticFinding(
+            summary=summary,
+            location=location,
+            upstream_origin=upstream_origin,
+            explanation=explanation,
+            fix_suggestion=fix,
+            session_params_to_check=params,
+        )
 
-        if "CURRENT_TIMESTAMP" in expr.upper():
-            print(f"    CURRENT_TIMESTAMP() returns TIMESTAMP_LTZ by default in Snowflake.")
-            print(f"    The account parameter TIMESTAMP_TYPE_MAPPING controls this.")
-            print(f"    The contract expects {con_type}.")
-            print()
-            print(f"    To fix, cast explicitly in the model SQL:")
-            print(f"      CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS {trace_result.column_name.lower()}")
-        elif "SYSDATE" in expr.upper():
-            print(f"    SYSDATE() returns TIMESTAMP_LTZ in Snowflake.")
+    def _build_explanation(
+        self, col, def_type, con_type, reason, location, upstream_origin
+    ) -> str:
+        """Build a human-readable explanation of WHY the mismatch occurs."""
+        parts = []
+
+        if reason == "missing in definition":
+            parts.append(
+                f"The contract declares {col} but the model SQL does not produce it."
+            )
+        elif reason == "missing in contract":
+            parts.append(
+                f"The model SQL produces {col} but the contract does not declare it."
+            )
+        elif location.expression:
+            expr_upper = location.expression.upper()
+            if "CURRENT_TIMESTAMP" in expr_upper:
+                parts.append(
+                    "CURRENT_TIMESTAMP() returns TIMESTAMP_LTZ by default in Snowflake. "
+                    "The account parameter TIMESTAMP_TYPE_MAPPING controls this."
+                )
+            elif "SYSDATE" in expr_upper:
+                parts.append("SYSDATE() returns TIMESTAMP_LTZ in Snowflake.")
+            else:
+                parts.append(
+                    f"The expression `{location.expression}` produces {def_type}."
+                )
+
+        if upstream_origin:
+            parts.append(
+                f"This column is INHERITED from {upstream_origin.model_id}."
+            )
         else:
-            print(f"    The expression `{expr}` produces {def_type}.")
-            print(f"    The contract expects {con_type}.")
+            parts.append(
+                "This column is INTRODUCED in this model (not inherited from upstream)."
+            )
+
+        return " ".join(parts)
+
+    def _build_fix_suggestion(
+        self, col, def_type, con_type, location
+    ) -> Optional[str]:
+        """Suggest a fix if we can determine one."""
+        if not location.expression:
+            return None
+
+        expr_upper = location.expression.upper()
+        if "CURRENT_TIMESTAMP" in expr_upper and "NTZ" in con_type.upper():
+            return f"Cast explicitly: CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS {col.lower()}"
+        if "SYSDATE" in expr_upper and "NTZ" in con_type.upper():
+            return f"Cast explicitly: SYSDATE()::TIMESTAMP_NTZ AS {col.lower()}"
+        return None

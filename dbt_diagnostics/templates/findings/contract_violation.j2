@@ -1,0 +1,43 @@
+
+  ROOT CAUSE:
+    File:       {{ finding.location.file_path }}
+{% if finding.location.line_number %}
+    Line:       {{ finding.location.line_number }}
+{% endif %}
+{% if finding.location.cte_name %}
+    CTE:        {{ finding.location.cte_name }}
+{% endif %}
+{% if finding.location.expression %}
+    Expression: {{ finding.location.expression }}
+{% endif %}
+
+{% if finding.upstream_origin %}
+  ORIGIN:
+    This column is INHERITED from upstream model:
+      {{ finding.upstream_origin.model_id }}
+{% if finding.upstream_origin.file_path %}
+      ({{ finding.upstream_origin.file_path }})
+{% endif %}
+    The root cause likely lives in THAT model, not this one.
+{% elif finding.location.expression %}
+  ORIGIN:
+    This column is NOT inherited from upstream -- it is first
+    introduced in THIS model.
+{% endif %}
+
+  EXPLANATION:
+{% for line in finding.explanation.split('. ') %}
+    {{ line }}{{ '.' if not line.endswith('.') else '' }}
+{% endfor %}
+
+{% if finding.fix_suggestion %}
+  FIX:
+    {{ finding.fix_suggestion }}
+
+{% endif %}
+{% if finding.session_params_to_check %}
+  SESSION PARAMETERS TO VERIFY:
+{% for param in finding.session_params_to_check %}
+    SHOW PARAMETERS LIKE '{{ param }}' IN ACCOUNT;
+{% endfor %}
+{% endif %}

@@ -1,22 +1,27 @@
 """
 dbt_diagnostics/main.py
 
-Entry point for the dbt diagnostic tracer. Loads dbt artifacts, classifies
-errors, and traces root causes through the model DAG.
+Entry point. Loads dbt artifacts, classifies errors, traces root causes,
+renders output via Jinja2 templates.
 
 Usage:
-    python dbt_diagnostics/main.py
-    python dbt_diagnostics/main.py --config dbt_diagnostics/config.yml
+    python -m dbt_diagnostics
+    python -m dbt_diagnostics --json
+    python -m dbt_diagnostics --config path/to/config.yml
+    python -m dbt_diagnostics demo          # run against bundled fixtures
 """
 
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import yaml
 
-from dbt_diagnostics.classifiers.contract_violation import ContractViolationClassifier
+from dbt_diagnostics.classifiers import classify, DiagnosticContext
+from dbt_diagnostics.models import DiagnosticReport
+from dbt_diagnostics.renderer import render_text
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
 
@@ -24,7 +29,7 @@ from dbt_diagnostics.tracers.column_tracer import ColumnTracer
 def load_config(config_path: Path) -> dict:
     """Load the YAML config file."""
     if not config_path.exists():
-        print(f"ERROR: Config not found: {config_path}")
+        print(f"ERROR: Config not found: {config_path}", file=sys.stderr)
         sys.exit(1)
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -46,47 +51,30 @@ def resolve_project_paths(config: dict, config_dir: Path) -> dict:
 def load_json(path: Path, label: str) -> dict:
     """Load a JSON artifact, exit with a clear message if missing."""
     if not path.exists():
-        print(f"ERROR: {label} not found at {path}")
-        print(f"  Run `dbt build` first to generate artifacts in target/.")
+        print(f"ERROR: {label} not found at {path}", file=sys.stderr)
+        print(f"  Run `dbt build` first to generate artifacts.", file=sys.stderr)
         sys.exit(1)
     with open(path) as f:
         return json.load(f)
 
 
 def classify_error(message: str) -> str:
-    """Classify a dbt error message into a category."""
-    if "enforced contract that failed" in message:
-        return "contract_violation"
-    if "Database Error" in message:
-        return "database_error"
-    if "Compilation Error" in message:
-        return "compilation_error"
-    return "unknown"
+    """Classify a dbt error message into a category string."""
+    cls = classify(message)
+    return cls.error_class if cls else "unknown"
 
 
-def main():
-    parser = argparse.ArgumentParser(description="dbt diagnostic tracer")
-    parser.add_argument(
-        "--config", type=Path,
-        default=Path(__file__).parent / "config.yml",
-        help="Path to config.yml",
-    )
-    args = parser.parse_args()
-
-    # Load config and resolve paths
-    config = load_config(args.config)
-    config_dir = args.config.parent
-    paths = resolve_project_paths(config, config_dir)
-
-    # Load artifacts
-    run_results = load_json(paths["run_results"], "run_results.json")
-    manifest = load_json(paths["manifest"], "manifest.json")
-
-    # Initialize tracers
+def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
+    """Core logic: classify and diagnose all errors. Returns (reports, skipped_ids, total)."""
     dag_walker = DagWalker(manifest)
     column_tracer = ColumnTracer(paths["models_dir"], paths["compiled_dir"])
+    context = DiagnosticContext(
+        dag_walker=dag_walker,
+        column_tracer=column_tracer,
+        models_dir=paths["models_dir"],
+        compiled_dir=paths["compiled_dir"],
+    )
 
-    # Find errors
     errors = []
     skipped = []
     for result in run_results["results"]:
@@ -95,46 +83,117 @@ def main():
         elif result["status"] == "skipped":
             skipped.append(result)
 
-    # Summary
-    total = len(run_results["results"])
-    print(f"\n{'='*70}")
-    print(f"  dbt Diagnostics: {total} results | {len(errors)} error(s) | {len(skipped)} skipped")
-    print(f"{'='*70}")
-
-    if not errors:
-        print("\n  No errors found.\n")
-        return
-
-    # Diagnose each error
+    reports = []
     for result in errors:
-        unique_id = result.get("unique_id", "unknown")
         message = result.get("message", "")
-        classification = classify_error(message)
+        classifier_cls = classify(message)
 
-        print(f"\n  ERROR: {unique_id}")
-        print(f"  Type:  {classification}")
-        print(f"  {'─'*66}")
-
-        if classification == "contract_violation":
-            classifier = ContractViolationClassifier(
-                result=result,
-                dag_walker=dag_walker,
-                column_tracer=column_tracer,
-            )
-            classifier.diagnose()
+        if classifier_cls:
+            classifier = classifier_cls(result=result, context=context)
+            report = classifier.diagnose()
         else:
-            print(f"\n  Message:\n    {message[:500]}")
+            report = DiagnosticReport(
+                unique_id=result.get("unique_id", "unknown"),
+                error_class="unknown",
+                raw_message=message,
+            )
+        reports.append(report)
 
-    # Skipped summary
-    if skipped:
-        print(f"\n  {'─'*66}")
-        print(f"  SKIPPED ({len(skipped)} downstream of the above error):")
-        for s in skipped[:5]:
-            print(f"    - {s.get('unique_id')}")
-        if len(skipped) > 5:
-            print(f"    ... and {len(skipped) - 5} more")
+    skipped_ids = [s.get("unique_id", "unknown") for s in skipped]
+    total = len(run_results["results"])
+    return reports, skipped_ids, total
 
-    print()
+
+def cmd_diagnose(args):
+    """Default command: diagnose errors from dbt artifacts."""
+    config = load_config(args.config)
+    config_dir = args.config.parent
+    paths = resolve_project_paths(config, config_dir)
+
+    run_results = load_json(paths["run_results"], "run_results.json")
+    manifest = load_json(paths["manifest"], "manifest.json")
+
+    reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+
+    if args.json:
+        output = {
+            "total_results": total,
+            "errors": len(reports),
+            "skipped": len(skipped_ids),
+            "reports": [asdict(r) for r in reports],
+        }
+        print(json.dumps(output, indent=2, default=str))
+    else:
+        text = render_text(
+            reports=reports,
+            total=total,
+            errors=len(reports),
+            skipped=len(skipped_ids),
+            skipped_models=skipped_ids,
+        )
+        print(text)
+
+
+def cmd_demo(args):
+    """Demo command: run against bundled fixtures to show capabilities."""
+    fixtures_dir = Path(__file__).parent / "fixtures"
+
+    fixture_files = [
+        ("contract_type_mismatch.json", "manifest_minimal.json"),
+        ("runtime_errors.json", "manifest_runtime.json"),
+    ]
+
+    for rr_file, manifest_file in fixture_files:
+        rr_path = fixtures_dir / rr_file
+        manifest_path = fixtures_dir / manifest_file
+        if not rr_path.exists() or not manifest_path.exists():
+            continue
+
+        run_results = json.loads(rr_path.read_text())
+        manifest = json.loads(manifest_path.read_text())
+
+        paths = {
+            "models_dir": Path("/project/models"),
+            "compiled_dir": Path("/project/target/compiled"),
+        }
+
+        reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+
+        text = render_text(
+            reports=reports,
+            total=total,
+            errors=len(reports),
+            skipped=len(skipped_ids),
+            skipped_models=skipped_ids,
+        )
+        print(text)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="dbt_diagnostics",
+        description="Lineage-aware error tracer for dbt projects.",
+    )
+    parser.add_argument(
+        "--config", type=Path,
+        default=Path(__file__).parent / "config.yml",
+        help="Path to config.yml",
+    )
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Output as JSON instead of human-readable text",
+    )
+    parser.add_argument(
+        "command", nargs="?", default="diagnose",
+        choices=["diagnose", "demo"],
+        help="Subcommand (default: diagnose)",
+    )
+    args = parser.parse_args()
+
+    if args.command == "demo":
+        cmd_demo(args)
+    else:
+        cmd_diagnose(args)
 
 
 if __name__ == "__main__":

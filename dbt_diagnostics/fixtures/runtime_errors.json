@@ -1,0 +1,81 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v6/index.html",
+    "dbt_version": "1.11.11",
+    "generated_at": "2026-06-06T19:15:00Z",
+    "invocation_id": "fixture-runtime-object-not-found"
+  },
+  "results": [
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-06T19:14:58Z", "completed_at": "2026-06-06T19:14:58Z"},
+        {"name": "execute", "started_at": "2026-06-06T19:14:58Z", "completed_at": "2026-06-06T19:14:59Z"}
+      ],
+      "thread_id": "Thread-1",
+      "execution_time": 1.02,
+      "adapter_response": {
+        "_message": "ERROR",
+        "code": "002003"
+      },
+      "message": "Database Error in model stg_met__artworks (models/staging/met/stg_met__artworks.sql)\n  002003 (42S02): SQL compilation error:\n  Object 'ARTWORK_DB.BRONZE.RAW_MET_OBJECTS' does not exist or not authorized.",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.stg_met__artworks",
+      "compiled": true,
+      "compiled_code": "SELECT\n    OBJECT_ID AS artwork_id,\n    TITLE,\n    ARTIST_DISPLAY_NAME,\n    DEPARTMENT,\n    IS_PUBLIC_DOMAIN,\n    _EXTRACTED_AT\nFROM ARTWORK_DB.BRONZE.RAW_MET_OBJECTS\nWHERE IS_PUBLIC_DOMAIN = TRUE",
+      "relation_name": "ARTWORK_DB.SILVER.STG_MET__ARTWORKS"
+    },
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-06T19:14:59Z", "completed_at": "2026-06-06T19:15:00Z"},
+        {"name": "execute", "started_at": "2026-06-06T19:15:00Z", "completed_at": "2026-06-06T19:15:00Z"}
+      ],
+      "thread_id": "Thread-2",
+      "execution_time": 0.75,
+      "adapter_response": {
+        "_message": "ERROR",
+        "code": "000904"
+      },
+      "message": "Database Error in model dim_artworks (models/marts/dim_artworks.sql)\n  000904 (42000): SQL compilation error: error line 3 at position 4\n  invalid identifier 'ARTWORK_TITLE'",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.dim_artworks",
+      "compiled": true,
+      "compiled_code": "SELECT\n    artwork_id,\n    ARTWORK_TITLE,\n    artist_name,\n    department\nFROM ARTWORK_DB.SILVER.STG_MET__ARTWORKS",
+      "relation_name": "ARTWORK_DB.GOLD.DIM_ARTWORKS"
+    },
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-06T19:14:58Z", "completed_at": "2026-06-06T19:14:58Z"},
+        {"name": "execute", "started_at": "2026-06-06T19:14:58Z", "completed_at": "2026-06-06T19:14:59Z"}
+      ],
+      "thread_id": "Thread-3",
+      "execution_time": 0.55,
+      "adapter_response": {
+        "_message": "ERROR",
+        "code": "003001"
+      },
+      "message": "Database Error in model stg_met__departments (models/staging/met/stg_met__departments.sql)\n  003001 (42501): SQL access control error:\n  Insufficient privileges to operate on table 'ARTWORK_DB.BRONZE.RAW_MET_DEPARTMENTS'",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.stg_met__departments",
+      "compiled": true,
+      "compiled_code": "SELECT\n    DEPARTMENT_ID,\n    DEPARTMENT_NAME\nFROM ARTWORK_DB.BRONZE.RAW_MET_DEPARTMENTS",
+      "relation_name": "ARTWORK_DB.SILVER.STG_MET__DEPARTMENTS"
+    },
+    {
+      "status": "skipped",
+      "timing": [],
+      "thread_id": "Thread-1",
+      "execution_time": 0.0,
+      "adapter_response": {},
+      "message": "SKIP relation GOLD.fct_artwork_images",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.fct_artwork_images",
+      "compiled": false,
+      "compiled_code": "",
+      "relation_name": null
+    }
+  ],
+  "elapsed_time": 3.45
+}

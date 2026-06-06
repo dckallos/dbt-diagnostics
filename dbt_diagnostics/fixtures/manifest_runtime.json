@@ -1,0 +1,62 @@
+{
+  "nodes": {
+    "model.artwork_pipeline.stg_met__artworks": {
+      "unique_id": "model.artwork_pipeline.stg_met__artworks",
+      "resource_type": "model",
+      "original_file_path": "models/staging/met/stg_met__artworks.sql",
+      "relation_name": "ARTWORK_DB.SILVER.STG_MET__ARTWORKS",
+      "compiled_code": "",
+      "depends_on": {
+        "nodes": ["source.artwork_pipeline.met.raw_met_objects"],
+        "macros": []
+      },
+      "columns": {}
+    },
+    "model.artwork_pipeline.dim_artworks": {
+      "unique_id": "model.artwork_pipeline.dim_artworks",
+      "resource_type": "model",
+      "original_file_path": "models/marts/dim_artworks.sql",
+      "relation_name": "ARTWORK_DB.GOLD.DIM_ARTWORKS",
+      "compiled_code": "",
+      "depends_on": {
+        "nodes": ["model.artwork_pipeline.stg_met__artworks"],
+        "macros": []
+      },
+      "columns": {
+        "artwork_id": {"name": "artwork_id"},
+        "title": {"name": "title"}
+      }
+    },
+    "model.artwork_pipeline.stg_met__departments": {
+      "unique_id": "model.artwork_pipeline.stg_met__departments",
+      "resource_type": "model",
+      "original_file_path": "models/staging/met/stg_met__departments.sql",
+      "relation_name": "ARTWORK_DB.SILVER.STG_MET__DEPARTMENTS",
+      "compiled_code": "",
+      "depends_on": {
+        "nodes": ["source.artwork_pipeline.met.raw_met_departments"],
+        "macros": []
+      },
+      "columns": {}
+    }
+  },
+  "sources": {
+    "source.artwork_pipeline.met.raw_met_objects": {
+      "unique_id": "source.artwork_pipeline.met.raw_met_objects",
+      "resource_type": "source",
+      "relation_name": "ARTWORK_DB.BRONZE.RAW_MET_OBJECTS",
+      "columns": {}
+    }
+  },
+  "parent_map": {
+    "model.artwork_pipeline.stg_met__artworks": [
+      "source.artwork_pipeline.met.raw_met_objects"
+    ],
+    "model.artwork_pipeline.dim_artworks": [
+      "model.artwork_pipeline.stg_met__artworks"
+    ],
+    "model.artwork_pipeline.stg_met__departments": [
+      "source.artwork_pipeline.met.raw_met_departments"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+
+  {{ finding.summary }}
+
+{% if finding.location and finding.location.file_path %}
+  Location:
+    File: {{ finding.location.file_path }}
+{% if finding.location.line_number %}
+    Line: {{ finding.location.line_number }}
+{% endif %}
+{% endif %}
+
+{% if finding.explanation %}
+  Details:
+    {{ finding.explanation }}
+{% endif %}
+
+{% if finding.fix_suggestion %}
+  Fix:
+    {{ finding.fix_suggestion }}
+{% endif %}
