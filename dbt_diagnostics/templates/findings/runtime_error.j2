@@ -6,6 +6,11 @@
 {% endif %}
     Problem:    {{ finding.summary }}
 
+{% if finding.upstream_origin and not verbose %}
+  NOTE: This identifier originates from upstream model {{ finding.upstream_origin.model_id | short_name }}.
+        Use --verbose for full upstream trace.
+
+{% endif %}
 {% if finding.fix_suggestion %}
   FIX:
 {% for line in finding.fix_suggestion.splitlines() %}

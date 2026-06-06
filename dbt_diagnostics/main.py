@@ -24,7 +24,7 @@ Usage:
 import argparse
 import json
 import sys
-from dataclasses import asdict
+
 from pathlib import Path
 from typing import Optional
 
@@ -286,10 +286,11 @@ def cmd_diagnose(args):
 
     if args.json:
         output = {
+            "schema_version": "1.0",
             "total_results": total,
             "errors": len(reports),
             "skipped": len(skipped_ids),
-            "reports": [asdict(r) for r in reports],
+            "reports": [r.to_json_dict() for r in reports],
         }
         print(json.dumps(output, indent=2, default=str))
     else:
@@ -302,6 +303,10 @@ def cmd_diagnose(args):
             verbose=args.verbose,
         )
         print(text)
+
+    # Exit 1 when errors were diagnosed (CI can gate on this)
+    if reports and not getattr(args, "no_fail", False):
+        sys.exit(1)
 
 
 def cmd_demo(args):
@@ -347,7 +352,17 @@ def main():
         description="Lineage-aware error tracer for dbt projects on Snowflake.",
     )
 
-    # Project discovery
+    # Output control (global)
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="Show full diagnostic detail (all params, full model names, etc.)",
+    )
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Output as JSON instead of human-readable text",
+    )
+
+    # Project discovery (diagnose mode)
     parser.add_argument(
         "--project-dir", metavar="PATH",
         help="dbt project directory (default: walk up from cwd for dbt_project.yml)",
@@ -381,28 +396,28 @@ def main():
         help="Optional config.yml (never required; CLI flags take priority)",
     )
 
-    # Output control
+    # Live enrichment
     parser.add_argument(
         "--live", action="store_true",
         help="Enrich findings with live Snowflake queries",
     )
+
+    # Exit code control
     parser.add_argument(
-        "--json", action="store_true",
-        help="Output as JSON instead of human-readable text",
-    )
-    parser.add_argument(
-        "--verbose", action="store_true",
-        help="Show full diagnostic detail (all params, full model names, etc.)",
+        "--no-fail", action="store_true",
+        help="Exit 0 even when errors are found (for interactive use)",
     )
 
-    # Subcommand
-    parser.add_argument(
-        "command", nargs="?", default="diagnose",
-        choices=["diagnose", "demo"],
-        help="Subcommand (default: diagnose)",
-    )
+    # Subcommands (demo is explicit; diagnose is the default)
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("demo", help="Run against bundled fixtures to show capabilities")
+    subparsers.add_parser("diagnose", help="Diagnose errors from dbt build artifacts (default)")
 
     args = parser.parse_args()
+
+    # Default to diagnose when no subcommand is given
+    if args.command is None:
+        args.command = "diagnose"
 
     if args.command == "demo":
         cmd_demo(args)

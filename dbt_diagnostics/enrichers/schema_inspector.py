@@ -5,19 +5,47 @@ Queries Snowflake to inspect actual table structure and existence.
 Used to ground "invalid identifier" and "object does not exist" findings.
 """
 
+import re
 from difflib import get_close_matches
 from typing import Optional
 
 from dbt_diagnostics.models import ColumnInfo
 
+# Valid unquoted Snowflake identifier: starts with letter or underscore,
+# contains only A-Z, 0-9, _, $
+_UNQUOTED_IDENT_RE = re.compile(r"^[A-Z_][A-Z0-9_$]*$", re.IGNORECASE)
+# Valid quoted identifier: enclosed in double quotes, no embedded double quotes
+_QUOTED_IDENT_RE = re.compile(r'^"[^"]*"$')
+
+
+def _validate_identifier(segment: str) -> bool:
+    """Validate a single identifier segment (database, schema, or table name)."""
+    return bool(_UNQUOTED_IDENT_RE.match(segment) or _QUOTED_IDENT_RE.match(segment))
+
+
+def _validate_fq_name(fq_name: str) -> bool:
+    """
+    Validate a fully qualified name (DB.SCHEMA.TABLE).
+    Each dot-separated segment must be a valid Snowflake identifier.
+    Returns False if any segment fails validation (prevents SQL injection).
+    """
+    parts = fq_name.split(".")
+    if len(parts) != 3:
+        return False
+    return all(_validate_identifier(p) for p in parts)
+
 
 def describe_table(conn, fq_table_name: str) -> list[ColumnInfo]:
     """
     Run DESCRIBE TABLE and return the actual column list.
-    Returns empty list if the table doesn't exist or access is denied.
+    Returns empty list if the table doesn't exist, access is denied,
+    or the name fails validation.
 
     fq_table_name: fully qualified like "ARTWORK_DB.BRONZE.RAW_MET_OBJECTS"
     """
+    if not _validate_fq_name(fq_table_name):
+        return []
+
     cursor = conn.cursor()
     try:
         cursor.execute(f"DESCRIBE TABLE {fq_table_name}")
@@ -37,10 +65,10 @@ def table_exists(conn, fq_table_name: str) -> Optional[bool]:
 
     fq_table_name: "DATABASE.SCHEMA.TABLE"
     """
-    parts = fq_table_name.split(".")
-    if len(parts) != 3:
+    if not _validate_fq_name(fq_table_name):
         return None
 
+    parts = fq_table_name.split(".")
     db, schema, table = parts
     cursor = conn.cursor()
     try:

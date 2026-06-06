@@ -71,6 +71,11 @@ class DiagnosticFinding:
     session_params_to_check: list[str] = field(default_factory=list)
     diagnostic_params: list[str] = field(default_factory=list)
     enrichment: Optional[EnrichmentData] = None
+    # Structured type info from contract violation classifier.
+    # Populated directly from parsed mismatch data so reconciliation
+    # never has to parse the summary string.
+    definition_type: Optional[str] = None
+    contract_type: Optional[str] = None
 
 
 @dataclass
@@ -89,3 +94,42 @@ class DiagnosticReport:
     @property
     def has_findings(self) -> bool:
         return len(self.findings) > 0
+
+    def to_json_dict(self) -> dict:
+        """
+        Produce a stable, versioned JSON representation for CI consumers.
+        This schema is documented and will not change without a version bump.
+        """
+        return {
+            "schema_version": "1.0",
+            "unique_id": self.unique_id,
+            "model_name": self.unique_id.split(".")[-1] if "." in self.unique_id else self.unique_id,
+            "error_class": self.error_class,
+            "cascade_note": self.cascade_note,
+            "findings": [self._finding_to_dict(f) for f in self.findings],
+            "skipped_downstream": self.skipped_downstream,
+        }
+
+    @staticmethod
+    def _finding_to_dict(f: "DiagnosticFinding") -> dict:
+        """Convert a finding to a stable dict structure."""
+        d: dict = {
+            "summary": f.summary,
+            "fix_suggestion": f.fix_suggestion,
+            "explanation": f.explanation,
+            "definition_type": f.definition_type,
+            "contract_type": f.contract_type,
+        }
+        if f.location:
+            d["location"] = {
+                "file_path": f.location.file_path,
+                "line_number": f.location.line_number,
+                "cte_name": f.location.cte_name,
+                "expression": f.location.expression,
+            }
+        if f.upstream_origin:
+            d["upstream_origin"] = {
+                "model_id": f.upstream_origin.model_id,
+                "file_path": f.upstream_origin.file_path,
+            }
+        return d

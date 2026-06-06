@@ -1,10 +1,10 @@
 [project]
 name = "dbt-diagnostics"
 version = "0.4.0"
-description = "Lineage-aware error tracer for dbt projects on Snowflake."
+description = "Lineage-aware error tracer for dbt projects on Snowflake. Snowflake-only: non-Snowflake errors will be classified as 'unknown'."
 requires-python = ">=3.11"
 dependencies = [
-    "sqlglot>=26.0",
+    "sqlglot>=26.0,<28.0",
     "pyyaml>=6.0",
     "jinja2>=3.1",
 ]
@@ -31,7 +31,7 @@ where = [".."]
 include = ["dbt_diagnostics*"]
 
 [tool.setuptools.package-data]
-dbt_diagnostics = ["templates/**/*.j2", "fixtures/*.json", "config.yml"]
+dbt_diagnostics = ["templates/**/*.j2", "fixtures/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

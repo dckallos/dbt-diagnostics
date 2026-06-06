@@ -11,6 +11,7 @@ Common causes:
 """
 
 import re
+from difflib import get_close_matches
 from typing import Optional
 
 from dbt_diagnostics.classifiers.base import BaseClassifier, DiagnosticContext
@@ -126,7 +127,6 @@ class CompilationErrorClassifier(BaseClassifier):
                 all_model_names.add(parts[-1])
 
         # Simple fuzzy check for typos
-        from difflib import get_close_matches
         suggestions = get_close_matches(target_name, list(all_model_names), n=3, cutoff=0.6)
 
         if suggestions:

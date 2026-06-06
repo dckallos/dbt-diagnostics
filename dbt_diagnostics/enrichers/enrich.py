@@ -14,6 +14,7 @@ from dbt_diagnostics.enrichers.schema_inspector import (
     describe_table,
     table_exists,
     find_similar_columns,
+    _edit_distance,
 )
 from dbt_diagnostics.enrichers.query_history import find_matching_query
 
@@ -90,7 +91,6 @@ def _enrich_runtime_error(conn, finding, report, result_data):
                 suggestions = find_similar_columns(columns, identifier)
                 if suggestions:
                     # Compute edit distance for the top suggestion
-                    from dbt_diagnostics.enrichers.schema_inspector import _edit_distance
                     top = suggestions[0]
                     dist = _edit_distance(identifier.upper(), top.upper())
                     finding.fix_suggestion = (
@@ -157,6 +157,9 @@ def _reconcile_findings(reports: list[DiagnosticReport]):
     checks whether the live parameter value is consistent with the error and
     adjusts the fix suggestion accordingly.
 
+    Uses the structured definition_type/contract_type fields on DiagnosticFinding
+    (populated by the contract violation classifier) instead of parsing the summary.
+
     Scenarios:
     1. Live mapping matches the CONTRACT expectation (both NTZ):
        The current session is correctly configured. The failing build must have
@@ -181,11 +184,9 @@ def _reconcile_findings(reports: list[DiagnosticReport]):
                 "TIMESTAMP_TYPE_MAPPING"
             ].upper()
 
-            # Parse the expected type from the summary
-            # Summary format: "Column X: model produces DEF_TYPE, contract expects CON_TYPE (...)"
-            summary = finding.summary.upper()
-            contract_type = _extract_type_from_summary(summary, "CONTRACT EXPECTS")
-            model_type = _extract_type_from_summary(summary, "MODEL PRODUCES")
+            # Use structured fields directly (no summary parsing)
+            contract_type = (finding.contract_type or "").upper()
+            model_type = (finding.definition_type or "").upper()
 
             if not contract_type:
                 continue
@@ -217,16 +218,3 @@ def _reconcile_findings(reports: list[DiagnosticReport]):
                         f"is producing the {model_type} output.\n"
                         f"{finding.fix_suggestion}"
                     )
-
-
-def _extract_type_from_summary(summary: str, prefix: str) -> Optional[str]:
-    """Extract a type like TIMESTAMP_NTZ from a summary string after a prefix."""
-    idx = summary.find(prefix)
-    if idx < 0:
-        return None
-    after = summary[idx + len(prefix):].strip()
-    # Take the first word (the type)
-    parts = after.split()
-    if parts:
-        return parts[0].strip(",()")
-    return None

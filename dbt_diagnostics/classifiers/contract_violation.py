@@ -148,6 +148,8 @@ class ContractViolationClassifier(BaseClassifier):
             fix_suggestion=fix,
             session_params_to_check=params,
             diagnostic_params=diagnostic,
+            definition_type=def_type,
+            contract_type=con_type,
         )
 
     def _build_explanation(

@@ -11,6 +11,7 @@ from typing import Optional
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.optimizer.scope import build_scope
 
 
 class ColumnTraceResult:
@@ -58,8 +59,8 @@ class ColumnTracer:
         """
         Parse compiled SQL and find the expression that produces column_name.
 
-        Uses sqlglot to parse the AST, then walks SELECT lists looking for
-        the alias that matches column_name.
+        Uses sqlglot's scope module to correctly identify the outermost SELECT
+        (handles CTEs, UNIONs, and subqueries without DFS ordering issues).
 
         Search order:
           1. Outer SELECT's direct projection list (not recursing into CTEs)
@@ -70,8 +71,19 @@ class ColumnTracer:
         except sqlglot.errors.ParseError:
             return None
 
-        # Find the outermost SELECT (skip CTE definitions)
-        outer_select = parsed.find(exp.Select)
+        # Use build_scope to find the true outermost SELECT.
+        # For UNION statements, build_scope returns the Union as root;
+        # for simple SELECTs (with or without CTEs), it returns the outer Select.
+        root_scope = build_scope(parsed)
+        outer_select = None
+        if root_scope:
+            root_expr = root_scope.expression
+            if isinstance(root_expr, exp.Select):
+                outer_select = root_expr
+            elif isinstance(root_expr, exp.Union):
+                # For UNIONs, check the left branch first (the "primary" SELECT)
+                outer_select = root_expr.find(exp.Select)
+
         if outer_select:
             result = self._find_alias_in_select(outer_select, column_name, cte_name=None)
             if result:

@@ -129,13 +129,20 @@ class TestParams:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
 
-        # Simulate SHOW PARAMETERS output: (key, value, default, level, desc, type)
+        # Simulate SHOW PARAMETERS IN SESSION output: (key, value, default, level, desc, type)
         mock_cursor.fetchall.return_value = [
-            ("TIMESTAMP_TYPE_MAPPING", "TIMESTAMP_LTZ", "TIMESTAMP_LTZ", "ACCOUNT", "", "STRING")
+            ("TIMESTAMP_TYPE_MAPPING", "TIMESTAMP_LTZ", "TIMESTAMP_LTZ", "ACCOUNT", "", "STRING"),
+            ("TIMEZONE", "America/Los_Angeles", "America/Los_Angeles", "", "", "STRING"),
+            ("QUERY_TAG", "", "", "", "", "STRING"),
         ]
 
-        result = get_parameters(mock_conn, ["TIMESTAMP_TYPE_MAPPING"])
-        assert result == {"TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_LTZ"}
+        result = get_parameters(mock_conn, ["TIMESTAMP_TYPE_MAPPING", "TIMEZONE"])
+        assert result == {
+            "TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_LTZ",
+            "TIMEZONE": "America/Los_Angeles",
+        }
+        # Should only execute once (single SHOW PARAMETERS IN SESSION)
+        mock_cursor.execute.assert_called_once_with("SHOW PARAMETERS IN SESSION")
 
     def test_get_parameter_with_level(self):
         mock_conn = MagicMock()
@@ -197,6 +204,67 @@ class TestSchemaInspector:
         suggestions = find_similar_columns(columns, "ARTWORK_TITLE")
         # Should find ARTWORK_ID (shares "ARTWORK" prefix) and TITLE (substring)
         assert len(suggestions) > 0
+
+
+class TestSQLInjectionPrevention:
+    """Tests that malicious identifiers are rejected before SQL execution."""
+
+    def test_describe_table_rejects_injection(self):
+        mock_conn = MagicMock()
+        # SQL injection payload in the table name
+        result = describe_table(mock_conn, "DB.SCHEMA.TABLE'; DROP TABLE --")
+        assert result == []
+        # Cursor should never be called
+        mock_conn.cursor.assert_not_called()
+
+    def test_table_exists_rejects_injection(self):
+        mock_conn = MagicMock()
+        result = table_exists(mock_conn, "DB.SCHEMA.'; DROP TABLE evil --")
+        assert result is None
+        mock_conn.cursor.assert_not_called()
+
+    def test_describe_table_rejects_semicolons(self):
+        mock_conn = MagicMock()
+        result = describe_table(mock_conn, "DB.SCHEMA.TABLE;SELECT 1")
+        assert result == []
+        mock_conn.cursor.assert_not_called()
+
+    def test_valid_quoted_identifier_accepted(self):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [
+            ("COL1", "VARCHAR(100)", "COLUMN", "Y", None, "N"),
+        ]
+        # Valid quoted identifiers should pass validation
+        columns = describe_table(mock_conn, '"my_db"."my_schema"."my_table"')
+        assert len(columns) == 1
+        mock_cursor.execute.assert_called_once()
+
+    def test_valid_unquoted_identifier_accepted(self):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [("some_row",)]
+        result = table_exists(mock_conn, "MY_DB.MY_SCHEMA.MY_TABLE$1")
+        assert result is True
+
+    def test_params_rejects_injection(self):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [
+            ("VALID_PARAM", "some_value", "default", "", "", "STRING"),
+        ]
+        result = get_parameters(mock_conn, ["VALID_PARAM", "'; DROP TABLE --"])
+        # The invalid name is filtered out; only VALID_PARAM returned
+        assert "VALID_PARAM" in result
+        # Single SHOW PARAMETERS call still made (for the valid param)
+        mock_cursor.execute.assert_called_once_with("SHOW PARAMETERS IN SESSION")
+
+    def test_params_level_rejects_injection(self):
+        result = get_parameter_with_level(MagicMock(), "bad'; DROP --")
+        assert result is None
 
 
 class TestTextSimilarity:
@@ -290,6 +358,8 @@ class TestReconciliation:
                     summary="Column _LOADED_AT: model produces TIMESTAMP_LTZ, contract expects TIMESTAMP_NTZ (data type mismatch)",
                     location=TraceLocation(file_path="models/dim_artists.sql"),
                     fix_suggestion="Cast explicitly: CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS _loaded_at",
+                    definition_type="TIMESTAMP_LTZ",
+                    contract_type="TIMESTAMP_NTZ",
                     enrichment=EnrichmentData(
                         actual_param_values={
                             "TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_NTZ",
@@ -319,6 +389,8 @@ class TestReconciliation:
                     summary="Column _LOADED_AT: model produces TIMESTAMP_LTZ, contract expects TIMESTAMP_NTZ (data type mismatch)",
                     location=TraceLocation(file_path="models/dim_artists.sql"),
                     fix_suggestion="Cast explicitly: CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS _loaded_at",
+                    definition_type="TIMESTAMP_LTZ",
+                    contract_type="TIMESTAMP_NTZ",
                     enrichment=EnrichmentData(
                         actual_param_values={
                             "TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_LTZ",
