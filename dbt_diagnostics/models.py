@@ -69,6 +69,7 @@ class DiagnosticFinding:
     explanation: Optional[str] = None
     fix_suggestion: Optional[str] = None
     session_params_to_check: list[str] = field(default_factory=list)
+    diagnostic_params: list[str] = field(default_factory=list)
     enrichment: Optional[EnrichmentData] = None
 
 
@@ -83,6 +84,7 @@ class DiagnosticReport:
     raw_message: str
     findings: list[DiagnosticFinding] = field(default_factory=list)
     skipped_downstream: list[str] = field(default_factory=list)
+    cascade_note: Optional[str] = None
 
     @property
     def has_findings(self) -> bool:

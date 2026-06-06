@@ -39,10 +39,8 @@ class TestColumnTracer:
         )
         result = self.tracer.trace_column("_loaded_at", sql)
         assert result is not None
-        # Should find the expression in either the CTE or outer SELECT
-        # The outer SELECT references it as a plain column, the CTE defines it
-        # Current implementation checks outer first -- _loaded_at in outer SELECT
-        # is just a column reference, not aliased. So it should find it in the CTE.
+        assert result.cte_name == "src"
+        assert "CURRENT_TIMESTAMP" in result.expression.upper()
 
     def test_trace_missing_column(self):
         sql = "SELECT 1 AS id FROM foo"

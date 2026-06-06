@@ -5,6 +5,7 @@ Queries Snowflake to inspect actual table structure and existence.
 Used to ground "invalid identifier" and "object does not exist" findings.
 """
 
+from difflib import get_close_matches
 from typing import Optional
 
 from dbt_diagnostics.models import ColumnInfo
@@ -56,31 +57,36 @@ def find_similar_columns(
     actual_columns: list[ColumnInfo], target_name: str
 ) -> list[str]:
     """
-    Find column names similar to target_name (case-insensitive prefix/substring match).
-    Returns up to 3 suggestions.
+    Find column names similar to target_name using edit distance.
+    Uses difflib.get_close_matches for proper fuzzy matching.
+    Returns up to 3 suggestions with their edit distance.
     """
+    column_names = [col.name.upper() for col in actual_columns]
     target_upper = target_name.upper()
-    suggestions = []
 
-    for col in actual_columns:
-        col_upper = col.name.upper()
-        # Exact match minus one char, substring, or shared prefix
-        if (
-            target_upper in col_upper
-            or col_upper in target_upper
-            or _common_prefix_len(target_upper, col_upper) >= len(target_upper) // 2
-        ):
-            suggestions.append(col.name)
-
-    return suggestions[:3]
+    matches = get_close_matches(target_upper, column_names, n=3, cutoff=0.6)
+    return matches
 
 
-def _common_prefix_len(a: str, b: str) -> int:
-    """Length of the common prefix between two strings."""
-    length = 0
-    for ca, cb in zip(a, b):
-        if ca == cb:
-            length += 1
-        else:
-            break
-    return length
+def _edit_distance(a: str, b: str) -> int:
+    """
+    Compute Levenshtein edit distance between two strings.
+    Used to display the distance alongside "did you mean?" suggestions.
+    """
+    if len(a) < len(b):
+        return _edit_distance(b, a)
+
+    if len(b) == 0:
+        return len(a)
+
+    previous_row = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        current_row = [i + 1]
+        for j, cb in enumerate(b):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (ca != cb)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+
+    return previous_row[-1]

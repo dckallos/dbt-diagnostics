@@ -1,0 +1,28 @@
+{
+  "metadata": {
+    "dbt_version": "1.7.0"
+  },
+  "results": [
+    {
+      "status": "error",
+      "unique_id": "model.artwork_pipeline.stg_met__departments",
+      "message": "Compilation Error in model stg_met__departments (models/staging/met/stg_met__departments.sql)\n  'ref_typo' is undefined. Did you mean one of these?\n  line 5\n    {% set foo = ref_typo('stg_met__artworks') %}",
+      "compiled_code": null,
+      "timing": []
+    },
+    {
+      "status": "error",
+      "unique_id": "model.artwork_pipeline.dim_departments",
+      "message": "Compilation Error in model dim_departments (models/marts/dim_departments.sql)\n  depends on a node named 'stg_met__departmens' which was not found",
+      "compiled_code": null,
+      "timing": []
+    },
+    {
+      "status": "error",
+      "unique_id": "model.artwork_pipeline.fct_exhibitions",
+      "message": "Compilation Error in model fct_exhibitions (models/marts/fct_exhibitions.sql)\n  Encountered unexpected tag 'endfor'. Jinja was looking for the following tags: 'endif'. The innermost block that needs to be closed is 'if'.\n  line 12",
+      "compiled_code": null,
+      "timing": []
+    }
+  ]
+}

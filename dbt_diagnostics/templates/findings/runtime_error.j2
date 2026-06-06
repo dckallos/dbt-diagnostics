@@ -6,6 +6,22 @@
 {% endif %}
     Problem:    {{ finding.summary }}
 
+{% if finding.fix_suggestion %}
+  FIX:
+{% for line in finding.fix_suggestion.splitlines() %}
+    {{ line }}
+{% endfor %}
+
+{% endif %}
+{% if finding.enrichment and finding.enrichment.matched_error_message %}
+  RAW ERROR (from Snowflake):
+    {{ finding.enrichment.matched_error_message }}
+{% if finding.enrichment.matched_error_code %}
+    Error code: {{ finding.enrichment.matched_error_code }}
+{% endif %}
+
+{% endif %}
+{% if verbose %}
 {% if finding.upstream_origin %}
   UPSTREAM ORIGIN:
     This identifier is expected from: {{ finding.upstream_origin.model_id }}
@@ -32,21 +48,12 @@
     ... and {{ finding.enrichment.actual_columns | length - 10 }} more
 {% endif %}
 {% endif %}
-{% if finding.enrichment.matched_error_message %}
-  RAW SNOWFLAKE ERROR (from query history):
-    {{ finding.enrichment.matched_error_message }}
-{% endif %}
 {% endif %}
 
+{% if finding.explanation %}
   EXPLANATION:
 {% for line in finding.explanation.split('. ') %}
     {{ line }}{{ '.' if not line.endswith('.') else '' }}
 {% endfor %}
-
-{% if finding.fix_suggestion %}
-  FIX:
-{% for line in finding.fix_suggestion.splitlines() %}
-    {{ line }}
-{% endfor %}
-
+{% endif %}
 {% endif %}

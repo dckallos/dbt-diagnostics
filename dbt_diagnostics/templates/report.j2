@@ -8,6 +8,11 @@
   ERROR: {{ report.unique_id }}
   Class: {{ report.error_class }}
   ======================================================================
+{% if report.cascade_note %}
+  CASCADE:
+    {{ report.cascade_note }}
+
+{% endif %}
 {% if not report.has_findings %}
   Could not classify. Raw message:
     {{ report.raw_message[:500] }}
@@ -20,11 +25,21 @@
 {% if skipped_models %}
 
   ----------------------------------------------------------------------
+{% if verbose %}
   SKIPPED ({{ skipped_models | length }} model(s) downstream of the above):
-{% for model_id in skipped_models[:5] %}
+{% for model_id in skipped_models %}
     - {{ model_id }}
 {% endfor %}
-{% if skipped_models | length > 5 %}
-    ... and {{ skipped_models | length - 5 }} more
+{% else %}
+  SKIPPED (downstream of the above):
+{% for name in skipped_summary.models[:5] %}
+    - {{ name }}
+{% endfor %}
+{% if skipped_summary.models | length > 5 %}
+    ... and {{ skipped_summary.models | length - 5 }} more model(s)
+{% endif %}
+{% if skipped_summary.test_count > 0 %}
+    + {{ skipped_summary.test_count }} test(s) skipped (downstream)
+{% endif %}
 {% endif %}
 {% endif %}

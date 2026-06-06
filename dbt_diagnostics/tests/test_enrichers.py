@@ -272,3 +272,109 @@ class TestEnrichReports:
 
         assert report.findings[0].enrichment is not None
         assert report.findings[0].enrichment.object_exists is False
+
+
+class TestReconciliation:
+    """Tests for the post-enrichment reconciliation pass."""
+
+    def test_scenario_1_mapping_matches_contract(self):
+        """Mapping is NTZ, contract wants NTZ: replace fix with session settings advice."""
+        from dbt_diagnostics.enrichers.enrich import _reconcile_findings
+
+        report = DiagnosticReport(
+            unique_id="model.test.dim_artists",
+            error_class="contract_violation",
+            raw_message="contract failed",
+            findings=[
+                DiagnosticFinding(
+                    summary="Column _LOADED_AT: model produces TIMESTAMP_LTZ, contract expects TIMESTAMP_NTZ (data type mismatch)",
+                    location=TraceLocation(file_path="models/dim_artists.sql"),
+                    fix_suggestion="Cast explicitly: CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS _loaded_at",
+                    enrichment=EnrichmentData(
+                        actual_param_values={
+                            "TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_NTZ",
+                            "_TIMESTAMP_TYPE_MAPPING_LEVEL": "ACCOUNT",
+                        }
+                    ),
+                )
+            ],
+        )
+
+        _reconcile_findings([report])
+        fix = report.findings[0].fix_suggestion
+        assert "NTZ (matches the contract)" in fix
+        assert "different session settings" in fix
+        assert "Cast explicitly" not in fix
+
+    def test_scenario_2_mapping_ltz_contract_ntz(self):
+        """Mapping is LTZ, contract wants NTZ: keep cast, strengthen with confirmation."""
+        from dbt_diagnostics.enrichers.enrich import _reconcile_findings
+
+        report = DiagnosticReport(
+            unique_id="model.test.dim_artists",
+            error_class="contract_violation",
+            raw_message="contract failed",
+            findings=[
+                DiagnosticFinding(
+                    summary="Column _LOADED_AT: model produces TIMESTAMP_LTZ, contract expects TIMESTAMP_NTZ (data type mismatch)",
+                    location=TraceLocation(file_path="models/dim_artists.sql"),
+                    fix_suggestion="Cast explicitly: CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS _loaded_at",
+                    enrichment=EnrichmentData(
+                        actual_param_values={
+                            "TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_LTZ",
+                            "_TIMESTAMP_TYPE_MAPPING_LEVEL": "ACCOUNT",
+                        }
+                    ),
+                )
+            ],
+        )
+
+        _reconcile_findings([report])
+        fix = report.findings[0].fix_suggestion
+        assert "CONFIRMED" in fix
+        assert "TIMESTAMP_LTZ" in fix
+        assert "Cast explicitly" in fix
+
+    def test_no_reconciliation_without_enrichment(self):
+        """Without enrichment, fix_suggestion is untouched."""
+        from dbt_diagnostics.enrichers.enrich import _reconcile_findings
+
+        original_fix = "Cast explicitly: CURRENT_TIMESTAMP()::TIMESTAMP_NTZ AS _loaded_at"
+        report = DiagnosticReport(
+            unique_id="model.test.dim_artists",
+            error_class="contract_violation",
+            raw_message="contract failed",
+            findings=[
+                DiagnosticFinding(
+                    summary="Column _LOADED_AT: model produces TIMESTAMP_LTZ, contract expects TIMESTAMP_NTZ (data type mismatch)",
+                    location=TraceLocation(file_path="models/dim_artists.sql"),
+                    fix_suggestion=original_fix,
+                )
+            ],
+        )
+
+        _reconcile_findings([report])
+        assert report.findings[0].fix_suggestion == original_fix
+
+    def test_no_reconciliation_for_runtime_errors(self):
+        """Runtime errors are not reconciled."""
+        from dbt_diagnostics.enrichers.enrich import _reconcile_findings
+
+        original_fix = "Run the DDL"
+        report = DiagnosticReport(
+            unique_id="model.test.stg_foo",
+            error_class="runtime_error",
+            raw_message="Database Error",
+            findings=[
+                DiagnosticFinding(
+                    summary="Object not found",
+                    fix_suggestion=original_fix,
+                    enrichment=EnrichmentData(
+                        actual_param_values={"TIMESTAMP_TYPE_MAPPING": "TIMESTAMP_NTZ"}
+                    ),
+                )
+            ],
+        )
+
+        _reconcile_findings([report])
+        assert report.findings[0].fix_suggestion == original_fix

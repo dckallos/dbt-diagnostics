@@ -135,8 +135,10 @@ class ContractViolationClassifier(BaseClassifier):
 
         # Session params
         params = []
+        diagnostic = []
         if "TIMESTAMP" in def_type or "TIMESTAMP" in con_type:
             params = TIMESTAMP_PARAMS
+            diagnostic = ["TIMESTAMP_TYPE_MAPPING"]
 
         return DiagnosticFinding(
             summary=summary,
@@ -145,6 +147,7 @@ class ContractViolationClassifier(BaseClassifier):
             explanation=explanation,
             fix_suggestion=fix,
             session_params_to_check=params,
+            diagnostic_params=diagnostic,
         )
 
     def _build_explanation(

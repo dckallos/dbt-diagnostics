@@ -1,5 +1,6 @@
 
   ROOT CAUSE:
+    {{ finding.summary }}
     File:       {{ finding.location.file_path }}
 {% if finding.location.line_number %}
     Line:       {{ finding.location.line_number }}
@@ -11,6 +12,39 @@
     Expression: {{ finding.location.expression }}
 {% endif %}
 
+{% if finding.fix_suggestion %}
+  FIX:
+    {{ finding.fix_suggestion }}
+
+{% endif %}
+{% if finding.enrichment and finding.enrichment.actual_param_values %}
+{% set diagnostic_params = finding.diagnostic_params or [] %}
+{% set has_diagnostic = diagnostic_params | length > 0 %}
+{% if has_diagnostic %}
+  VERIFIED (live):
+{% for key, value in finding.enrichment.actual_param_values.items() if not key.startswith('_') %}
+{% if key in diagnostic_params %}
+    {{ key }} = {{ value }}
+{% endif %}
+{% endfor %}
+{% if finding.enrichment.actual_param_values.get('_TIMESTAMP_TYPE_MAPPING_LEVEL') %}
+    (set at {{ finding.enrichment.actual_param_values['_TIMESTAMP_TYPE_MAPPING_LEVEL'] }} level)
+{% endif %}
+{% endif %}
+{% if verbose %}
+{% if not has_diagnostic %}
+  VERIFIED (live):
+{% else %}
+  SESSION CONTEXT (live):
+{% endif %}
+{% for key, value in finding.enrichment.actual_param_values.items() if not key.startswith('_') %}
+{% if key not in diagnostic_params %}
+    {{ key }} = {{ value }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if verbose %}
 {% if finding.upstream_origin %}
   ORIGIN:
     This column is INHERITED from upstream model:
@@ -22,32 +56,20 @@
 {% elif finding.location.expression %}
   ORIGIN:
     This column is NOT inherited from upstream -- it is first
-    introduced in THIS model.
+    introduced in THIS model ({{ report.unique_id | short_name }}).
 {% endif %}
 
-{% if finding.enrichment and finding.enrichment.actual_param_values %}
-  VERIFIED (live):
-{% for key, value in finding.enrichment.actual_param_values.items() if not key.startswith('_') %}
-    {{ key }} = {{ value }}
-{% endfor %}
-{% if finding.enrichment.actual_param_values.get('_TIMESTAMP_TYPE_MAPPING_LEVEL') %}
-    (set at {{ finding.enrichment.actual_param_values['_TIMESTAMP_TYPE_MAPPING_LEVEL'] }} level)
-{% endif %}
-{% else %}
+{% if finding.explanation %}
   EXPLANATION:
 {% for line in finding.explanation.split('. ') %}
     {{ line }}{{ '.' if not line.endswith('.') else '' }}
 {% endfor %}
 {% endif %}
 
-{% if finding.fix_suggestion %}
-  FIX:
-    {{ finding.fix_suggestion }}
-
-{% endif %}
 {% if finding.session_params_to_check and not finding.enrichment %}
   SESSION PARAMETERS TO VERIFY:
 {% for param in finding.session_params_to_check %}
     SHOW PARAMETERS LIKE '{{ param }}' IN ACCOUNT;
 {% endfor %}
+{% endif %}
 {% endif %}

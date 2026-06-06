@@ -1,0 +1,42 @@
+{
+  "nodes": {
+    "model.artwork_pipeline.stg_met__departments": {
+      "unique_id": "model.artwork_pipeline.stg_met__departments",
+      "resource_type": "model",
+      "path": "staging/met/stg_met__departments.sql",
+      "original_file_path": "models/staging/met/stg_met__departments.sql",
+      "columns": {},
+      "depends_on": {"nodes": []}
+    },
+    "model.artwork_pipeline.stg_met__artworks": {
+      "unique_id": "model.artwork_pipeline.stg_met__artworks",
+      "resource_type": "model",
+      "path": "staging/met/stg_met__artworks.sql",
+      "columns": {},
+      "depends_on": {"nodes": []}
+    },
+    "model.artwork_pipeline.dim_departments": {
+      "unique_id": "model.artwork_pipeline.dim_departments",
+      "resource_type": "model",
+      "path": "marts/dim_departments.sql",
+      "original_file_path": "models/marts/dim_departments.sql",
+      "columns": {},
+      "depends_on": {"nodes": ["model.artwork_pipeline.stg_met__departments"]}
+    },
+    "model.artwork_pipeline.fct_exhibitions": {
+      "unique_id": "model.artwork_pipeline.fct_exhibitions",
+      "resource_type": "model",
+      "path": "marts/fct_exhibitions.sql",
+      "original_file_path": "models/marts/fct_exhibitions.sql",
+      "columns": {},
+      "depends_on": {"nodes": []}
+    }
+  },
+  "sources": {},
+  "parent_map": {
+    "model.artwork_pipeline.stg_met__departments": [],
+    "model.artwork_pipeline.stg_met__artworks": [],
+    "model.artwork_pipeline.dim_departments": ["model.artwork_pipeline.stg_met__departments"],
+    "model.artwork_pipeline.fct_exhibitions": []
+  }
+}

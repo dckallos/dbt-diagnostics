@@ -60,23 +60,29 @@ class ColumnTracer:
 
         Uses sqlglot to parse the AST, then walks SELECT lists looking for
         the alias that matches column_name.
+
+        Search order:
+          1. Outer SELECT's direct projection list (not recursing into CTEs)
+          2. Each CTE's SELECT (with cte_name populated)
         """
         try:
             parsed = sqlglot.parse_one(compiled_sql, dialect="snowflake")
         except sqlglot.errors.ParseError:
             return None
 
-        # Find the column alias in the outermost SELECT
-        result = self._find_alias_in_select(parsed, column_name)
-        if result:
-            return result
+        # Find the outermost SELECT (skip CTE definitions)
+        outer_select = parsed.find(exp.Select)
+        if outer_select:
+            result = self._find_alias_in_select(outer_select, column_name, cte_name=None)
+            if result:
+                return result
 
-        # If not in outer SELECT, check CTEs
+        # Search each CTE explicitly (with cte_name set)
         for cte in parsed.find_all(exp.CTE):
-            cte_name = cte.alias
+            cte_alias = cte.alias
             cte_select = cte.find(exp.Select)
             if cte_select:
-                result = self._find_alias_in_select(cte_select, column_name, cte_name)
+                result = self._find_alias_in_select(cte_select, column_name, cte_name=cte_alias)
                 if result:
                     return result
 
@@ -88,33 +94,37 @@ class ColumnTracer:
         column_name: str,
         cte_name: Optional[str] = None,
     ) -> Optional[ColumnTraceResult]:
-        """Search a SELECT's projections for a column alias match."""
-        for projection in select_node.find_all(exp.Alias):
-            alias = projection.alias
-            if alias and alias.upper() == column_name.upper():
-                expr_node = projection.this
-                expression_sql = expr_node.sql(dialect="snowflake")
+        """
+        Search a SELECT's direct projection list for a column alias match.
+        Uses select_node.expressions (the top-level projections) to avoid
+        recursing into subqueries or CTE definitions.
+        """
+        for projection in select_node.expressions:
+            # Handle aliased expressions: expr AS name
+            if isinstance(projection, exp.Alias):
+                alias = projection.alias
+                if alias and alias.upper() == column_name.upper():
+                    expr_node = projection.this
+                    expression_sql = expr_node.sql(dialect="snowflake")
 
-                # Determine if it's a function call
-                is_function = isinstance(expr_node, exp.Func) or bool(
-                    expr_node.find(exp.Func)
-                )
+                    is_function = isinstance(expr_node, exp.Func) or bool(
+                        expr_node.find(exp.Func)
+                    )
 
-                # Find source column references
-                source_cols = [
-                    col.sql(dialect="snowflake")
-                    for col in expr_node.find_all(exp.Column)
-                ]
+                    source_cols = [
+                        col.sql(dialect="snowflake")
+                        for col in expr_node.find_all(exp.Column)
+                    ]
 
-                return ColumnTraceResult(
-                    column_name=column_name,
-                    expression=expression_sql,
-                    cte_name=cte_name,
-                    line_number=None,  # sqlglot doesn't track line numbers
-                    file_path=None,
-                    is_function_call=is_function,
-                    source_columns=source_cols,
-                )
+                    return ColumnTraceResult(
+                        column_name=column_name,
+                        expression=expression_sql,
+                        cte_name=cte_name,
+                        line_number=None,
+                        file_path=None,
+                        is_function_call=is_function,
+                        source_columns=source_cols,
+                    )
 
         return None
 
