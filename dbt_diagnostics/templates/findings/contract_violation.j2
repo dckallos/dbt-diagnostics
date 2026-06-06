@@ -25,17 +25,27 @@
     introduced in THIS model.
 {% endif %}
 
+{% if finding.enrichment and finding.enrichment.actual_param_values %}
+  VERIFIED (live):
+{% for key, value in finding.enrichment.actual_param_values.items() if not key.startswith('_') %}
+    {{ key }} = {{ value }}
+{% endfor %}
+{% if finding.enrichment.actual_param_values.get('_TIMESTAMP_TYPE_MAPPING_LEVEL') %}
+    (set at {{ finding.enrichment.actual_param_values['_TIMESTAMP_TYPE_MAPPING_LEVEL'] }} level)
+{% endif %}
+{% else %}
   EXPLANATION:
 {% for line in finding.explanation.split('. ') %}
     {{ line }}{{ '.' if not line.endswith('.') else '' }}
 {% endfor %}
+{% endif %}
 
 {% if finding.fix_suggestion %}
   FIX:
     {{ finding.fix_suggestion }}
 
 {% endif %}
-{% if finding.session_params_to_check %}
+{% if finding.session_params_to_check and not finding.enrichment %}
   SESSION PARAMETERS TO VERIFY:
 {% for param in finding.session_params_to_check %}
     SHOW PARAMETERS LIKE '{{ param }}' IN ACCOUNT;

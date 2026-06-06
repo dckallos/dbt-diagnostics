@@ -15,6 +15,29 @@
     The column may have been renamed or removed in that upstream model.
 {% endif %}
 
+{% if finding.enrichment %}
+{% if finding.enrichment.object_exists == true %}
+  VERIFIED (live):
+    Object EXISTS in Snowflake. This is likely a permissions issue, not a missing object.
+{% elif finding.enrichment.object_exists == false %}
+  VERIFIED (live):
+    Object does NOT exist in Snowflake. The DDL has not been applied.
+{% endif %}
+{% if finding.enrichment.actual_columns %}
+  ACTUAL COLUMNS (live):
+{% for col in finding.enrichment.actual_columns[:10] %}
+    {{ col.name }} ({{ col.data_type }})
+{% endfor %}
+{% if finding.enrichment.actual_columns | length > 10 %}
+    ... and {{ finding.enrichment.actual_columns | length - 10 }} more
+{% endif %}
+{% endif %}
+{% if finding.enrichment.matched_error_message %}
+  RAW SNOWFLAKE ERROR (from query history):
+    {{ finding.enrichment.matched_error_message }}
+{% endif %}
+{% endif %}
+
   EXPLANATION:
 {% for line in finding.explanation.split('. ') %}
     {{ line }}{{ '.' if not line.endswith('.') else '' }}

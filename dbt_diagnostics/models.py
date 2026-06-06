@@ -36,6 +36,28 @@ class UpstreamOrigin:
 
 
 @dataclass
+class ColumnInfo:
+    """A column as reported by DESCRIBE TABLE."""
+    name: str
+    data_type: str
+
+
+@dataclass
+class EnrichmentData:
+    """
+    Live-queried facts from Snowflake that ground the explanation.
+    Populated by the enricher layer when --live is passed.
+    None when running offline.
+    """
+    actual_param_values: dict[str, str] = field(default_factory=dict)
+    actual_columns: list[ColumnInfo] = field(default_factory=list)
+    object_exists: Optional[bool] = None
+    matched_query_text: Optional[str] = None
+    matched_error_message: Optional[str] = None
+    matched_error_code: Optional[str] = None
+
+
+@dataclass
 class DiagnosticFinding:
     """
     One actionable finding within a diagnostic report.
@@ -47,6 +69,7 @@ class DiagnosticFinding:
     explanation: Optional[str] = None
     fix_suggestion: Optional[str] = None
     session_params_to_check: list[str] = field(default_factory=list)
+    enrichment: Optional[EnrichmentData] = None
 
 
 @dataclass

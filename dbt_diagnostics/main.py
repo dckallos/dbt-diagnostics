@@ -2,13 +2,15 @@
 dbt_diagnostics/main.py
 
 Entry point. Loads dbt artifacts, classifies errors, traces root causes,
-renders output via Jinja2 templates.
+renders output via Jinja2 templates. Optionally enriches with live
+Snowflake queries (--live).
 
 Usage:
     python -m dbt_diagnostics
+    python -m dbt_diagnostics --live
     python -m dbt_diagnostics --json
     python -m dbt_diagnostics --config path/to/config.yml
-    python -m dbt_diagnostics demo          # run against bundled fixtures
+    python -m dbt_diagnostics demo
 """
 
 import argparse
@@ -104,6 +106,39 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
     return reports, skipped_ids, total
 
 
+def _try_enrich(reports, config, run_results):
+    """Attempt live enrichment. Warn and return gracefully on failure."""
+    try:
+        from dbt_diagnostics.enrichers import open_connection, enrich_reports
+    except ImportError:
+        print(
+            "  WARNING: snowflake-connector-python not installed.\n"
+            "  Install with: pip install \"dbt_diagnostics[live]\"\n"
+            "  Falling back to offline mode.\n",
+            file=sys.stderr,
+        )
+        return
+
+    conn_config = config.get("connection", {})
+    profile_name = conn_config.get("profile_name", "default")
+    target_name = conn_config.get("target_name", "dev")
+
+    conn = open_connection(profile_name, target_name)
+    if conn is None:
+        print(
+            "  WARNING: Could not connect to Snowflake.\n"
+            "  Check profiles.yml and credentials.\n"
+            "  Falling back to offline mode.\n",
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        enrich_reports(conn, reports, run_results)
+    finally:
+        conn.close()
+
+
 def cmd_diagnose(args):
     """Default command: diagnose errors from dbt artifacts."""
     config = load_config(args.config)
@@ -114,6 +149,10 @@ def cmd_diagnose(args):
     manifest = load_json(paths["manifest"], "manifest.json")
 
     reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+
+    # Live enrichment (optional)
+    if args.live:
+        _try_enrich(reports, config, run_results)
 
     if args.json:
         output = {
@@ -182,6 +221,10 @@ def main():
     parser.add_argument(
         "--json", action="store_true",
         help="Output as JSON instead of human-readable text",
+    )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="Enrich findings with live Snowflake queries (requires snowflake-connector-python)",
     )
     parser.add_argument(
         "command", nargs="?", default="diagnose",
