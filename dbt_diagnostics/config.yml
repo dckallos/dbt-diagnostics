@@ -1,0 +1,10 @@
+# dbt_diagnostics/config.yml
+# Operational config only. No type opinions -- this is a debugger.
+
+project:
+  dbt_project_dir: ../artwork_pipeline
+
+connection:
+  method: profiles
+  profile_name: artwork_pipeline
+  target_name: dev

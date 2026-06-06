@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v6/index.html",
+    "dbt_version": "1.11.11",
+    "generated_at": "2026-06-06T18:53:18Z",
+    "invocation_id": "fixture-contract-type-mismatch"
+  },
+  "results": [
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-06T18:53:16Z", "completed_at": "2026-06-06T18:53:17Z"},
+        {"name": "execute", "started_at": "2026-06-06T18:53:17Z", "completed_at": "2026-06-06T18:53:17Z"}
+      ],
+      "thread_id": "Thread-1",
+      "execution_time": 0.84,
+      "adapter_response": {},
+      "message": "Compilation Error in model dim_artists (models/marts/dim_artists.sql)\n  This model has an enforced contract that failed.\n  Please ensure the name, data_type, and number of columns in your contract match the columns in your model's definition.\n\n  | column_name | definition_type | contract_type | mismatch_reason    |\n  | ----------- | --------------- | ------------- | ------------------ |\n  | _LOADED_AT  | TIMESTAMP_LTZ   | TIMESTAMP_NTZ | data type mismatch |\n\n  > in macro assert_columns_equivalent (macros/relations/column/columns_spec_ddl.sql)\n  > called by macro default__get_assert_columns_equivalent (macros/relations/column/columns_spec_ddl.sql)\n  > called by macro get_assert_columns_equivalent (macros/relations/column/columns_spec_ddl.sql)\n  > called by macro snowflake__create_table_info_schema_sql (macros/relations/table/create.sql)\n  > called by macro snowflake__create_table_as (macros/relations/table/create.sql)\n  > called by macro create_table_as (macros/relations/table/create.sql)\n  > called by macro statement (macros/etc/statement.sql)\n  > called by macro materialization_table_snowflake (macros/materializations/table.sql)\n  > called by model dim_artists (models/marts/dim_artists.sql)",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.dim_artists",
+      "compiled": true,
+      "compiled_code": "WITH met_artists AS (\n    SELECT\n        artist_id,\n        artist_display_name,\n        artist_alpha_sort,\n        artist_display_bio,\n        artist_nationality,\n        artist_begin_date,\n        artist_end_date,\n        artist_gender,\n        artist_ulan_url,\n        artist_wikidata_url,\n        'met_museum' AS source_system,\n        CURRENT_TIMESTAMP() AS _loaded_at\n    FROM ARTWORK_DB.SILVER.STG_MET__ARTISTS\n)\nSELECT\n    MD5(COALESCE(CAST(artist_alpha_sort AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(artist_ulan_url AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST('met_museum' AS TEXT), '_dbt_utils_surrogate_key_null_'))\n        AS artist_id,\n    artist_display_name,\n    artist_alpha_sort,\n    artist_display_bio,\n    artist_nationality,\n    artist_begin_date,\n    artist_end_date,\n    artist_gender,\n    artist_ulan_url,\n    artist_wikidata_url,\n    source_system,\n    _loaded_at\nFROM met_artists",
+      "relation_name": "ARTWORK_DB.GOLD.DIM_ARTISTS"
+    },
+    {
+      "status": "skipped",
+      "timing": [],
+      "thread_id": "Thread-1",
+      "execution_time": 0.0,
+      "adapter_response": {},
+      "message": "SKIP relation GOLD.dim_artworks",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.dim_artworks",
+      "compiled": false,
+      "compiled_code": "",
+      "relation_name": null
+    },
+    {
+      "status": "skipped",
+      "timing": [],
+      "thread_id": "Thread-1",
+      "execution_time": 0.0,
+      "adapter_response": {},
+      "message": "SKIP relation GOLD.fct_artwork_images",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.fct_artwork_images",
+      "compiled": false,
+      "compiled_code": "",
+      "relation_name": null
+    },
+    {
+      "status": "skipped",
+      "timing": [],
+      "thread_id": "Thread-1",
+      "execution_time": 0.0,
+      "adapter_response": {},
+      "message": "SKIP relation GOLD.openaccess_catalog",
+      "failures": null,
+      "unique_id": "model.artwork_pipeline.openaccess_catalog",
+      "compiled": false,
+      "compiled_code": "",
+      "relation_name": null
+    }
+  ],
+  "elapsed_time": 2.77
+}

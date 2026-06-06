@@ -1,0 +1,33 @@
+{
+  "nodes": {
+    "model.artwork_pipeline.dim_artists": {
+      "unique_id": "model.artwork_pipeline.dim_artists",
+      "resource_type": "model",
+      "original_file_path": "models/marts/dim_artists.sql",
+      "compiled_code": "",
+      "depends_on": {
+        "nodes": ["model.artwork_pipeline.stg_met__artists"],
+        "macros": []
+      },
+      "columns": {
+        "artist_id": {"name": "artist_id", "data_type": "varchar(32)"},
+        "_loaded_at": {"name": "_loaded_at", "data_type": "timestamp_ntz"}
+      }
+    },
+    "model.artwork_pipeline.stg_met__artists": {
+      "unique_id": "model.artwork_pipeline.stg_met__artists",
+      "resource_type": "model",
+      "original_file_path": "models/staging/met/stg_met__artists.sql",
+      "compiled_code": "",
+      "depends_on": {
+        "nodes": ["source.artwork_pipeline.met.raw_met_objects"],
+        "macros": []
+      },
+      "columns": {
+        "artist_id": {"name": "artist_id"},
+        "_extracted_at": {"name": "_extracted_at"}
+      }
+    }
+  },
+  "sources": {}
+}
