@@ -106,7 +106,7 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
     return reports, skipped_ids, total
 
 
-def _try_enrich(reports, config, run_results):
+def _try_enrich(reports, config, run_results, config_dir: Path):
     """Attempt live enrichment. Warn and return gracefully on failure."""
     try:
         from dbt_diagnostics.enrichers import open_connection, enrich_reports
@@ -123,11 +123,13 @@ def _try_enrich(reports, config, run_results):
     profile_name = conn_config.get("profile_name", "default")
     target_name = conn_config.get("target_name", "dev")
 
-    conn = open_connection(profile_name, target_name)
+    # Resolve the dbt project directory so we can find project-local profiles.yml
+    project_dir = (config_dir / config["project"]["dbt_project_dir"]).resolve()
+
+    conn = open_connection(profile_name, target_name, project_dir)
     if conn is None:
         print(
             "  WARNING: Could not connect to Snowflake.\n"
-            "  Check profiles.yml and credentials.\n"
             "  Falling back to offline mode.\n",
             file=sys.stderr,
         )
@@ -152,7 +154,7 @@ def cmd_diagnose(args):
 
     # Live enrichment (optional)
     if args.live:
-        _try_enrich(reports, config, run_results)
+        _try_enrich(reports, config, run_results, config_dir)
 
     if args.json:
         output = {
