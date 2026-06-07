@@ -26,10 +26,10 @@
 {% endif %}
 {% endfor %}
 {% else %}
-{% set first_report = group.reports[0] %}
-{% if first_report.has_findings %}
-{% set finding = first_report.findings[0] %}
-{% include 'findings/' + first_report.error_class + '.j2' ignore missing %}
+{% set report = group.reports[0] %}
+{% if report.has_findings %}
+{% set finding = report.findings[0] %}
+{% include 'findings/' + report.error_class + '.j2' ignore missing %}
 {% if group.reports | length > 1 %}
   ({{ group.reports | length - 1 }} more similar result(s) -- use --verbose to expand)
 {% endif %}
