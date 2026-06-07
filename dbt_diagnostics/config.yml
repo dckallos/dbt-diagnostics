@@ -2,9 +2,9 @@
 # Operational config only. No type opinions -- this is a debugger.
 
 project:
-  dbt_project_dir: ../artwork_pipeline
+  dbt_project_dir: .
 
 connection:
   method: profiles
-  profile_name: artwork_pipeline
+  profile_name: default
   target_name: dev

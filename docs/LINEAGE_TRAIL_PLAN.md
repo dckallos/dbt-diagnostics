@@ -371,7 +371,7 @@ OBJECT_ID). Same output as section 3.4.
 
   [?] dim_artists (upstream model)
      ARTWORK_DB.GOLD.DIM_ARTISTS
-     Manifest: declared (model.artwork_pipeline.dim_artists)
+     Manifest: declared (model.my_project.dim_artists)
      This run: model was NOT executed (not in run_results)
      Live: table does NOT exist
 
@@ -418,7 +418,7 @@ class CompiledSnippet:
 @dataclass
 class LineageStep:
     """One node in the column/object lineage trail."""
-    node_id: str              # "model.artwork_pipeline.stg_met__artworks"
+    node_id: str              # "model.my_project.stg_met__artworks"
     node_type: str            # "model", "source", "seed", "test"
     short_name: str           # "stg_met__artworks"
     file_path: Optional[str]  # "staging/met/stg_met__artworks.sql"
@@ -594,7 +594,7 @@ Files to modify:
 - `dbt_diagnostics/tests/` -- new tests against all 12 real fixtures
 
 **Acceptance criteria:**
-- `dbt-diagnostics --project-dir artwork_pipeline --run-results <fixture> --manifest <manifest> --no-live`
+- `dbt-diagnostics --project-dir <your_project> --run-results <fixture> --manifest <manifest> --no-live`
   produces output structurally matching the targets in section 3.
 - All existing 202 tests still pass.
 - Minimum 15 new tests covering trail generation + snippet extraction.
