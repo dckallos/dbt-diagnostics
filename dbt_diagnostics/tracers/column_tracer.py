@@ -162,7 +162,9 @@ class ColumnTracer:
                 outer_select = root_expr.find(exp.Select)
 
         if outer_select:
-            result = self._find_alias_in_select(outer_select, column_name, cte_name=None)
+            result = self._find_alias_in_select(
+                outer_select, column_name, cte_name=None, include_bare_columns=False
+            )
             if result:
                 return result
 
@@ -171,9 +173,19 @@ class ColumnTracer:
             cte_alias = cte.alias
             cte_select = cte.find(exp.Select)
             if cte_select:
-                result = self._find_alias_in_select(cte_select, column_name, cte_name=cte_alias)
+                result = self._find_alias_in_select(
+                    cte_select, column_name, cte_name=cte_alias, include_bare_columns=True
+                )
                 if result:
                     return result
+
+        # Last resort: bare column match in outer SELECT (pass-through references)
+        if outer_select:
+            result = self._find_bare_column_in_select(
+                outer_select, column_name, cte_name=None
+            )
+            if result:
+                return result
 
         return None
 
@@ -182,14 +194,18 @@ class ColumnTracer:
         select_node,
         column_name: str,
         cte_name: Optional[str] = None,
+        include_bare_columns: bool = True,
     ) -> Optional[ColumnTraceResult]:
         """
-        Search a SELECT's direct projection list for a column alias match.
-        Uses select_node.expressions (the top-level projections) to avoid
-        recursing into subqueries or CTE definitions.
+        Search a SELECT's direct projection list for a column match.
+
+        Priority order:
+          1. Aliased expressions (exp.Alias) -- most specific match.
+          2. Bare column references (exp.Column) -- only when include_bare_columns=True.
+          3. exp.Star returns None (can't resolve without schema).
         """
+        # Pass 1: Alias matches (highest priority)
         for projection in select_node.expressions:
-            # Handle aliased expressions: expr AS name
             if isinstance(projection, exp.Alias):
                 alias = projection.alias
                 if alias and alias.upper() == column_name.upper():
@@ -214,6 +230,40 @@ class ColumnTracer:
                         is_function_call=is_function,
                         source_columns=source_cols,
                     )
+
+        # Pass 2: Bare column references (when enabled)
+        if include_bare_columns:
+            return self._find_bare_column_in_select(select_node, column_name, cte_name)
+
+        return None
+
+    def _find_bare_column_in_select(
+        self,
+        select_node,
+        column_name: str,
+        cte_name: Optional[str] = None,
+    ) -> Optional[ColumnTraceResult]:
+        """
+        Search a SELECT's projection list for bare column references (exp.Column).
+        Returns None for exp.Star since we can't resolve without schema.
+        """
+        for projection in select_node.expressions:
+            if isinstance(projection, exp.Column):
+                if projection.name.upper() == column_name.upper():
+                    expression_sql = projection.sql(dialect="snowflake")
+
+                    return ColumnTraceResult(
+                        column_name=column_name,
+                        expression=expression_sql,
+                        cte_name=cte_name,
+                        line_number=None,
+                        file_path=None,
+                        is_function_call=False,
+                        source_columns=[expression_sql],
+                    )
+            elif isinstance(projection, exp.Star):
+                # SELECT * -- can't resolve specific columns without schema
+                continue
 
         return None
 

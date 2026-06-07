@@ -70,18 +70,28 @@ def _enrich_runtime_error(conn, finding, report, result_data):
     """Enrich runtime errors with table existence, column lists, or query history."""
     enrichment = finding.enrichment or EnrichmentData()
 
-    # Object not found: check existence + describe
-    obj_match = _OBJECT_RE.search(finding.summary)
-    if obj_match:
-        fq_name = obj_match.group(1)
+    # Object not found: check existence + describe.
+    # Prefer structured target_object field; fall back to regex on summary.
+    fq_name = finding.target_object
+    if not fq_name:
+        obj_match = _OBJECT_RE.search(finding.summary)
+        if obj_match:
+            fq_name = obj_match.group(1)
+
+    if fq_name:
         enrichment.object_exists = table_exists(conn, fq_name)
         if enrichment.object_exists:
             enrichment.actual_columns = describe_table(conn, fq_name)
 
-    # Invalid identifier: describe the source table to find correct columns
-    id_match = _IDENTIFIER_RE.search(finding.summary)
-    if id_match:
-        identifier = id_match.group(1)
+    # Invalid identifier: describe the source table to find correct columns.
+    # Prefer structured target_identifier field; fall back to regex on summary.
+    identifier = finding.target_identifier
+    if not identifier:
+        id_match = _IDENTIFIER_RE.search(finding.summary)
+        if id_match:
+            identifier = id_match.group(1)
+
+    if identifier:
         # Try to extract the source table from compiled_code
         source_table = _extract_from_table(report)
         if source_table:
@@ -102,8 +112,8 @@ def _enrich_runtime_error(conn, finding, report, result_data):
     # Privilege errors: check if object exists (to disambiguate)
     priv_match = _PRIVILEGE_RE.search(finding.summary)
     if priv_match:
-        fq_name = priv_match.group(1)
-        enrichment.object_exists = table_exists(conn, fq_name)
+        priv_fq_name = priv_match.group(1)
+        enrichment.object_exists = table_exists(conn, priv_fq_name)
 
     # Query history: try to find the exact error from Snowflake
     if result_data:

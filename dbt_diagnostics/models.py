@@ -76,6 +76,11 @@ class DiagnosticFinding:
     # never has to parse the summary string.
     definition_type: Optional[str] = None
     contract_type: Optional[str] = None
+    # Structured fields for enricher consumption (Work Item 4).
+    # Populated by classifiers so the enricher never needs to regex-parse
+    # the summary string to find the target object or identifier.
+    target_object: Optional[str] = None
+    target_identifier: Optional[str] = None
 
 
 @dataclass
@@ -154,6 +159,8 @@ class DiagnosticReport:
             "explanation": f.explanation,
             "definition_type": f.definition_type,
             "contract_type": f.contract_type,
+            "target_object": f.target_object,
+            "target_identifier": f.target_identifier,
         }
         if f.location:
             d["location"] = {

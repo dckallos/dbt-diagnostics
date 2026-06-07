@@ -38,11 +38,16 @@ class SchemaChangeErrorClassifier(BaseClassifier):
 
     @classmethod
     def matches(cls, message: str) -> bool:
-        # Match invalid identifier errors where we can detect schema drift
-        if "invalid identifier" not in message.lower():
-            return False
-        # Only claim this if it's a database error (runtime)
-        return "Database Error" in message
+        """
+        Never match from the registry dispatcher.
+
+        SchemaChangeError is invoked by delegation from RuntimeErrorClassifier
+        when find_column_origin() confirms drift evidence (column declared in
+        upstream manifest but missing at runtime). This prevents the greedy
+        overlap where SchemaChangeError would claim ALL 'invalid identifier'
+        messages before RuntimeError gets a chance.
+        """
+        return False
 
     def diagnose(self) -> DiagnosticReport:
         report = DiagnosticReport(
@@ -100,6 +105,7 @@ class SchemaChangeErrorClassifier(BaseClassifier):
                 f"2. Run `dbt run -s {upstream_model.split('.')[-1]}` to rebuild upstream first.\n"
                 f"3. Update your manifest: `dbt parse` to refresh column declarations."
             ),
+            target_identifier=column_name,
         )
 
     def _diagnose_possible_drift(
@@ -121,4 +127,5 @@ class SchemaChangeErrorClassifier(BaseClassifier):
                 "2. Run DESCRIBE TABLE on the upstream source to check available columns.\n"
                 "3. If renamed, update this model's SQL accordingly."
             ),
+            target_identifier=column_name,
         )

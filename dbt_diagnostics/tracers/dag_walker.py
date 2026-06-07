@@ -6,6 +6,7 @@ Works directly with the raw manifest dict (stable across dbt versions).
 """
 
 import re
+from collections import deque
 from typing import Optional
 
 
@@ -43,47 +44,79 @@ class DagWalker:
             return node.get("path", "") or node.get("original_file_path", "")
         return ""
 
-    def find_column_origin(self, unique_id: str, column_name: str) -> Optional[dict]:
+    def find_column_origin(
+        self, unique_id: str, column_name: str, max_depth: int = 5
+    ) -> Optional[dict]:
         """
         Determine if a column is inherited from an upstream model.
 
-        Walks parents and checks if any upstream node declares the same column
-        in its columns dict (from the YAML schema). If found, reports the
-        upstream model as the origin.
+        Uses BFS to walk upstream through the DAG, checking each ancestor's
+        columns dict and compiled SQL for the target column. BFS ensures we
+        find the CLOSEST upstream origin (not an arbitrary deep ancestor).
+
+        Args:
+            unique_id: The node to start searching from.
+            column_name: The column to trace upstream.
+            max_depth: Maximum levels to traverse (default 5, prevents runaway).
 
         Returns:
             dict with 'model' (unique_id) and 'file' (path) if inherited,
             or None if the column is introduced in the current model.
         """
-        parents = self.get_parents(unique_id)
+        visited: set[str] = {unique_id}
+        # BFS queue: (node_id, current_depth)
+        queue: deque[tuple[str, int]] = deque()
 
-        for parent_id in parents:
-            parent_node = self.get_node(parent_id)
-            if not parent_node:
+        # Seed with immediate parents
+        for parent_id in self.get_parents(unique_id):
+            if parent_id not in visited:
+                queue.append((parent_id, 1))
+                visited.add(parent_id)
+
+        while queue:
+            current_id, depth = queue.popleft()
+
+            current_node = self.get_node(current_id)
+            if not current_node:
                 continue
 
-            # Check if the parent's columns include this column name
-            parent_columns = parent_node.get("columns", {})
-            # Column names in manifest are typically lowercase keys
-            col_lower = column_name.lower()
-            col_upper = column_name.upper()
-
-            if col_lower in parent_columns or col_upper in parent_columns:
+            # Check if this node declares the column
+            if self._node_has_column(current_node, column_name):
                 return {
-                    "model": parent_id,
-                    "file": parent_node.get("path", ""),
+                    "model": current_id,
+                    "file": current_node.get("path", ""),
                 }
 
-            # Also check the compiled SQL for the column alias (if columns not declared)
-            compiled = parent_node.get("compiled_code", "")
-            if compiled:
-                pattern = re.compile(
-                    rf"\bAS\s+{re.escape(column_name)}\b", re.IGNORECASE
-                )
-                if pattern.search(compiled):
-                    return {
-                        "model": parent_id,
-                        "file": parent_node.get("path", ""),
-                    }
+            # If not at max depth, enqueue this node's parents
+            if depth < max_depth:
+                for parent_id in self.get_parents(current_id):
+                    if parent_id not in visited:
+                        queue.append((parent_id, depth + 1))
+                        visited.add(parent_id)
 
         return None
+
+    def _node_has_column(self, node: dict, column_name: str) -> bool:
+        """
+        Check if a node declares a column by name.
+
+        Checks both the columns dict (from YAML schema declarations) and
+        the compiled SQL (via regex for AS alias patterns).
+        """
+        # Check columns dict (case-insensitive)
+        columns = node.get("columns", {})
+        col_lower = column_name.lower()
+        col_upper = column_name.upper()
+        if col_lower in columns or col_upper in columns:
+            return True
+
+        # Check compiled SQL for the column alias
+        compiled = node.get("compiled_code", "")
+        if compiled:
+            pattern = re.compile(
+                rf"\bAS\s+{re.escape(column_name)}\b", re.IGNORECASE
+            )
+            if pattern.search(compiled):
+                return True
+
+        return False

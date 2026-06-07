@@ -450,3 +450,135 @@ class TestReconciliation:
 
         _reconcile_findings([report])
         assert report.findings[0].fix_suggestion == original_fix
+
+
+class TestStructuredFieldsPopulated:
+    """Tests that classifiers populate target_object/target_identifier (Work Item 4)."""
+
+    FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+
+    def test_object_not_found_populates_target_object(self):
+        """RuntimeError populates target_object for 002003 errors."""
+        import json
+        from dbt_diagnostics.classifiers.base import DiagnosticContext
+        from dbt_diagnostics.classifiers.runtime_error import RuntimeErrorClassifier
+        from dbt_diagnostics.tracers.dag_walker import DagWalker
+        from dbt_diagnostics.tracers.column_tracer import ColumnTracer
+
+        with open(self.FIXTURES_DIR / "real_object_not_exist_002003.json") as f:
+            run_results = json.load(f)
+        with open(self.FIXTURES_DIR / "real_object_not_exist_002003_manifest.json") as f:
+            manifest = json.load(f)
+
+        result = run_results["results"][0]
+        ctx = DiagnosticContext(
+            dag_walker=DagWalker(manifest),
+            column_tracer=ColumnTracer(Path("/fake"), Path("/fake")),
+            models_dir=Path("/fake"),
+            compiled_dir=Path("/fake"),
+        )
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        finding = report.findings[0]
+        assert finding.target_object is not None
+        assert len(finding.target_object) > 0
+        # Should be a Snowflake FQ name
+        assert "." in finding.target_object
+
+    def test_invalid_identifier_populates_target_identifier(self):
+        """RuntimeError populates target_identifier for 000904 errors."""
+        import json
+        from dbt_diagnostics.classifiers.base import DiagnosticContext
+        from dbt_diagnostics.classifiers.runtime_error import RuntimeErrorClassifier
+        from dbt_diagnostics.tracers.dag_walker import DagWalker
+        from dbt_diagnostics.tracers.column_tracer import ColumnTracer
+
+        with open(self.FIXTURES_DIR / "real_invalid_identifier_000904.json") as f:
+            run_results = json.load(f)
+        with open(self.FIXTURES_DIR / "real_invalid_identifier_000904_manifest.json") as f:
+            manifest = json.load(f)
+
+        result = run_results["results"][0]
+        ctx = DiagnosticContext(
+            dag_walker=DagWalker(manifest),
+            column_tracer=ColumnTracer(Path("/fake"), Path("/fake")),
+            models_dir=Path("/fake"),
+            compiled_dir=Path("/fake"),
+        )
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        finding = report.findings[0]
+        assert finding.target_identifier == "NONEXISTENT_TOP_LEVEL_COLUMN"
+        assert finding.target_object is None  # Not an object error
+
+    def test_schema_change_populates_target_identifier(self):
+        """SchemaChangeError populates target_identifier on drift."""
+        import json
+        from dbt_diagnostics.classifiers.base import DiagnosticContext
+        from dbt_diagnostics.classifiers.runtime_error import RuntimeErrorClassifier
+        from dbt_diagnostics.tracers.dag_walker import DagWalker
+        from dbt_diagnostics.tracers.column_tracer import ColumnTracer
+
+        with open(self.FIXTURES_DIR / "real_schema_change_missing_column.json") as f:
+            run_results = json.load(f)
+        with open(self.FIXTURES_DIR / "real_schema_change_missing_column_manifest.json") as f:
+            manifest = json.load(f)
+
+        result = run_results["results"][0]
+        ctx = DiagnosticContext(
+            dag_walker=DagWalker(manifest),
+            column_tracer=ColumnTracer(Path("/fake"), Path("/fake")),
+            models_dir=Path("/fake"),
+            compiled_dir=Path("/fake"),
+        )
+
+        # Goes through RuntimeError delegation to SchemaChange
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        assert report.error_class == "schema_change_error"
+        finding = report.findings[0]
+        assert finding.target_identifier == "OBJECT_ID"
+
+    def test_enricher_uses_structured_fields_over_regex(self):
+        """Enricher reads target_object directly instead of regex-parsing summary."""
+        mock_conn = MagicMock()
+        # Mock table_exists to return True when called with our structured field
+        with patch(
+            "dbt_diagnostics.enrichers.enrich.table_exists", return_value=True
+        ) as mock_exists, patch(
+            "dbt_diagnostics.enrichers.enrich.describe_table", return_value=[]
+        ), patch(
+            "dbt_diagnostics.enrichers.enrich.find_matching_query", return_value=None
+        ):
+            report = DiagnosticReport(
+                unique_id="model.pkg.test_model",
+                error_class="runtime_error",
+                raw_message="Database Error",
+                findings=[
+                    DiagnosticFinding(
+                        summary="Some custom summary without regex-parseable object",
+                        target_object="ARTWORK_DB.BRONZE.RAW_MET_OBJECTS",
+                    )
+                ],
+            )
+
+            run_results = {
+                "results": [
+                    {"unique_id": "model.pkg.test_model", "timing": []}
+                ]
+            }
+
+            enrich_reports(mock_conn, [report], run_results)
+
+            # Enricher should have used the structured field
+            mock_exists.assert_called_once_with(
+                mock_conn, "ARTWORK_DB.BRONZE.RAW_MET_OBJECTS"
+            )
+            # Enrichment data should be populated
+            assert report.findings[0].enrichment is not None
+            assert report.findings[0].enrichment.object_exists is True

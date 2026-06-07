@@ -75,6 +75,15 @@ class RuntimeErrorClassifier(BaseClassifier):
             finding = self._diagnose_object_not_found()
         elif _INVALID_IDENTIFIER_RE.search(self.message):
             finding = self._diagnose_invalid_identifier()
+            if finding is None:
+                # Drift evidence found -- delegate to SchemaChangeErrorClassifier
+                from dbt_diagnostics.classifiers.schema_change_error import (
+                    SchemaChangeErrorClassifier,
+                )
+                delegate = SchemaChangeErrorClassifier(
+                    result=self.result, context=self.context
+                )
+                return delegate.diagnose()
         elif _PERMISSION_DENIED_RE.search(self.message):
             finding = self._diagnose_permission_denied()
         else:
@@ -147,20 +156,23 @@ class RuntimeErrorClassifier(BaseClassifier):
             location=location,
             explanation=explanation,
             fix_suggestion=fix,
+            target_object=object_name,
         )
 
-    def _diagnose_invalid_identifier(self) -> DiagnosticFinding:
+    def _diagnose_invalid_identifier(self) -> Optional[DiagnosticFinding]:
         """
         Invalid identifier (000904).
 
         The column name referenced in SQL doesn't exist in the source table.
         Common causes: column renamed upstream, typo, case sensitivity.
+
+        When find_column_origin() finds the column declared in an upstream
+        manifest node, this is schema drift -- delegate to
+        SchemaChangeErrorClassifier for a richer diagnosis. Returns None
+        in that case (the caller must check and use the delegated report).
         """
         match = _IDENTIFIER_RE.search(self.message)
         identifier = match.group(1) if match else "UNKNOWN"
-
-        # Get line/position from error
-        location = self._extract_location()
 
         # Check if this identifier appears in any parent's columns
         upstream_origin = self.context.dag_walker.find_column_origin(
@@ -168,38 +180,30 @@ class RuntimeErrorClassifier(BaseClassifier):
         )
 
         if upstream_origin:
-            explanation = (
-                f"Column '{identifier}' was expected from upstream model "
-                f"{upstream_origin['model']}, but it doesn't exist there. "
-                f"The column may have been renamed or removed upstream."
-            )
-            fix = (
-                f"Check the current columns in {upstream_origin['model']} "
-                f"and update this model's SQL to use the correct name."
-            )
-            upstream = UpstreamOrigin(
-                model_id=upstream_origin["model"],
-                file_path=upstream_origin.get("file"),
-            )
-        else:
-            explanation = (
-                f"Column '{identifier}' does not exist in the source table(s). "
-                f"Common causes: typo in column name, column was renamed "
-                f"upstream, or case-sensitivity mismatch (Snowflake folds "
-                f"unquoted identifiers to UPPERCASE)."
-            )
-            fix = (
-                f"Check available columns: DESCRIBE TABLE <source>; "
-                f"Snowflake identifiers are case-sensitive when quoted."
-            )
-            upstream = None
+            # Drift evidence found -- delegate to SchemaChangeErrorClassifier
+            # which produces a more specific "schema_change_error" report.
+            return None
+
+        # No drift evidence: typo or removed column with no manifest trace
+        location = self._extract_location()
+        explanation = (
+            f"Column '{identifier}' does not exist in the source table(s). "
+            f"Common causes: typo in column name, column was renamed "
+            f"upstream, or case-sensitivity mismatch (Snowflake folds "
+            f"unquoted identifiers to UPPERCASE)."
+        )
+        fix = (
+            f"Check available columns: DESCRIBE TABLE <source>; "
+            f"Snowflake identifiers are case-sensitive when quoted."
+        )
 
         return DiagnosticFinding(
             summary=f"Invalid identifier: {identifier}",
             location=location,
-            upstream_origin=upstream,
+            upstream_origin=None,
             explanation=explanation,
             fix_suggestion=fix,
+            target_identifier=identifier,
         )
 
     def _diagnose_permission_denied(self) -> DiagnosticFinding:
