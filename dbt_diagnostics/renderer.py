@@ -21,6 +21,7 @@ from dbt_diagnostics.colors import (
     status_indicator,
 )
 from dbt_diagnostics.models import DiagnosticReport, LintFinding
+from dbt_diagnostics.grouping import ReportGroup, group_reports
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -106,8 +107,13 @@ def render_text(
             cat = w.get("category", "data_quality")
             warn_by_category.setdefault(cat, []).append(w)
 
+    # Group related reports
+    report_groups, ungrouped_reports = group_reports(reports)
+
     return template.render(
         reports=reports,
+        report_groups=report_groups,
+        ungrouped_reports=ungrouped_reports,
         total=total,
         errors=errors,
         fails=fails,

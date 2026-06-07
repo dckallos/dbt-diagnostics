@@ -3,7 +3,47 @@
   {{ "dbt Diagnostics" | bold_white }}
   {{ total }} result(s) | {{ errors }} error(s) | {{ fails }} fail(s) | {{ warns }} warn(s) | {{ skipped }} skipped
 ======================================================================
-{% for report in reports %}
+{% for group in report_groups %}
+
+  ----------------------------------------------------------------------
+  {{ "GROUP:" | bold_white }} {{ group.title }}
+  ----------------------------------------------------------------------
+{% for report in group.reports %}
+{% if report.error_class == "test_failure" %}
+  {{ "FAIL:" | bold_yellow }} {{ report.unique_id | bold }}
+{% else %}
+  {{ "ERROR:" | bold_red }} {{ report.unique_id | bold }}
+{% endif %}
+{% endfor %}
+  {{ "Class:" | bold_white }} {{ group.error_class }}
+  ======================================================================
+{% if verbose %}
+{% for report in group.reports %}
+{% if report.has_findings %}
+{% for finding in report.findings %}
+{% include 'findings/' + report.error_class + '.j2' ignore missing %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+{% set first_report = group.reports[0] %}
+{% if first_report.has_findings %}
+{% set finding = first_report.findings[0] %}
+{% include 'findings/' + first_report.error_class + '.j2' ignore missing %}
+{% if group.reports | length > 1 %}
+  ({{ group.reports | length - 1 }} more similar result(s) -- use --verbose to expand)
+{% endif %}
+{% endif %}
+{% endif %}
+
+{% if group.combined_fix %}
+  {{ "COMBINED FIX:" | bold_white }}
+{% for line in group.combined_fix.splitlines() %}
+    {{ line | green }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for report in ungrouped_reports %}
 
 {% if report.error_class == "test_failure" %}
   {{ "FAIL:" | bold_yellow }} {{ report.unique_id | bold }}
