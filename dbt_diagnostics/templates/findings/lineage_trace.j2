@@ -1,0 +1,54 @@
+{# lineage_trace.j2 -- Reusable partial for compiled snippet + lineage trail.
+   Included by each error-class template. Expects:
+     - finding (DiagnosticFinding with .compiled_snippet, .lineage_trail, .disconnect)
+     - trace_target (str: column name, FQ object, or description)
+     - color_enabled (bool global)
+     - verbose (bool global)
+#}
+{% if finding.compiled_snippet %}
+{% set snippet = finding.compiled_snippet %}
+
+  {{ "COMPILED SQL" | bold_white }} (line {{ snippet.error_line }}):
+{% for i in range(snippet.lines | length) %}
+{% if snippet.line_numbers[i] == snippet.error_line %}
+  | {{ snippet.line_numbers[i] }}: >>> {{ snippet.lines[i] }}
+{% else %}
+  | {{ snippet.line_numbers[i] }}:     {{ snippet.lines[i] }}
+{% endif %}
+{% endfor %}
+{% if snippet.error_position %}
+  | {{ " " * (snippet.error_position + 4) }}^
+{% endif %}
+
+{% endif %}
+{% if finding.lineage_trail %}
+
+  {{ "LINEAGE TRACE:" | bold_white }} {{ trace_target }}
+  ........................................................
+{% for step in finding.lineage_trail %}
+
+  {% if color_enabled %}{{ step.status_emoji }}{% else %}{{ step.status_text }}{% endif %} {{ step.short_name }}{% if step.annotation %} ({{ step.annotation }}){% endif %}
+
+{% if step.relation_name %}
+     {{ step.relation_name }}
+{% endif %}
+{% if step.file_path %}
+     File: {{ step.file_path }}
+{% endif %}
+{% if step.manifest_status and step.manifest_status != "not_checked" %}
+     Manifest: {{ step.manifest_detail }}
+{% endif %}
+{% if step.live_status %}
+     Live: {{ step.live_detail }}
+{% endif %}
+{% if step.run_status %}
+     Run: {{ step.run_status }}
+{% endif %}
+{% endfor %}
+
+  ........................................................
+{% if finding.disconnect %}
+  {{ "VERDICT:" | bold_white }} {{ finding.disconnect.explanation }}
+
+{% endif %}
+{% endif %}

@@ -2,8 +2,8 @@
 dbt_diagnostics/main.py
 
 Entry point. Loads dbt artifacts, classifies errors, traces root causes,
-renders output via Jinja2 templates. Optionally enriches with live
-Snowflake queries (--live).
+renders output via Jinja2 templates. Enriches with live Snowflake queries
+by default (suppress with --no-live).
 
 The CLI is fully self-contained: it auto-detects the dbt project by walking
 up from the current directory and reads profile/target from dbt_project.yml
@@ -11,9 +11,9 @@ and profiles.yml. Every value can be overridden by flags. No config file
 is required.
 
 Usage:
-    dbt-diagnostics                       # auto-detect everything
-    dbt-diagnostics --live                # enrich with Snowflake queries
-    dbt-diagnostics --live --env-file .env  # explicit .env path for env_var()
+    dbt-diagnostics                       # auto-detect, live enrichment ON
+    dbt-diagnostics --no-live             # skip live Snowflake queries
+    dbt-diagnostics --env-file .env       # explicit .env path for env_var()
     dbt-diagnostics --json                # machine-readable output
     dbt-diagnostics --verbose             # full diagnostic detail
     dbt-diagnostics --project-dir ./my_dbt_project
@@ -148,6 +148,7 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
         models_dir=paths["models_dir"],
         compiled_dir=paths["compiled_dir"],
         manifest=manifest,
+        run_results=run_results,
     )
 
     errors = []
@@ -290,8 +291,8 @@ def cmd_diagnose(args):
         for report in reports:
             report.diff = diff_node(report.unique_id, manifest, prev_manifest)
 
-    # Live enrichment (optional)
-    if args.live:
+    # Live enrichment (default ON; --no-live suppresses)
+    if not args.no_live:
         _try_enrich(reports, paths, run_results, args.env_file)
 
     color_enabled = should_use_color(
@@ -498,10 +499,10 @@ def main():
         help="Optional config.yml (never required; CLI flags take priority)",
     )
 
-    # Live enrichment
+    # Live enrichment (ON by default; opt out with --no-live)
     parser.add_argument(
-        "--live", action="store_true",
-        help="Enrich findings with live Snowflake queries",
+        "--no-live", action="store_true",
+        help="Skip live Snowflake queries (manifest-only diagnosis)",
     )
 
     # Exit code control

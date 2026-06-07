@@ -11,6 +11,10 @@
         Use --verbose for full upstream trace.
 
 {% endif %}
+{% if finding.compiled_snippet or finding.lineage_trail %}
+{% set trace_target = finding.target_identifier if finding.target_identifier else "column" %}
+{% include "findings/lineage_trace.j2" %}
+{% endif %}
 {% if finding.fix_suggestion %}
   {{ "FIX:" | bold_white }}
 {% for line in finding.fix_suggestion.splitlines() %}

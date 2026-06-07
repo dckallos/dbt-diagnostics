@@ -22,6 +22,7 @@ from dbt_diagnostics.models import (
     TraceLocation,
     UpstreamOrigin,
 )
+from dbt_diagnostics.tracers.snippet import extract_snippet
 
 
 # Snowflake error code patterns
@@ -116,10 +117,23 @@ class RuntimeErrorClassifier(BaseClassifier):
         location = TraceLocation(file_path=model_path)
 
         # Try to find which line references this object in compiled SQL
+        line_num = None
         if self.compiled_code:
             line_num = self._find_object_line(object_name)
             if line_num:
                 location.line_number = line_num
+
+        # Build compiled snippet
+        snippet = None
+        if self.compiled_code and line_num:
+            snippet = extract_snippet(self.compiled_code, line_num)
+
+        # Build lineage trail for the missing object
+        lineage_trail = self.context.dag_walker.trace_object_lineage(
+            self.unique_id,
+            object_name,
+            run_results=self.context.run_results,
+        )
 
         # Build explanation
         if parent_failed:
@@ -157,6 +171,8 @@ class RuntimeErrorClassifier(BaseClassifier):
             explanation=explanation,
             fix_suggestion=fix,
             target_object=object_name,
+            compiled_snippet=snippet,
+            lineage_trail=lineage_trail,
         )
 
     def _diagnose_invalid_identifier(self) -> Optional[DiagnosticFinding]:
@@ -186,6 +202,19 @@ class RuntimeErrorClassifier(BaseClassifier):
 
         # No drift evidence: typo or removed column with no manifest trace
         location = self._extract_location()
+
+        # Build compiled snippet around the error line
+        snippet = None
+        if self.compiled_code and location.line_number:
+            snippet = extract_snippet(self.compiled_code, location.line_number)
+
+        # Build column lineage trail
+        lineage_trail = self.context.dag_walker.trace_column_lineage(
+            self.unique_id,
+            identifier,
+            run_results=self.context.run_results,
+        )
+
         explanation = (
             f"Column '{identifier}' does not exist in the source table(s). "
             f"Common causes: typo in column name, column was renamed "
@@ -204,6 +233,8 @@ class RuntimeErrorClassifier(BaseClassifier):
             explanation=explanation,
             fix_suggestion=fix,
             target_identifier=identifier,
+            compiled_snippet=snippet,
+            lineage_trail=lineage_trail,
         )
 
     def _diagnose_permission_denied(self) -> DiagnosticFinding:
@@ -223,6 +254,25 @@ class RuntimeErrorClassifier(BaseClassifier):
         model_path = self.context.dag_walker.get_model_path(self.unique_id)
         location = TraceLocation(file_path=model_path)
 
+        # Try to find the line referencing the object
+        line_num = None
+        if self.compiled_code:
+            line_num = self._find_object_line(obj_name)
+            if line_num:
+                location.line_number = line_num
+
+        # Build compiled snippet
+        snippet = None
+        if self.compiled_code and line_num:
+            snippet = extract_snippet(self.compiled_code, line_num)
+
+        # Build object lineage trail
+        lineage_trail = self.context.dag_walker.trace_object_lineage(
+            self.unique_id,
+            obj_name,
+            run_results=self.context.run_results,
+        )
+
         explanation = (
             f"The role executing this model lacks privileges on "
             f"{obj_type} '{obj_name}'. "
@@ -241,6 +291,8 @@ class RuntimeErrorClassifier(BaseClassifier):
             location=location,
             explanation=explanation,
             fix_suggestion=fix,
+            compiled_snippet=snippet,
+            lineage_trail=lineage_trail,
         )
 
     def _diagnose_generic(self) -> DiagnosticFinding:
@@ -248,10 +300,23 @@ class RuntimeErrorClassifier(BaseClassifier):
         model_path = self.context.dag_walker.get_model_path(self.unique_id)
         location = TraceLocation(file_path=model_path)
 
+        # Try to extract line/position from error message
+        line_match = _LINE_POS_RE.search(self.message)
+        snippet = None
+        if line_match:
+            line_num = int(line_match.group(1))
+            position = int(line_match.group(2))
+            location.line_number = line_num
+            if self.compiled_code:
+                snippet = extract_snippet(
+                    self.compiled_code, line_num, error_position=position
+                )
+
         return DiagnosticFinding(
             summary=f"Database error in {self.unique_id}",
             location=location,
             explanation=self.message[:500],
+            compiled_snippet=snippet,
         )
 
     def _extract_location(self) -> TraceLocation:

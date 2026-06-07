@@ -1,13 +1,4 @@
-from .main import main, classify_error
-from .models import DiagnosticReport, DiagnosticFinding, TraceLocation, UpstreamOrigin
-from .renderer import render_text
+from .tracers import DagWalker, ColumnTracer, ColumnTraceResult, extract_snippet
+from .models import LineageStep, CompiledSnippet
 
-__all__ = [
-    'main',
-    'classify_error',
-    'DiagnosticReport',
-    'DiagnosticFinding',
-    'TraceLocation',
-    'UpstreamOrigin',
-    'render_text',
-]
+__all__ = ['DagWalker', 'ColumnTracer', 'ColumnTraceResult', 'extract_snippet', 'LineageStep', 'CompiledSnippet']

@@ -17,12 +17,14 @@ from dbt_diagnostics.models import (
     TraceLocation,
     UpstreamOrigin,
 )
+from dbt_diagnostics.tracers.snippet import extract_snippet
 
 
 _INVALID_IDENTIFIER_RE = re.compile(
     r"invalid identifier\s+'([^']+)'", re.IGNORECASE
 )
 _ERROR_LINE_RE = re.compile(r"error line (\d+)")
+_LINE_POS_RE = re.compile(r"error line (\d+) at position (\d+)")
 
 
 class SchemaChangeErrorClassifier(BaseClassifier):
@@ -66,6 +68,23 @@ class SchemaChangeErrorClassifier(BaseClassifier):
         id_match = _INVALID_IDENTIFIER_RE.search(self.message)
         column_name = id_match.group(1) if id_match else "UNKNOWN"
 
+        # Build compiled snippet around the error line
+        snippet = None
+        if self.compiled_code and location.line_number:
+            pos_match = _LINE_POS_RE.search(self.message)
+            error_position = int(pos_match.group(2)) if pos_match else None
+            snippet = extract_snippet(
+                self.compiled_code, location.line_number,
+                error_position=error_position,
+            )
+
+        # Build column lineage trail
+        lineage_trail = self.context.dag_walker.trace_column_lineage(
+            self.unique_id,
+            column_name,
+            run_results=self.context.run_results,
+        )
+
         # Check if the column is declared in any upstream parent
         origin = self.context.dag_walker.find_column_origin(self.unique_id, column_name)
 
@@ -75,6 +94,10 @@ class SchemaChangeErrorClassifier(BaseClassifier):
         else:
             # Column is NOT in any parent's manifest declaration => simpler case
             finding = self._diagnose_possible_drift(column_name, location)
+
+        # Attach snippet and lineage trail to the finding
+        finding.compiled_snippet = snippet
+        finding.lineage_trail = lineage_trail
 
         report.findings.append(finding)
         return report

@@ -8,7 +8,12 @@ with live Snowflake data. Each error class gets different enrichment logic.
 import re
 from typing import Optional
 
-from dbt_diagnostics.models import DiagnosticReport, EnrichmentData, ColumnInfo
+from dbt_diagnostics.models import (
+    DiagnosticReport,
+    DisconnectVerdict,
+    EnrichmentData,
+    ColumnInfo,
+)
 from dbt_diagnostics.enrichers.params import get_parameters, get_parameter_with_level
 from dbt_diagnostics.enrichers.schema_inspector import (
     describe_table,
@@ -41,6 +46,10 @@ def enrich_reports(conn, reports: list[DiagnosticReport], run_results: dict):
                 _enrich_contract_violation(conn, finding)
             elif report.error_class == "runtime_error":
                 _enrich_runtime_error(conn, finding, report, result_data)
+
+            # Enrich lineage trail steps with live DESCRIBE TABLE data
+            if finding.lineage_trail:
+                _enrich_lineage_trail(conn, finding)
 
     # Post-enrichment reconciliation pass
     _reconcile_findings(reports)
@@ -133,6 +142,142 @@ def _enrich_runtime_error(conn, finding, report, result_data):
                 enrichment.matched_error_code = match["error_code"]
 
     finding.enrichment = enrichment
+
+
+def _enrich_lineage_trail(conn, finding) -> None:
+    """
+    For each LineageStep with a relation_name, run DESCRIBE TABLE to populate
+    live_status and live_detail. For column-lineage findings, also checks
+    whether the specific target column exists in each relation.
+
+    This uses cloud-services-layer metadata queries (DESCRIBE TABLE, table_exists)
+    which cost $0 and don't require a running warehouse.
+    """
+    for step in finding.lineage_trail:
+        if not step.relation_name:
+            continue
+
+        try:
+            exists = table_exists(conn, step.relation_name)
+        except Exception:
+            # Graceful degradation: if DESCRIBE fails, leave live fields None
+            continue
+
+        if exists:
+            step.live_status = "exists"
+            # For column-lineage: check if specific column is present
+            if finding.target_identifier:
+                try:
+                    cols = describe_table(conn, step.relation_name)
+                    col_names = [c.name.upper() for c in cols]
+                    target_upper = finding.target_identifier.upper()
+                    if target_upper in col_names:
+                        step.live_detail = f"column '{finding.target_identifier}' found"
+                    else:
+                        step.live_status = "no_column"
+                        step.live_detail = (
+                            f"column '{finding.target_identifier}' NOT found"
+                        )
+                except Exception:
+                    step.live_detail = "table exists (column check failed)"
+            else:
+                step.live_detail = "table exists"
+        else:
+            step.live_status = "missing"
+            step.live_detail = "table does NOT exist in Snowflake"
+
+    # After populating live_status, identify the disconnect point
+    _identify_disconnect(finding)
+
+
+def _identify_disconnect(finding) -> None:
+    """
+    Scan the lineage trail for the point where status flips from passing to
+    failing. Sets finding.disconnect with a DisconnectVerdict.
+
+    A node is "passing" if live_status is "exists" or manifest_status is
+    "declared". A node is "failing" if live_status is "missing"/"no_column"
+    or manifest_status is "not_found"/"missing".
+    """
+    trail = finding.lineage_trail
+    if len(trail) < 2:
+        return
+    # Don't overwrite an existing disconnect verdict from the classifier
+    if finding.disconnect is not None:
+        return
+
+    for i in range(len(trail) - 1):
+        current = trail[i]
+        next_step = trail[i + 1]
+        if _is_passing(current) and _is_failing(next_step):
+            finding.disconnect = DisconnectVerdict(
+                between_node_a=next_step.short_name,
+                between_node_b=current.short_name,
+                explanation=_build_verdict_text(current, next_step, finding),
+                confidence="high" if next_step.live_status else "medium",
+            )
+            return
+
+    # No clear pass->fail boundary but there are failures
+    failing_steps = [s for s in trail if _is_failing(s)]
+    if failing_steps:
+        last_fail = failing_steps[-1]
+        finding.disconnect = DisconnectVerdict(
+            between_node_a=trail[0].short_name,
+            between_node_b=last_fail.short_name,
+            explanation=(
+                f"'{last_fail.short_name}' is the furthest upstream failure."
+            ),
+            confidence="low",
+        )
+
+
+def _is_passing(step) -> bool:
+    """A step is passing if live says exists or manifest says declared."""
+    if step.live_status == "exists":
+        return True
+    if step.live_status in ("missing", "no_column"):
+        return False
+    if step.manifest_status == "declared":
+        return True
+    if step.run_status == "pass":
+        return True
+    return False
+
+
+def _is_failing(step) -> bool:
+    """A step is failing if live/manifest/run indicate absence or error."""
+    if step.live_status in ("missing", "no_column"):
+        return True
+    if step.manifest_status in ("not_found", "missing"):
+        return True
+    if step.run_status == "error":
+        return True
+    return False
+
+
+def _build_verdict_text(passing_step, failing_step, finding) -> str:
+    """Build a human-readable verdict explanation."""
+    target = finding.target_identifier or "target"
+    if failing_step.live_status == "missing":
+        return (
+            f"'{failing_step.short_name}' does not exist in Snowflake. "
+            f"'{passing_step.short_name}' references it but it was never materialized."
+        )
+    if failing_step.live_status == "no_column":
+        return (
+            f"'{failing_step.short_name}' exists but column '{target}' is not present. "
+            f"The column may have been renamed or removed."
+        )
+    if failing_step.manifest_status in ("not_found", "missing"):
+        return (
+            f"'{failing_step.short_name}' is not declared in the dbt manifest. "
+            f"It may be a typo or the source/model was never added."
+        )
+    return (
+        f"Disconnect between '{passing_step.short_name}' and "
+        f"'{failing_step.short_name}'."
+    )
 
 
 def _find_result(run_results: dict, unique_id: str) -> Optional[dict]:

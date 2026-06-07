@@ -27,6 +27,7 @@ class DiagnosticContext:
     models_dir: Path
     compiled_dir: Path
     manifest: Optional[dict] = None
+    run_results: Optional[dict] = None
 
 
 class BaseClassifier(ABC):

@@ -6,6 +6,10 @@
 {% endif %}
     {{ "Problem:" | cyan }}    {{ finding.summary }}
 
+{% if finding.compiled_snippet or finding.lineage_trail %}
+{% set trace_target = "data flow" %}
+{% include "findings/lineage_trace.j2" %}
+{% endif %}
 {% if finding.fix_suggestion %}
   {{ "FIX:" | bold_white }}
 {% for line in finding.fix_suggestion.splitlines() %}

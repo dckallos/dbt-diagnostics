@@ -12,9 +12,11 @@ from dbt_diagnostics.classifiers.base import BaseClassifier
 from dbt_diagnostics.models import (
     DiagnosticReport,
     DiagnosticFinding,
+    LineageStep,
     TraceLocation,
 )
 from dbt_diagnostics.tracers.column_tracer import build_schema_from_manifest
+from dbt_diagnostics.tracers.snippet import extract_snippet
 
 
 _NUMERIC_OVERFLOW_RE = re.compile(
@@ -26,6 +28,7 @@ _STRING_TOO_LONG_RE = re.compile(
 )
 _DIVISION_BY_ZERO_RE = re.compile(r"Division by zero", re.IGNORECASE)
 _ERROR_LINE_RE = re.compile(r"error line (\d+)")
+_LINE_POS_RE = re.compile(r"error line (\d+) at position (\d+)")
 
 
 class DataErrorClassifier(BaseClassifier):
@@ -55,6 +58,19 @@ class DataErrorClassifier(BaseClassifier):
         if line_match:
             location.line_number = int(line_match.group(1))
 
+        # Build compiled snippet around the error line
+        snippet = None
+        if self.compiled_code and location.line_number:
+            pos_match = _LINE_POS_RE.search(self.message)
+            error_position = int(pos_match.group(2)) if pos_match else None
+            snippet = extract_snippet(
+                self.compiled_code, location.line_number,
+                error_position=error_position,
+            )
+
+        # Build a basic 2-node trail: failing model -> upstream source(s)
+        lineage_trail = self._build_basic_trail()
+
         if _DIVISION_BY_ZERO_RE.search(self.message):
             finding = self._diagnose_division_by_zero(location)
         elif _STRING_TOO_LONG_RE.search(self.message):
@@ -62,8 +78,75 @@ class DataErrorClassifier(BaseClassifier):
         else:
             finding = self._diagnose_numeric_overflow(location)
 
+        # Attach snippet and lineage trail to the finding
+        finding.compiled_snippet = snippet
+        finding.lineage_trail = lineage_trail
+
         report.findings.append(finding)
         return report
+
+    def _build_basic_trail(self) -> list[LineageStep]:
+        """
+        Build a simple 2-node trail: the failing model and its immediate parents.
+
+        Data errors originate inside the model's SQL (a cast or division),
+        not from a missing column/object. The trail shows the model and
+        the source(s) that supply data with potentially bad values.
+        """
+        trail = []
+
+        # Step 0: the failing model itself
+        node = self.context.dag_walker.get_node(self.unique_id)
+        short_name = self.unique_id.split(".")[-1] if self.unique_id else "unknown"
+        node_type = self.unique_id.split(".")[0] if "." in self.unique_id else "model"
+
+        trail.append(LineageStep(
+            node_id=self.unique_id,
+            node_type=node_type,
+            short_name=short_name,
+            file_path=(node or {}).get("original_file_path"),
+            relation_name=(node or {}).get("relation_name"),
+            depth=0,
+            manifest_status="not_checked",
+            manifest_detail=None,
+            run_status=self._get_run_status(self.unique_id),
+            annotation="failing model (data error in expression)",
+        ))
+
+        # Step 1: immediate parents (sources or upstream models)
+        parents = self.context.dag_walker.get_parents(self.unique_id)
+        for pid in parents:
+            parent_node = (
+                self.context.dag_walker.get_node(pid)
+                or self.context.dag_walker.sources.get(pid)
+            )
+            p_short = pid.split(".")[-1] if pid else "unknown"
+            p_type = pid.split(".")[0] if "." in pid else "source"
+
+            trail.append(LineageStep(
+                node_id=pid,
+                node_type=p_type,
+                short_name=p_short,
+                file_path=(parent_node or {}).get("original_file_path"),
+                relation_name=(parent_node or {}).get("relation_name"),
+                depth=1,
+                manifest_status="declared",
+                manifest_detail="supplies data that may contain bad values",
+                run_status=self._get_run_status(pid),
+                annotation=None,
+            ))
+
+        return trail
+
+    def _get_run_status(self, unique_id: str) -> Optional[str]:
+        """Look up run_status from run_results if available."""
+        if not self.context.run_results:
+            return None
+        results = self.context.run_results.get("results", [])
+        for r in results:
+            if r.get("unique_id") == unique_id:
+                return r.get("status")
+        return None
 
     def _diagnose_numeric_overflow(self, location: TraceLocation) -> DiagnosticFinding:
         match = _NUMERIC_OVERFLOW_RE.search(self.message)

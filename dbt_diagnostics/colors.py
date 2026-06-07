@@ -86,3 +86,8 @@ def cyan(text: str, *, enabled: bool = True) -> str:
 
 def dim(text: str, *, enabled: bool = True) -> str:
     return colorize(text, DIM, enabled=enabled)
+
+
+def status_indicator(emoji: str, text: str, *, color_enabled: bool = True) -> str:
+    """Return emoji when color enabled, bracketed text when not."""
+    return emoji if color_enabled else text

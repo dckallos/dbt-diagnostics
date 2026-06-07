@@ -20,6 +20,7 @@ from dbt_diagnostics.models import (
     DiagnosticFinding,
     TraceLocation,
 )
+from dbt_diagnostics.tracers.snippet import extract_snippet
 
 
 # Regex patterns for common compilation error shapes
@@ -50,8 +51,18 @@ class CompilationErrorClassifier(BaseClassifier):
             raw_message=self.message,
         )
 
-        # No compiled_code exists for compilation errors (Jinja failed before SQL)
+        # No compiled_code exists for true Jinja compilation errors (Jinja failed
+        # before SQL generation). But if compiled_code is present (edge case),
+        # extract a snippet for context.
+        snippet = None
+        line_match = _JINJA_LINE_RE.search(self.message)
+        if self.compiled_code and line_match:
+            snippet = extract_snippet(
+                self.compiled_code, int(line_match.group(1))
+            )
+
         finding = self._classify_compilation_error()
+        finding.compiled_snippet = snippet
         report.findings.append(finding)
         return report
 

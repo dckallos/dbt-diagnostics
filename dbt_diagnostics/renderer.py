@@ -18,6 +18,7 @@ from dbt_diagnostics.colors import (
     green,
     cyan,
     dim,
+    status_indicator,
 )
 from dbt_diagnostics.models import DiagnosticReport, LintFinding
 
@@ -51,7 +52,7 @@ def _summarize_skipped(skipped_models: list[str]) -> dict:
     return {"models": models, "test_count": test_count}
 
 
-def _build_env(color_enabled: bool = False) -> Environment:
+def _build_env(color_enabled: bool = False, verbose: bool = False) -> Environment:
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
         autoescape=select_autoescape([]),
@@ -69,6 +70,13 @@ def _build_env(color_enabled: bool = False) -> Environment:
     env.filters["green"] = lambda text: green(text, enabled=color_enabled)
     env.filters["cyan"] = lambda text: cyan(text, enabled=color_enabled)
     env.filters["dim"] = lambda text: dim(text, enabled=color_enabled)
+    env.filters["status_indicator"] = (
+        lambda emoji, text="": status_indicator(emoji, text, color_enabled=color_enabled)
+    )
+
+    # Globals accessible from all templates (including included partials)
+    env.globals["color_enabled"] = color_enabled
+    env.globals["verbose"] = verbose
 
     return env
 
@@ -83,7 +91,7 @@ def render_text(
     color_enabled: bool = False,
 ) -> str:
     """Render all reports using the Jinja2 report template."""
-    env = _build_env(color_enabled=color_enabled)
+    env = _build_env(color_enabled=color_enabled, verbose=verbose)
     template = env.get_template("report.j2")
 
     skipped_summary = _summarize_skipped(skipped_models)
