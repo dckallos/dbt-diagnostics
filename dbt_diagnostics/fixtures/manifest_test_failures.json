@@ -1,111 +1,186 @@
 {
   "metadata": {
-    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v11/manifest.json",
-    "dbt_version": "1.8.0"
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "dbt_version": "1.11.11",
+    "generated_at": "2026-06-07T17:45:55.152898Z",
+    "invocation_id": "fixture-manifest",
+    "project_name": "artwork_pipeline",
+    "adapter_type": "snowflake"
   },
   "nodes": {
-    "model.artwork_pipeline.stg_met__artworks": {
-      "unique_id": "model.artwork_pipeline.stg_met__artworks",
-      "resource_type": "model",
-      "path": "staging/stg_met__artworks.sql",
-      "original_file_path": "models/staging/stg_met__artworks.sql",
-      "name": "stg_met__artworks",
-      "relation_name": "ARTWORK_DB.SILVER.STG_MET__ARTWORKS",
-      "depends_on": {"nodes": ["source.artwork_pipeline.bronze.raw_met_objects"]},
-      "columns": {"object_id": {"name": "object_id"}, "title": {"name": "title"}},
-      "compiled_code": "select * from ARTWORK_DB.BRONZE.RAW_MET_OBJECTS"
+    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50.818205a8b7": {
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50.818205a8b7",
+      "resource_type": "test",
+      "package_name": "artwork_pipeline",
+      "name": "dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50",
+      "original_file_path": "models/marts/_marts__models.yml",
+      "path": "dbt_expectations_expect_table__98b6db461d321538c82cbd0334d55893.sql",
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.dim_artists"]},
+      "config": {"severity": "ERROR", "materialized": "test"},
+      "attached_node": "model.artwork_pipeline.dim_artists"
     },
-    "model.artwork_pipeline.stg_met__artists": {
-      "unique_id": "model.artwork_pipeline.stg_met__artists",
-      "resource_type": "model",
-      "path": "staging/stg_met__artists.sql",
-      "original_file_path": "models/staging/stg_met__artists.sql",
-      "name": "stg_met__artists",
-      "relation_name": "ARTWORK_DB.SILVER.STG_MET__ARTISTS",
-      "depends_on": {"nodes": ["source.artwork_pipeline.bronze.raw_met_objects"]},
-      "columns": {"artist_id": {"name": "artist_id"}},
-      "compiled_code": "select distinct artist_display_name from ARTWORK_DB.BRONZE.RAW_MET_OBJECTS"
+    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artworks_1000000__100.bd83d5f1a9": {
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artworks_1000000__100.bd83d5f1a9",
+      "resource_type": "test",
+      "package_name": "artwork_pipeline",
+      "name": "dbt_expectations_expect_table_row_count_to_be_between_dim_artworks_1000000__100",
+      "original_file_path": "models/marts/_marts__models.yml",
+      "path": "dbt_expectations_expect_table__2437f534c7ad571820982f5422ad57e9.sql",
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.dim_artworks"]},
+      "config": {"severity": "ERROR", "materialized": "test"},
+      "attached_node": "model.artwork_pipeline.dim_artworks"
+    },
+    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__enrichment_status_1000000__100.761c259e82": {
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__enrichment_status_1000000__100.761c259e82",
+      "resource_type": "test",
+      "package_name": "artwork_pipeline",
+      "name": "dbt_expectations_expect_table_row_count_to_be_between_stg_met__enrichment_status_1000000__100",
+      "original_file_path": "models/staging/met/_met__models.yml",
+      "path": "dbt_expectations_expect_table__adc4a59cfbe2c864930a08ad03e0c828.sql",
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.stg_met__enrichment_status"]},
+      "config": {"severity": "error", "materialized": "test"},
+      "attached_node": "model.artwork_pipeline.stg_met__enrichment_status"
+    },
+    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_500__50.89494e8092": {
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_500__50.89494e8092",
+      "resource_type": "test",
+      "package_name": "artwork_pipeline",
+      "name": "dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_500__50",
+      "original_file_path": "models/staging/met/_met__models.yml",
+      "path": "dbt_expectations_expect_table__7b596980d5d83630c81e752320dc26b4.sql",
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.stg_met__artists"]},
+      "config": {"severity": "error", "materialized": "test"},
+      "attached_node": "model.artwork_pipeline.stg_met__artists"
+    },
+    "test.dbt_project_evaluator.is_empty_fct_missing_primary_key_tests_.4d10d48da0": {
+      "unique_id": "test.dbt_project_evaluator.is_empty_fct_missing_primary_key_tests_.4d10d48da0",
+      "resource_type": "test",
+      "package_name": "dbt_project_evaluator",
+      "name": "is_empty_fct_missing_primary_key_tests_",
+      "original_file_path": "models/marts/tests/testing.yml",
+      "path": "is_empty_fct_missing_primary_key_tests_.sql",
+      "depends_on": {"macros": [], "nodes": ["model.dbt_project_evaluator.fct_missing_primary_key_tests"]},
+      "config": {"severity": "warn", "materialized": "test"},
+      "attached_node": "model.dbt_project_evaluator.fct_missing_primary_key_tests"
+    },
+    "test.artwork_pipeline.accepted_values_stg_met__enrichment_status_image_status__unknown__live__dead.c22fbb680b": {
+      "unique_id": "test.artwork_pipeline.accepted_values_stg_met__enrichment_status_image_status__unknown__live__dead.c22fbb680b",
+      "resource_type": "test",
+      "package_name": "artwork_pipeline",
+      "name": "accepted_values_stg_met__enrichment_status_image_status__unknown__live__dead",
+      "original_file_path": "models/staging/met/_met__models.yml",
+      "path": "accepted_values_stg_met__enric_dbfcb4e498096309e5a6a5a922ddccdd.sql",
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.stg_met__enrichment_status"]},
+      "config": {"severity": "warn", "materialized": "test"},
+      "attached_node": "model.artwork_pipeline.stg_met__enrichment_status"
+    },
+    "test.artwork_pipeline.accepted_values_stg_met__images_image_type__primary__additional.0b1b5e104c": {
+      "unique_id": "test.artwork_pipeline.accepted_values_stg_met__images_image_type__primary__additional.0b1b5e104c",
+      "resource_type": "test",
+      "package_name": "artwork_pipeline",
+      "name": "accepted_values_stg_met__images_image_type__primary__additional",
+      "original_file_path": "models/staging/met/_met__models.yml",
+      "path": "accepted_values_stg_met__images_image_type__primary__additional.sql",
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.stg_met__images"]},
+      "config": {"severity": "ERROR", "materialized": "test"},
+      "attached_node": "model.artwork_pipeline.stg_met__images"
     },
     "model.artwork_pipeline.dim_artists": {
       "unique_id": "model.artwork_pipeline.dim_artists",
       "resource_type": "model",
-      "path": "marts/dim_artists.sql",
-      "original_file_path": "models/marts/dim_artists.sql",
+      "package_name": "artwork_pipeline",
       "name": "dim_artists",
-      "relation_name": "ARTWORK_DB.GOLD.DIM_ARTISTS",
-      "depends_on": {"nodes": ["model.artwork_pipeline.stg_met__artists"]},
-      "columns": {"artist_id": {"name": "artist_id"}},
-      "compiled_code": "select * from ARTWORK_DB.SILVER.STG_MET__ARTISTS"
+      "original_file_path": "models/marts/dim_artists.sql",
+      "path": "marts/dim_artists.sql",
+      "relation_name": "ARTWORK_DB.GOLD.dim_artists",
+      "config": {"materialized": "table", "schema": "GOLD"},
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.stg_met__artists"]}
     },
-    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None.abc123": {
-      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None.abc123",
-      "resource_type": "test",
-      "path": "dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None.sql",
-      "original_file_path": "tests/staging/test_stg_met__artworks.yml",
-      "name": "dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None",
-      "depends_on": {"nodes": ["model.artwork_pipeline.stg_met__artworks"]},
-      "columns": {},
-      "compiled_code": "select count(*) as row_count from ARTWORK_DB.SILVER.STG_MET__ARTWORKS having not(count(*) >= 1)"
+    "model.artwork_pipeline.dim_artworks": {
+      "unique_id": "model.artwork_pipeline.dim_artworks",
+      "resource_type": "model",
+      "package_name": "artwork_pipeline",
+      "name": "dim_artworks",
+      "original_file_path": "models/marts/dim_artworks.sql",
+      "path": "marts/dim_artworks.sql",
+      "relation_name": "ARTWORK_DB.GOLD.dim_artworks",
+      "config": {"materialized": "table", "schema": "GOLD"},
+      "depends_on": {"macros": [], "nodes": ["model.artwork_pipeline.stg_met__artworks", "model.artwork_pipeline.dim_artists"]}
     },
-    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_1_None.def456": {
-      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_1_None.def456",
-      "resource_type": "test",
-      "path": "dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_1_None.sql",
-      "original_file_path": "tests/staging/test_stg_met__artists.yml",
-      "name": "dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_1_None",
-      "depends_on": {"nodes": ["model.artwork_pipeline.stg_met__artists"]},
-      "columns": {},
-      "compiled_code": "select count(*) as row_count from ARTWORK_DB.SILVER.STG_MET__ARTISTS having not(count(*) >= 1)"
+    "model.artwork_pipeline.stg_met__enrichment_status": {
+      "unique_id": "model.artwork_pipeline.stg_met__enrichment_status",
+      "resource_type": "model",
+      "package_name": "artwork_pipeline",
+      "name": "stg_met__enrichment_status",
+      "original_file_path": "models/staging/met/stg_met__enrichment_status.sql",
+      "path": "staging/met/stg_met__enrichment_status.sql",
+      "relation_name": "ARTWORK_DB.SILVER.stg_met__enrichment_status",
+      "config": {"materialized": "view", "schema": "SILVER"},
+      "depends_on": {"macros": [], "nodes": ["source.artwork_pipeline.met.met_enrichment_control"]}
     },
-    "test.artwork_pipeline.not_null_dim_artists_artist_id.ghi789": {
-      "unique_id": "test.artwork_pipeline.not_null_dim_artists_artist_id.ghi789",
-      "resource_type": "test",
-      "path": "not_null_dim_artists_artist_id.sql",
-      "original_file_path": "tests/marts/test_dim_artists.yml",
-      "name": "not_null_dim_artists_artist_id",
-      "depends_on": {"nodes": ["model.artwork_pipeline.dim_artists"]},
-      "columns": {},
-      "compiled_code": "select count(*) from ARTWORK_DB.GOLD.DIM_ARTISTS where artist_id is null"
+    "model.artwork_pipeline.stg_met__artists": {
+      "unique_id": "model.artwork_pipeline.stg_met__artists",
+      "resource_type": "model",
+      "package_name": "artwork_pipeline",
+      "name": "stg_met__artists",
+      "original_file_path": "models/staging/met/stg_met__artists.sql",
+      "path": "staging/met/stg_met__artists.sql",
+      "relation_name": "ARTWORK_DB.SILVER.stg_met__artists",
+      "config": {"materialized": "view", "schema": "SILVER"},
+      "depends_on": {"macros": [], "nodes": ["source.artwork_pipeline.met.raw_met_objects"]}
     },
-    "test.artwork_pipeline.unique_stg_met__artworks_object_id.jkl012": {
-      "unique_id": "test.artwork_pipeline.unique_stg_met__artworks_object_id.jkl012",
-      "resource_type": "test",
-      "path": "unique_stg_met__artworks_object_id.sql",
-      "original_file_path": "tests/staging/test_stg_met__artworks.yml",
-      "name": "unique_stg_met__artworks_object_id",
-      "depends_on": {"nodes": ["model.artwork_pipeline.stg_met__artworks"]},
-      "columns": {},
-      "compiled_code": "select object_id from ARTWORK_DB.SILVER.STG_MET__ARTWORKS group by 1 having count(*) > 1"
+    "model.artwork_pipeline.stg_met__artworks": {
+      "unique_id": "model.artwork_pipeline.stg_met__artworks",
+      "resource_type": "model",
+      "package_name": "artwork_pipeline",
+      "name": "stg_met__artworks",
+      "original_file_path": "models/staging/met/stg_met__artworks.sql",
+      "path": "staging/met/stg_met__artworks.sql",
+      "relation_name": "ARTWORK_DB.SILVER.stg_met__artworks",
+      "config": {"materialized": "view", "schema": "SILVER"},
+      "depends_on": {"macros": [], "nodes": ["source.artwork_pipeline.met.raw_met_objects"]}
     },
-    "test.artwork_pipeline.accepted_values_stg_met__artworks_department.mno345": {
-      "unique_id": "test.artwork_pipeline.accepted_values_stg_met__artworks_department.mno345",
-      "resource_type": "test",
-      "path": "accepted_values_stg_met__artworks_department.sql",
-      "original_file_path": "tests/staging/test_stg_met__artworks.yml",
-      "name": "accepted_values_stg_met__artworks_department",
-      "depends_on": {"nodes": ["model.artwork_pipeline.stg_met__artworks"]},
-      "columns": {},
-      "compiled_code": "select department from ARTWORK_DB.SILVER.STG_MET__ARTWORKS where department not in ('Paintings', 'Sculpture')"
+    "model.artwork_pipeline.stg_met__images": {
+      "unique_id": "model.artwork_pipeline.stg_met__images",
+      "resource_type": "model",
+      "package_name": "artwork_pipeline",
+      "name": "stg_met__images",
+      "original_file_path": "models/staging/met/stg_met__images.sql",
+      "path": "staging/met/stg_met__images.sql",
+      "relation_name": "ARTWORK_DB.SILVER.stg_met__images",
+      "config": {"materialized": "view", "schema": "SILVER"},
+      "depends_on": {"macros": [], "nodes": ["source.artwork_pipeline.met.raw_met_objects"]}
+    },
+    "model.dbt_project_evaluator.fct_missing_primary_key_tests": {
+      "unique_id": "model.dbt_project_evaluator.fct_missing_primary_key_tests",
+      "resource_type": "model",
+      "package_name": "dbt_project_evaluator",
+      "name": "fct_missing_primary_key_tests",
+      "original_file_path": "models/marts/tests/fct_missing_primary_key_tests.sql",
+      "path": "marts/tests/fct_missing_primary_key_tests.sql",
+      "relation_name": "ARTWORK_DB.DBT_TEST__AUDIT.fct_missing_primary_key_tests",
+      "config": {"materialized": "table", "schema": "DBT_TEST__AUDIT"},
+      "depends_on": {"macros": [], "nodes": []}
     }
   },
   "sources": {
-    "source.artwork_pipeline.bronze.raw_met_objects": {
-      "unique_id": "source.artwork_pipeline.bronze.raw_met_objects",
+    "source.artwork_pipeline.met.raw_met_objects": {
+      "unique_id": "source.artwork_pipeline.met.raw_met_objects",
       "resource_type": "source",
-      "path": "staging/src_bronze.yml",
+      "source_name": "met",
       "name": "raw_met_objects",
-      "relation_name": "ARTWORK_DB.BRONZE.RAW_MET_OBJECTS",
-      "columns": {}
+      "identifier": "RAW_MET_OBJECTS",
+      "database": "ARTWORK_DB",
+      "schema": "BRONZE"
+    },
+    "source.artwork_pipeline.met.met_enrichment_control": {
+      "unique_id": "source.artwork_pipeline.met.met_enrichment_control",
+      "resource_type": "source",
+      "source_name": "met",
+      "name": "met_enrichment_control",
+      "identifier": "MET_ENRICHMENT_CONTROL",
+      "database": "ARTWORK_DB",
+      "schema": "BRONZE"
     }
-  },
-  "parent_map": {
-    "model.artwork_pipeline.stg_met__artworks": ["source.artwork_pipeline.bronze.raw_met_objects"],
-    "model.artwork_pipeline.stg_met__artists": ["source.artwork_pipeline.bronze.raw_met_objects"],
-    "model.artwork_pipeline.dim_artists": ["model.artwork_pipeline.stg_met__artists"],
-    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None.abc123": ["model.artwork_pipeline.stg_met__artworks"],
-    "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_1_None.def456": ["model.artwork_pipeline.stg_met__artists"],
-    "test.artwork_pipeline.not_null_dim_artists_artist_id.ghi789": ["model.artwork_pipeline.dim_artists"],
-    "test.artwork_pipeline.unique_stg_met__artworks_object_id.jkl012": ["model.artwork_pipeline.stg_met__artworks"],
-    "test.artwork_pipeline.accepted_values_stg_met__artworks_department.mno345": ["model.artwork_pipeline.stg_met__artworks"]
   }
 }

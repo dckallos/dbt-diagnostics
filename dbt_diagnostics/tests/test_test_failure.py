@@ -6,6 +6,10 @@ Verifies:
 - TestFailureClassifier produces correct reports
 - Header counts include errors, fails, and warns
 - Unmaterialized model advice is correct
+
+Fixtures built from real artwork_pipeline `dbt test` output (dbt 1.11.11,
+run_results v6, manifest v12). These are NOT guesses -- they are trimmed
+subsets of actual Snowflake-targeted dbt artifacts.
 """
 
 import json
@@ -38,12 +42,13 @@ class TestFailStatusProcessing:
             _diagnose_all(run_results, manifest, paths)
         )
 
-        # 2 fail results + 1 error result = 3 reports
-        assert len(reports) == 3
-        assert error_count == 1
+        # Fixture has: 2 errors + 2 fails + 1 warn + 2 passes = 7 total
+        # Reports are generated for errors + fails = 4
+        assert len(reports) == 4
+        assert error_count == 2
         assert fail_count == 2
         assert warn_count == 1
-        assert total == 5  # 2 fail + 1 error + 1 pass + 1 warn
+        assert total == 7
 
     def test_fail_reports_have_test_failure_class(self):
         """Reports for fail-status results should have error_class='test_failure'."""
@@ -84,17 +89,17 @@ class TestFailStatusProcessing:
 
         reports, _, _, _, _, _ = _diagnose_all(run_results, manifest, paths)
 
-        # Find the artworks test failure
-        artworks_report = None
+        # Find the enrichment_status test failure (first fail in fixture)
+        enrichment_report = None
         for r in reports:
-            if "artworks" in r.unique_id and r.error_class == "test_failure":
-                artworks_report = r
+            if "enrichment_status" in r.unique_id and r.error_class == "test_failure":
+                enrichment_report = r
                 break
 
-        assert artworks_report is not None
-        assert artworks_report.has_findings
-        finding = artworks_report.findings[0]
-        assert "stg_met__artworks" in finding.target_object
+        assert enrichment_report is not None
+        assert enrichment_report.has_findings
+        finding = enrichment_report.findings[0]
+        assert "stg_met__enrichment_status" in finding.target_object
 
 
 class TestHeaderCounts:
@@ -121,12 +126,8 @@ class TestHeaderCounts:
         assert "5 warn(s)" in output
         assert "64 result(s)" in output
 
-    def test_json_output_includes_fails_and_warns(self):
-        """JSON output should include fails and warns keys."""
-        import sys
-        from unittest.mock import patch
-        from io import StringIO
-
+    def test_diagnose_all_returns_correct_counts(self):
+        """_diagnose_all should return correct error/fail/warn counts from real data."""
         from dbt_diagnostics.main import _diagnose_all
 
         run_results = json.loads(
@@ -144,10 +145,10 @@ class TestHeaderCounts:
             run_results, manifest, paths
         )
 
-        # Verify the tuple values match expected
-        assert error_count == 1
+        assert error_count == 2
         assert fail_count == 2
         assert warn_count == 1
+        assert total == 7
 
 
 class TestUnmaterializedModelAdvice:
@@ -156,8 +157,8 @@ class TestUnmaterializedModelAdvice:
     def test_parent_never_run_gives_materialization_advice(self):
         """
         When a test fails because the parent model was never materialized
-        (no run_results entry), the fix advice should say 'run dbt run -s'
-        not 'fix the error in'.
+        (Object does not exist error), the fix advice should say
+        'run dbt run -s' not 'fix the error in'.
         """
         from dbt_diagnostics.classifiers.runtime_error import RuntimeErrorClassifier
         from dbt_diagnostics.classifiers.base import DiagnosticContext
@@ -168,14 +169,16 @@ class TestUnmaterializedModelAdvice:
         manifest = json.loads(
             (FIXTURES_DIR / "manifest_test_failures.json").read_text()
         )
-        # Run results that do NOT include dim_artists
+        # Use the real error message format from dbt 1.11.11
         run_results = {
             "results": [
                 {
                     "status": "error",
-                    "unique_id": "test.artwork_pipeline.not_null_dim_artists_artist_id.ghi789",
-                    "message": "Database Error in model artwork_pipeline.dim_artists: Object 'ARTWORK_DB.GOLD.DIM_ARTISTS' does not exist or not authorized.",
-                    "compiled_code": "select count(*) from ARTWORK_DB.GOLD.DIM_ARTISTS where artist_id is null",
+                    "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50.818205a8b7",
+                    "message": "Database Error in test dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50 (models/marts/_marts__models.yml)\\n  002003 (42S02): SQL compilation error:\\n  Object 'ARTWORK_DB.GOLD.DIM_ARTISTS' does not exist or not authorized.",
+                    "compiled_code": "\\n\\n\\n\\n    with grouped_expression as (\\n    select\\n( 1=1 and count(*) >= 50 and count(*) <= 1000000\\n)\\n as expression\\n\\n    from ARTWORK_DB.GOLD.dim_artists\\n),\\nvalidation_errors as (\\n    select *\\n    from grouped_expression\\n    where not(expression = true)\\n)\\nselect *\\nfrom validation_errors",
+                    "failures": null,
+                    "adapter_response": {}
                 }
             ]
         }
