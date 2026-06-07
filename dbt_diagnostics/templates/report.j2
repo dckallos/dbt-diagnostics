@@ -1,13 +1,19 @@
 
 ======================================================================
   {{ "dbt Diagnostics" | bold_white }}
-  {{ total }} result(s) | {{ errors }} error(s) | {{ skipped }} skipped
+  {{ total }} result(s) | {{ errors }} error(s) | {{ fails }} fail(s) | {{ warns }} warn(s) | {{ skipped }} skipped
 ======================================================================
 {% for report in reports %}
 
+{% if report.error_class == "test_failure" %}
+  {{ "FAIL:" | bold_yellow }} {{ report.unique_id | bold }}
+  {{ "Class:" | bold_white }} {{ report.error_class }}
+  ======================================================================
+{% else %}
   {{ "ERROR:" | bold_red }} {{ report.unique_id | bold }}
   {{ "Class:" | bold_white }} {{ report.error_class }}
   ======================================================================
+{% endif %}
 {% if report.cascade_note %}
   {{ "CASCADE:" | bold_yellow }}
     {{ report.cascade_note | dim }}

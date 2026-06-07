@@ -30,7 +30,7 @@ from typing import Optional
 
 import yaml
 
-from dbt_diagnostics.classifiers import classify, DiagnosticContext
+from dbt_diagnostics.classifiers import classify, DiagnosticContext, TestFailureClassifier
 from dbt_diagnostics.colors import should_use_color
 from dbt_diagnostics.discover import (
     find_dbt_project,
@@ -139,7 +139,11 @@ def classify_error(message: str) -> str:
 
 
 def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
-    """Core logic: classify and diagnose all errors. Returns (reports, skipped_ids, total)."""
+    """
+    Core logic: classify and diagnose all errors and failures.
+
+    Returns (reports, skipped_ids, total, error_count, fail_count, warn_count).
+    """
     dag_walker = DagWalker(manifest)
     column_tracer = ColumnTracer(paths["models_dir"], paths["compiled_dir"])
     context = DiagnosticContext(
@@ -152,14 +156,23 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
     )
 
     errors = []
+    failures = []
     skipped = []
+    warn_count = 0
     for result in run_results["results"]:
-        if result["status"] == "error":
+        status = result["status"]
+        if status == "error":
             errors.append(result)
-        elif result["status"] == "skipped":
+        elif status == "fail":
+            failures.append(result)
+        elif status == "skipped":
             skipped.append(result)
+        elif status == "warn":
+            warn_count += 1
 
     reports = []
+
+    # Process errors (SQL compilation/runtime failures)
     for result in errors:
         message = result.get("message", "")
         classifier_cls = classify(message)
@@ -175,13 +188,19 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
             )
         reports.append(report)
 
+    # Process test failures (assertion violations)
+    for result in failures:
+        classifier = TestFailureClassifier(result=result, context=context)
+        report = classifier.diagnose()
+        reports.append(report)
+
     skipped_ids = [s.get("unique_id", "unknown") for s in skipped]
     total = len(run_results["results"])
 
     # Post-classification: detect cascading errors
     _annotate_cascading_errors(reports, dag_walker)
 
-    return reports, skipped_ids, total
+    return reports, skipped_ids, total, len(errors), len(failures), warn_count
 
 
 def _annotate_cascading_errors(reports: list[DiagnosticReport], dag_walker: DagWalker):
@@ -282,7 +301,9 @@ def cmd_diagnose(args):
     run_results = load_json(paths["run_results"], "run_results.json")
     manifest = load_json(paths["manifest"], "manifest.json")
 
-    reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+    reports, skipped_ids, total, error_count, fail_count, warn_count = _diagnose_all(
+        run_results, manifest, paths
+    )
 
     # Diff-aware diagnosis (optional)
     prev_manifest_path = getattr(args, "previous_manifest", None)
@@ -305,7 +326,9 @@ def cmd_diagnose(args):
         output = {
             "schema_version": "1.0",
             "total_results": total,
-            "errors": len(reports),
+            "errors": error_count,
+            "fails": fail_count,
+            "warns": warn_count,
             "skipped": len(skipped_ids),
             "reports": [r.to_json_dict() for r in reports],
         }
@@ -314,7 +337,9 @@ def cmd_diagnose(args):
         text = render_text(
             reports=reports,
             total=total,
-            errors=len(reports),
+            errors=error_count,
+            fails=fail_count,
+            warns=warn_count,
             skipped=len(skipped_ids),
             skipped_models=skipped_ids,
             verbose=args.verbose,
@@ -322,7 +347,7 @@ def cmd_diagnose(args):
         )
         print(text)
 
-    # Exit 1 when errors were diagnosed (CI can gate on this)
+    # Exit 1 when errors or failures were diagnosed (CI can gate on this)
     if reports and not getattr(args, "no_fail", False):
         sys.exit(1)
 
@@ -357,12 +382,16 @@ def cmd_demo(args):
             "compiled_dir": Path("/project/target/compiled"),
         }
 
-        reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+        reports, skipped_ids, total, error_count, fail_count, warn_count = _diagnose_all(
+            run_results, manifest, paths
+        )
 
         text = render_text(
             reports=reports,
             total=total,
-            errors=len(reports),
+            errors=error_count,
+            fails=fail_count,
+            warns=warn_count,
             skipped=len(skipped_ids),
             skipped_models=skipped_ids,
             verbose=args.verbose,

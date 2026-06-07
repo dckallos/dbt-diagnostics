@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v5/run-results.json",
+    "dbt_version": "1.8.0",
+    "generated_at": "2025-06-01T12:00:00.000Z",
+    "invocation_id": "test-fixture-failures",
+    "env": {}
+  },
+  "results": [
+    {
+      "status": "fail",
+      "timing": [],
+      "thread_id": "Thread-1",
+      "execution_time": 0.5,
+      "adapter_response": {"_message": "SUCCESS 1"},
+      "message": "Got 0 results, configured to fail if < 1",
+      "failures": 1,
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None.abc123",
+      "compiled_code": "select count(*) as row_count from ARTWORK_DB.SILVER.STG_MET__ARTWORKS having not(count(*) >= 1)"
+    },
+    {
+      "status": "fail",
+      "timing": [],
+      "thread_id": "Thread-2",
+      "execution_time": 0.4,
+      "adapter_response": {"_message": "SUCCESS 1"},
+      "message": "Got 0 results, configured to fail if < 1",
+      "failures": 1,
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_1_None.def456",
+      "compiled_code": "select count(*) as row_count from ARTWORK_DB.SILVER.STG_MET__ARTISTS having not(count(*) >= 1)"
+    },
+    {
+      "status": "error",
+      "timing": [],
+      "thread_id": "Thread-3",
+      "execution_time": 1.2,
+      "adapter_response": {"_message": "ERROR"},
+      "message": "Database Error in model artwork_pipeline.dim_artists: Object 'ARTWORK_DB.GOLD.DIM_ARTISTS' does not exist or not authorized.",
+      "unique_id": "test.artwork_pipeline.not_null_dim_artists_artist_id.ghi789",
+      "compiled_code": "select count(*) from ARTWORK_DB.GOLD.DIM_ARTISTS where artist_id is null"
+    },
+    {
+      "status": "pass",
+      "timing": [],
+      "thread_id": "Thread-4",
+      "execution_time": 0.3,
+      "adapter_response": {"_message": "SUCCESS 0"},
+      "message": "Pass",
+      "unique_id": "test.artwork_pipeline.unique_stg_met__artworks_object_id.jkl012"
+    },
+    {
+      "status": "warn",
+      "timing": [],
+      "thread_id": "Thread-5",
+      "execution_time": 0.2,
+      "adapter_response": {"_message": "SUCCESS 3"},
+      "message": "Got 3 results, configured to warn if != 0",
+      "unique_id": "test.artwork_pipeline.accepted_values_stg_met__artworks_department.mno345"
+    }
+  ],
+  "elapsed_time": 5.0
+}

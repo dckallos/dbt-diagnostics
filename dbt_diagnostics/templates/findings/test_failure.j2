@@ -1,0 +1,25 @@
+
+  {{ "TEST FAILURE:" | bold_white }}
+    {{ "Test:" | cyan }}       {{ finding.summary }}
+{% if finding.location and finding.location.file_path %}
+    {{ "File:" | cyan }}       {{ finding.location.file_path }}
+{% endif %}
+{% if finding.target_object %}
+    {{ "Model:" | cyan }}      {{ finding.target_object | short_name }}
+{% endif %}
+
+{% if finding.fix_suggestion %}
+  {{ "FIX:" | bold_white }}
+{% for line in finding.fix_suggestion.splitlines() %}
+    {{ line | green }}
+{% endfor %}
+
+{% endif %}
+{% if verbose %}
+{% if finding.explanation %}
+  {{ "EXPLANATION:" | bold_white }}
+{% for line in finding.explanation.split('. ') %}
+    {{ line | dim }}{{ '.' if not line.endswith('.') else '' }}
+{% endfor %}
+{% endif %}
+{% endif %}

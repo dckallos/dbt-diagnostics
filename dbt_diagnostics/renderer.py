@@ -89,6 +89,8 @@ def render_text(
     skipped_models: list[str],
     verbose: bool = False,
     color_enabled: bool = False,
+    fails: int = 0,
+    warns: int = 0,
 ) -> str:
     """Render all reports using the Jinja2 report template."""
     env = _build_env(color_enabled=color_enabled, verbose=verbose)
@@ -100,6 +102,8 @@ def render_text(
         reports=reports,
         total=total,
         errors=errors,
+        fails=fails,
+        warns=warns,
         skipped=skipped,
         skipped_models=skipped_models,
         skipped_summary=skipped_summary,
