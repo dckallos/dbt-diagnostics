@@ -60,6 +60,14 @@ def compilation_manifest():
                 "columns": {},
                 "depends_on": {"nodes": []},
             },
+            "model.dbt_project_evaluator.base_node_relationships": {
+                "unique_id": "model.dbt_project_evaluator.base_node_relationships",
+                "resource_type": "model",
+                "original_file_path": "models/staging/graph/base/base_node_relationships.sql",
+                "path": "staging/graph/base/base_node_relationships.sql",
+                "columns": {},
+                "depends_on": {"nodes": []},
+            },
         },
         "sources": {},
         "parent_map": {
@@ -162,3 +170,64 @@ class TestGenericCompilationError:
         finding = report.findings[0]
         assert finding.location.line_number == 12
         assert finding.fix_suggestion is not None
+
+
+class TestMaterializationMismatch:
+    """Tests for the materialization mismatch sub-classifier."""
+
+    def test_diagnose_materialization_mismatch(
+        self, compilation_errors_results, compilation_manifest
+    ):
+        result = compilation_errors_results["results"][3]
+        ctx = _make_context(compilation_manifest)
+
+        classifier = CompilationErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        assert report.error_class == "compilation_error"
+        assert report.has_findings
+        finding = report.findings[0]
+        assert "Materialization mismatch" in finding.summary
+        assert "table" in finding.summary
+        assert "table" in finding.fix_suggestion
+        assert "dbt_project.yml" in finding.fix_suggestion
+
+    def test_extracts_macro_name(
+        self, compilation_errors_results, compilation_manifest
+    ):
+        result = compilation_errors_results["results"][3]
+        ctx = _make_context(compilation_manifest)
+
+        classifier = CompilationErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        # Should mention the enforcing macro
+        assert "check_model_is_table" in finding.explanation
+
+    def test_extracts_package_name(
+        self, compilation_errors_results, compilation_manifest
+    ):
+        result = compilation_errors_results["results"][3]
+        ctx = _make_context(compilation_manifest)
+
+        classifier = CompilationErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        # Should mention the package name from unique_id
+        assert "dbt_project_evaluator" in finding.explanation
+
+    def test_not_classified_as_jinja_error(
+        self, compilation_errors_results, compilation_manifest
+    ):
+        """Materialization mismatch should NOT fall through to generic Jinja handler."""
+        result = compilation_errors_results["results"][3]
+        ctx = _make_context(compilation_manifest)
+
+        classifier = CompilationErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        assert "Jinja" not in finding.summary
+        assert "syntax" not in finding.fix_suggestion.lower()

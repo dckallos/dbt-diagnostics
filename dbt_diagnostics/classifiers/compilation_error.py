@@ -32,6 +32,9 @@ _DEPENDS_ON_RE = re.compile(
     r"depends on a node named '([^']+)' which was not found", re.IGNORECASE
 )
 _JINJA_LINE_RE = re.compile(r"line (\d+)")
+_MATERIALIZATION_RE = re.compile(
+    r"[Mm]odel must use the (\w+) materialization"
+)
 
 
 class CompilationErrorClassifier(BaseClassifier):
@@ -82,7 +85,13 @@ class CompilationErrorClassifier(BaseClassifier):
             target_name = ref_match.group(1)
             return self._diagnose_ref_not_found(target_name)
 
-        # Case 3: Generic compilation error (Jinja syntax, etc.)
+        # Case 3: Materialization mismatch (package macro enforces a specific materialization)
+        mat_match = _MATERIALIZATION_RE.search(msg)
+        if mat_match:
+            required_mat = mat_match.group(1)
+            return self._diagnose_materialization_mismatch(required_mat)
+
+        # Case 4: Generic compilation error (Jinja syntax, etc.)
         return self._diagnose_generic()
 
     def _diagnose_undefined(self, undefined_name: str) -> DiagnosticFinding:
@@ -158,6 +167,43 @@ class CompilationErrorClassifier(BaseClassifier):
 
         return DiagnosticFinding(
             summary=f"Model not found: ref('{target_name}')",
+            location=location,
+            explanation=explanation,
+            fix_suggestion=fix,
+        )
+
+    def _diagnose_materialization_mismatch(self, required_mat: str) -> DiagnosticFinding:
+        """Diagnose a materialization constraint enforced by a package macro."""
+        model_path = self.context.dag_walker.get_model_path(self.unique_id)
+        location = TraceLocation(file_path=model_path or None)
+
+        # Extract the macro name from the call stack if present
+        macro_match = re.search(r"in macro (\w+)", self.message)
+        macro_name = macro_match.group(1) if macro_match else None
+
+        # Extract the model short name
+        parts = self.unique_id.split(".")
+        model_name = parts[-1] if len(parts) >= 3 else self.unique_id
+        package_name = parts[1] if len(parts) >= 3 else "unknown"
+
+        explanation = (
+            f"This model requires materialized='{required_mat}' but is configured "
+            f"with a different materialization. "
+            f"The constraint is enforced by "
+            f"{'macro ' + macro_name if macro_name else 'a package macro'} "
+            f"in the '{package_name}' package."
+        )
+        fix = (
+            f"Set the materialization for this model to '{required_mat}'. "
+            f"In dbt_project.yml, add under models:\n"
+            f"  {package_name}:\n"
+            f"    +materialized: {required_mat}\n"
+            f"Or set it per-model with a config block: "
+            f"{{{{ config(materialized='{required_mat}') }}}}"
+        )
+
+        return DiagnosticFinding(
+            summary=f"Materialization mismatch: requires '{required_mat}'",
             location=location,
             explanation=explanation,
             fix_suggestion=fix,

@@ -64,6 +64,44 @@
       "relation_name": "ARTWORK_DB.SILVER.STG_MET__DEPARTMENTS"
     },
     {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-06T19:15:00Z", "completed_at": "2026-06-06T19:15:00Z"},
+        {"name": "execute", "started_at": "2026-06-06T19:15:00Z", "completed_at": "2026-06-06T19:15:01Z"}
+      ],
+      "thread_id": "Thread-4",
+      "execution_time": 0.45,
+      "adapter_response": {
+        "_message": "ERROR",
+        "code": "002003"
+      },
+      "message": "Database Error in model stg_metering_daily_history (models/staging/stg_metering_daily_history.sql)\n  002003 (02000): SQL compilation error:\n  Schema 'SNOWFLAKE.ACCOUNT_USAGE' does not exist or not authorized.\n  compiled code at target/run/dbt_snowflake_monitoring/models/staging/stg_metering_daily_history.sql",
+      "failures": null,
+      "unique_id": "model.dbt_snowflake_monitoring.stg_metering_daily_history",
+      "compiled": true,
+      "compiled_code": "SELECT\n    SERVICE_TYPE,\n    USAGE_DATE,\n    CREDITS_USED\nFROM SNOWFLAKE.ACCOUNT_USAGE.METERING_DAILY_HISTORY",
+      "relation_name": "ARTWORK_DB.SILVER.STG_METERING_DAILY_HISTORY"
+    },
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-06T19:15:01Z", "completed_at": "2026-06-06T19:15:01Z"},
+        {"name": "execute", "started_at": "2026-06-06T19:15:01Z", "completed_at": "2026-06-06T19:15:02Z"}
+      ],
+      "thread_id": "Thread-5",
+      "execution_time": 0.38,
+      "adapter_response": {
+        "_message": "ERROR",
+        "code": "003001"
+      },
+      "message": "Database Error in model stg_naming_convention_prefixes (models/staging/variables/stg_naming_convention_prefixes.sql)\n  003001 (42501): SQL access control error:\n  Insufficient privileges to operate on schema 'DBT_TEST__AUDIT'. Your primary role ARTWORK_TRANSFORMER must have CREATE VIEW granted on SCHEMA ARTWORK_DB.DBT_TEST__AUDIT.\n  compiled code at target/run/dbt_project_evaluator/models/staging/variables/stg_naming_convention_prefixes.sql",
+      "failures": null,
+      "unique_id": "model.dbt_project_evaluator.stg_naming_convention_prefixes",
+      "compiled": true,
+      "compiled_code": "SELECT\n    PREFIX,\n    MODEL_TYPE\nFROM ARTWORK_DB.DBT_TEST__AUDIT.NAMING_CONVENTION_PREFIXES",
+      "relation_name": "ARTWORK_DB.DBT_TEST__AUDIT.STG_NAMING_CONVENTION_PREFIXES"
+    },
+    {
       "status": "skipped",
       "timing": [],
       "thread_id": "Thread-1",

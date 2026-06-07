@@ -68,6 +68,30 @@ def runtime_manifest():
                 },
                 "columns": {},
             },
+            "model.dbt_snowflake_monitoring.stg_metering_daily_history": {
+                "unique_id": "model.dbt_snowflake_monitoring.stg_metering_daily_history",
+                "resource_type": "model",
+                "original_file_path": "models/staging/stg_metering_daily_history.sql",
+                "relation_name": "ARTWORK_DB.SILVER.STG_METERING_DAILY_HISTORY",
+                "compiled_code": "",
+                "depends_on": {
+                    "nodes": [],
+                    "macros": [],
+                },
+                "columns": {},
+            },
+            "model.dbt_project_evaluator.stg_naming_convention_prefixes": {
+                "unique_id": "model.dbt_project_evaluator.stg_naming_convention_prefixes",
+                "resource_type": "model",
+                "original_file_path": "models/staging/variables/stg_naming_convention_prefixes.sql",
+                "relation_name": "ARTWORK_DB.DBT_TEST__AUDIT.STG_NAMING_CONVENTION_PREFIXES",
+                "compiled_code": "",
+                "depends_on": {
+                    "nodes": [],
+                    "macros": [],
+                },
+                "columns": {},
+            },
         },
         "sources": {
             "source.artwork_pipeline.met.raw_met_objects": {
@@ -87,6 +111,8 @@ def runtime_manifest():
             "model.artwork_pipeline.stg_met__departments": [
                 "source.artwork_pipeline.met.raw_met_departments"
             ],
+            "model.dbt_snowflake_monitoring.stg_metering_daily_history": [],
+            "model.dbt_project_evaluator.stg_naming_convention_prefixes": [],
         },
     }
 
@@ -187,3 +213,104 @@ class TestPermissionDenied:
         assert "privileges" in finding.summary.lower() or "privileges" in finding.explanation.lower()
         assert "RAW_MET_DEPARTMENTS" in finding.summary
         assert "GRANT" in finding.fix_suggestion
+
+
+class TestSchemaNotFound:
+    """Tests for the 'schema does not exist' variant of 002003."""
+
+    def test_diagnose_schema_not_found(self, runtime_errors_results, runtime_manifest):
+        """Schema 'SNOWFLAKE.ACCOUNT_USAGE' does not exist should be classified correctly."""
+        result = runtime_errors_results["results"][3]  # stg_metering_daily_history
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        assert report.error_class == "runtime_error"
+        assert report.has_findings
+        finding = report.findings[0]
+        # Should extract the actual schema name, not "UNKNOWN"
+        assert "SNOWFLAKE.ACCOUNT_USAGE" in finding.summary
+        assert "UNKNOWN" not in finding.summary
+
+    def test_schema_not_found_suggests_imported_privileges(
+        self, runtime_errors_results, runtime_manifest
+    ):
+        """Fix should suggest IMPORTED PRIVILEGES for shared databases."""
+        result = runtime_errors_results["results"][3]
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        assert "IMPORTED PRIVILEGES" in finding.fix_suggestion
+        assert "SNOWFLAKE" in finding.fix_suggestion
+
+    def test_schema_summary_says_schema_not_object(
+        self, runtime_errors_results, runtime_manifest
+    ):
+        """Summary should say 'Schema not found' not 'Object not found'."""
+        result = runtime_errors_results["results"][3]
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        assert "Schema not found" in finding.summary
+
+
+class TestPrivilegeExtraction:
+    """Tests for extracting the specific required privilege from 003001 errors."""
+
+    def test_extracts_create_view_privilege(self, runtime_errors_results, runtime_manifest):
+        """Should extract 'CREATE VIEW' from the error message, not hardcode 'SELECT'."""
+        result = runtime_errors_results["results"][4]  # stg_naming_convention_prefixes
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        assert report.has_findings
+        finding = report.findings[0]
+        assert "CREATE VIEW" in finding.fix_suggestion
+        assert "SELECT" not in finding.fix_suggestion
+
+    def test_privilege_fix_includes_fq_schema(self, runtime_errors_results, runtime_manifest):
+        """Fix should use the fully-qualified schema name from the message."""
+        result = runtime_errors_results["results"][4]
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        assert "ARTWORK_DB.DBT_TEST__AUDIT" in finding.fix_suggestion
+
+    def test_privilege_explanation_mentions_specific_privilege(
+        self, runtime_errors_results, runtime_manifest
+    ):
+        """Explanation should name the specific missing privilege."""
+        result = runtime_errors_results["results"][4]
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+        finding = report.findings[0]
+
+        assert "CREATE VIEW" in finding.explanation
+
+    def test_legacy_privilege_without_must_have(self, runtime_errors_results, runtime_manifest):
+        """Old-style 003001 without 'must have X granted' should still work."""
+        result = runtime_errors_results["results"][2]  # RAW_MET_DEPARTMENTS (no 'must have')
+        ctx = _make_context(runtime_manifest)
+
+        classifier = RuntimeErrorClassifier(result=result, context=ctx)
+        report = classifier.diagnose()
+
+        assert report.has_findings
+        finding = report.findings[0]
+        # Should fall back to USAGE suggestion when specific privilege isn't stated
+        assert "GRANT" in finding.fix_suggestion
+        assert "RAW_MET_DEPARTMENTS" in finding.summary

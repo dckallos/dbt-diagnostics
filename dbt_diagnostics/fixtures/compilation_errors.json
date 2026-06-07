@@ -23,6 +23,13 @@
       "message": "Compilation Error in model fct_exhibitions (models/marts/fct_exhibitions.sql)\n  Encountered unexpected tag 'endfor'. Jinja was looking for the following tags: 'endif'. The innermost block that needs to be closed is 'if'.\n  line 12",
       "compiled_code": null,
       "timing": []
+    },
+    {
+      "status": "error",
+      "unique_id": "model.dbt_project_evaluator.base_node_relationships",
+      "message": "Compilation Error in model base_node_relationships (models/staging/graph/base/base_node_relationships.sql)\n  Model must use the table materialization. Please check any model overrides.\n  \n  > in macro check_model_is_table (macros/check_model_is_table.sql)\n  > called by model base_node_relationships (models/staging/graph/base/base_node_relationships.sql)",
+      "compiled_code": null,
+      "timing": []
     }
   ]
 }

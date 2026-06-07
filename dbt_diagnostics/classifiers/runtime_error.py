@@ -40,13 +40,19 @@ _SYNTAX_ERROR_RE = re.compile(
 )
 # Extract line/position from Snowflake error messages
 _LINE_POS_RE = re.compile(r"error line (\d+) at position (\d+)")
-# Extract the fully-qualified object name from "Object 'X' does not exist"
-_OBJECT_NAME_RE = re.compile(r"Object '([^']+)' does not exist")
+# Extract the fully-qualified object name from "Object/Schema/Table/View/Database 'X' does not exist"
+_OBJECT_NAME_RE = re.compile(
+    r"(Object|Schema|Table|View|Database) '([^']+)' does not exist"
+)
 # Extract the identifier name from "invalid identifier 'X'"
 _IDENTIFIER_RE = re.compile(r"invalid identifier '([^']+)'")
 # Extract object type + name from privilege errors
 _PRIVILEGE_RE = re.compile(
     r"Insufficient privileges to operate on (\w+) '([^']+)'"
+)
+# Extract the specific required privilege from "must have X granted on Y Z"
+_REQUIRED_PRIVILEGE_RE = re.compile(
+    r"must have ([\w ]+?) granted on (\w+) ([\w.]+)"
 )
 
 
@@ -101,9 +107,15 @@ class RuntimeErrorClassifier(BaseClassifier):
         1. The source table hasn't been created yet (DDL not applied)
         2. The upstream model failed/was skipped (so the ref target is missing)
         3. Permission issue disguised as "does not exist"
+        4. Schema/database not accessible (shared database, missing IMPORTED PRIVILEGES)
         """
         match = _OBJECT_NAME_RE.search(self.message)
-        object_name = match.group(1) if match else "UNKNOWN"
+        if match:
+            object_type = match.group(1).lower()  # "object", "schema", "table", etc.
+            object_name = match.group(2)
+        else:
+            object_type = "object"
+            object_name = "UNKNOWN"
 
         # Check if this object is a known node in the manifest
         is_known_ref = self._is_known_manifest_object(object_name)
@@ -150,9 +162,39 @@ class RuntimeErrorClassifier(BaseClassifier):
                 f"model has never been run, or was dropped."
             )
             fix = f"Run the upstream model that produces {object_name}."
+        elif object_type == "schema":
+            # Schema-level "does not exist" typically means a shared/system
+            # database whose grants are missing (e.g. SNOWFLAKE.ACCOUNT_USAGE)
+            parts = object_name.split(".")
+            db_name = parts[0] if parts else object_name
+            explanation = (
+                f"Schema '{object_name}' does not exist or is not authorized. "
+                f"This typically means the database '{db_name}' requires "
+                f"IMPORTED PRIVILEGES or the executing role lacks USAGE on "
+                f"the schema."
+            )
+            fix = (
+                f"Grant access to the shared database:\n"
+                f"GRANT IMPORTED PRIVILEGES ON DATABASE {db_name} "
+                f"TO ROLE <your_transformer_role>;\n"
+                f"Or verify the schema exists: "
+                f"SHOW SCHEMAS LIKE '{parts[-1] if len(parts) > 1 else object_name}' "
+                f"IN DATABASE {db_name};"
+            )
+        elif object_type == "database":
+            explanation = (
+                f"Database '{object_name}' does not exist or is not authorized. "
+                f"The executing role may lack USAGE on this database."
+            )
+            fix = (
+                f"Grant access: GRANT USAGE ON DATABASE {object_name} "
+                f"TO ROLE <your_transformer_role>;\n"
+                f"Or verify it exists: SHOW DATABASES LIKE '{object_name}';"
+            )
         else:
             explanation = (
-                f"Object {object_name} is NOT declared in the manifest. "
+                f"{object_type.capitalize()} '{object_name}' is NOT declared "
+                f"in the manifest. "
                 f"This could be: (1) a source table whose DDL hasn't been "
                 f"applied, (2) a typo in the ref/source name, or (3) a "
                 f"permission issue (Snowflake conflates 'not found' with "
@@ -165,8 +207,10 @@ class RuntimeErrorClassifier(BaseClassifier):
                 f"If it exists, check GRANTs to the executing role."
             )
 
+        # Use object_type in the summary for clarity
+        summary_label = object_type.capitalize() if object_type != "object" else "Object"
         return DiagnosticFinding(
-            summary=f"Object not found: {object_name}",
+            summary=f"{summary_label} not found: {object_name}",
             location=location,
             explanation=explanation,
             fix_suggestion=fix,
@@ -242,6 +286,8 @@ class RuntimeErrorClassifier(BaseClassifier):
         Insufficient privileges (003001).
 
         The role running dbt doesn't have the necessary grants.
+        Snowflake 003001 messages always state the exact required privilege
+        in the form "must have X granted on Y Z".
         """
         match = _PRIVILEGE_RE.search(self.message)
         if match:
@@ -250,6 +296,17 @@ class RuntimeErrorClassifier(BaseClassifier):
         else:
             obj_type = "object"
             obj_name = "UNKNOWN"
+
+        # Extract the specific required privilege (e.g. "CREATE VIEW")
+        priv_match = _REQUIRED_PRIVILEGE_RE.search(self.message)
+        if priv_match:
+            required_privilege = priv_match.group(1).upper()
+            priv_obj_type = priv_match.group(2).upper()
+            priv_fq_name = priv_match.group(3)
+        else:
+            required_privilege = None
+            priv_obj_type = obj_type.upper()
+            priv_fq_name = obj_name
 
         model_path = self.context.dag_walker.get_model_path(self.unique_id)
         location = TraceLocation(file_path=model_path)
@@ -273,18 +330,32 @@ class RuntimeErrorClassifier(BaseClassifier):
             run_results=self.context.run_results,
         )
 
-        explanation = (
-            f"The role executing this model lacks privileges on "
-            f"{obj_type} '{obj_name}'. "
-            f"This is a GRANT issue, not a code bug."
-        )
-        fix = (
-            f"Grant access to the executing role:\n"
-            f"GRANT SELECT ON {obj_type.upper()} {obj_name} "
-            f"TO ROLE <your_transformer_role>;\n"
-            f"Or verify current grants:\n"
-            f"SHOW GRANTS ON {obj_type.upper()} {obj_name};"
-        )
+        if required_privilege:
+            explanation = (
+                f"The role executing this model lacks {required_privilege} "
+                f"on {priv_obj_type.lower()} '{priv_fq_name}'. "
+                f"This is a GRANT issue, not a code bug."
+            )
+            fix = (
+                f"Grant the required privilege:\n"
+                f"GRANT {required_privilege} ON {priv_obj_type} {priv_fq_name} "
+                f"TO ROLE <your_transformer_role>;\n"
+                f"Or verify current grants:\n"
+                f"SHOW GRANTS ON {priv_obj_type} {priv_fq_name};"
+            )
+        else:
+            explanation = (
+                f"The role executing this model lacks privileges on "
+                f"{obj_type} '{obj_name}'. "
+                f"This is a GRANT issue, not a code bug."
+            )
+            fix = (
+                f"Grant access to the executing role:\n"
+                f"GRANT USAGE ON {obj_type.upper()} {obj_name} "
+                f"TO ROLE <your_transformer_role>;\n"
+                f"Or verify current grants:\n"
+                f"SHOW GRANTS ON {obj_type.upper()} {obj_name};"
+            )
 
         return DiagnosticFinding(
             summary=f"Insufficient privileges on {obj_type} {obj_name}",
