@@ -8,6 +8,7 @@ ran successfully but returned rows (assertion violated) or breached
 a configured threshold. The test itself worked -- the data failed.
 """
 
+import re
 from typing import Optional
 
 from dbt_diagnostics.classifiers.base import BaseClassifier, DiagnosticContext
@@ -15,6 +16,19 @@ from dbt_diagnostics.models import (
     DiagnosticReport,
     DiagnosticFinding,
     TraceLocation,
+)
+
+
+# Regex patterns for extracting structured info from compiled SQL
+_THRESHOLD_PATTERN = re.compile(
+    r"count\(\*\)\s*>=\s*(\d+)\s+and\s+count\(\*\)\s*<=\s*(\d+)"
+)
+_RELATION_PATTERN = re.compile(
+    r"\bfrom\s+(\w+\.\w+\.\w+)", re.IGNORECASE
+)
+# Extract a readable test type from dbt_expectations unique_ids
+_DBT_EXPECTATIONS_TYPE_PATTERN = re.compile(
+    r"dbt_expectations_(expect_\w+?)_(?:stg_|dim_|fct_|int_|raw_|src_)"
 )
 
 
@@ -47,13 +61,20 @@ class TestFailureClassifier(BaseClassifier):
         failures_count = self.result.get("failures", None)
         compiled_sql = self.result.get("compiled_code", "") or ""
 
+        # Extract structured info from compiled SQL
+        threshold = self._extract_threshold(compiled_sql)
+        relation = self._extract_relation(compiled_sql)
+        query_id = self._extract_query_id()
+
         # Build summary
-        if tested_model:
+        if threshold:
+            summary = f"Row count expected between {threshold[0]:,} and {threshold[1]:,}"
+        elif tested_model:
             summary = f"Test '{test_name}' failed on model {tested_model}"
         else:
             summary = f"Test '{test_name}' failed"
 
-        if failures_count is not None:
+        if failures_count is not None and not threshold:
             summary += f" ({failures_count} record(s) violated the assertion)"
 
         # Build location from test file path
@@ -65,20 +86,7 @@ class TestFailureClassifier(BaseClassifier):
         location = TraceLocation(file_path=file_path)
 
         # Build fix suggestion
-        if tested_model:
-            model_short = tested_model.split(".")[-1] if "." in tested_model else tested_model
-            fix = (
-                f"Investigate the failing rows:\n"
-                f"  1. Run the test SQL manually to see which rows fail:\n"
-                f"     dbt test -s {model_short} --store-failures\n"
-                f"  2. Check the source data in model '{model_short}' for "
-                f"data quality issues."
-            )
-        else:
-            fix = (
-                "Run the test SQL manually to inspect failing rows:\n"
-                "  dbt test -s <test_name> --store-failures"
-            )
+        fix = self._build_fix_suggestion(tested_model, relation, threshold)
 
         # Build explanation
         explanation = (
@@ -95,23 +103,35 @@ class TestFailureClassifier(BaseClassifier):
             explanation=explanation,
             fix_suggestion=fix,
             target_object=tested_model,
+            target_identifier=relation,
         )
 
-        # Attach compiled SQL as a note (useful for debugging)
-        if compiled_sql:
-            finding.target_identifier = "(see compiled SQL)"
-
+        # Attach structured metadata as additional report context
         report.findings.append(finding)
+
+        # Store extra metadata on the report for template consumption
+        report.threshold = threshold
+        report.relation = relation
+        report.query_id = query_id
+        report.dbt_message = self.message
+
         return report
 
     def _extract_test_name(self) -> str:
-        """Extract a readable test name from the unique_id."""
-        # unique_id like: test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artworks_1_None.abc123
+        """Extract a human-readable test name from the unique_id."""
         parts = self.unique_id.split(".")
-        if len(parts) >= 3:
-            # Return the test name portion (everything after project name)
-            return ".".join(parts[2:])
-        return self.unique_id
+        if len(parts) < 3:
+            return self.unique_id
+
+        test_part = parts[2]
+
+        # Try to extract dbt_expectations test type
+        match = _DBT_EXPECTATIONS_TYPE_PATTERN.match(test_part)
+        if match:
+            return match.group(1).replace("_", " ")
+
+        # Fallback: return the test name portion
+        return ".".join(parts[2:])
 
     def _extract_tested_model(self) -> Optional[str]:
         """
@@ -129,3 +149,66 @@ class TestFailureClassifier(BaseClassifier):
         if model_deps:
             return model_deps[0]
         return None
+
+    @staticmethod
+    def _extract_threshold(compiled_sql: str) -> Optional[tuple[int, int]]:
+        """
+        Parse row-count thresholds from compiled test SQL.
+
+        Returns (min_rows, max_rows) or None if not a row-count test.
+        """
+        match = _THRESHOLD_PATTERN.search(compiled_sql)
+        if match:
+            return (int(match.group(1)), int(match.group(2)))
+        return None
+
+    @staticmethod
+    def _extract_relation(compiled_sql: str) -> Optional[str]:
+        """
+        Extract the fully-qualified relation name from compiled test SQL.
+
+        Looks for 'from DB.SCHEMA.TABLE' pattern.
+        """
+        match = _RELATION_PATTERN.search(compiled_sql)
+        if match:
+            return match.group(1)
+        return None
+
+    def _extract_query_id(self) -> Optional[str]:
+        """Extract the Snowflake query_id from adapter_response."""
+        adapter_resp = self.result.get("adapter_response", {})
+        return adapter_resp.get("query_id")
+
+    def _build_fix_suggestion(
+        self,
+        tested_model: Optional[str],
+        relation: Optional[str],
+        threshold: Optional[tuple[int, int]],
+    ) -> str:
+        """Build an actionable fix suggestion with concrete SQL."""
+        model_short = ""
+        if tested_model:
+            model_short = (
+                tested_model.split(".")[-1] if "." in tested_model else tested_model
+            )
+
+        lines = ["Investigate the failing rows:"]
+
+        if relation:
+            lines.append("  1. Check current row count:")
+            lines.append(f"     SELECT COUNT(*) FROM {relation};")
+        else:
+            lines.append("  1. Run the test SQL manually to see which rows fail:")
+            if model_short:
+                lines.append(f"     dbt test -s {model_short} --store-failures")
+
+        if model_short:
+            lines.append("  2. If empty, run the upstream pipeline:")
+            lines.append(f"     dbt run -s +{model_short}")
+            lines.append("  3. Re-run with stored failures for inspection:")
+            lines.append(f"     dbt test -s {model_short} --store-failures")
+        else:
+            lines.append("  2. Run the test with --store-failures to inspect:")
+            lines.append("     dbt test -s <test_name> --store-failures")
+
+        return "\n".join(lines)
