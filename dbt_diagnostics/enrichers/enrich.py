@@ -22,6 +22,7 @@ from dbt_diagnostics.enrichers.schema_inspector import (
     _edit_distance,
 )
 from dbt_diagnostics.enrichers.query_history import find_matching_query
+from dbt_diagnostics.enrichers.grants import check_write_access, get_current_role
 
 
 # Regex to extract FQ object name from finding summaries
@@ -53,6 +54,92 @@ def enrich_reports(conn, reports: list[DiagnosticReport], run_results: dict):
 
     # Post-enrichment reconciliation pass
     _reconcile_findings(reports)
+
+    # Write-access check for unmaterialized models
+    _check_write_access_for_unmaterialized(conn, reports)
+
+
+def _check_write_access_for_unmaterialized(conn, reports: list[DiagnosticReport]):
+    """
+    For runtime_error reports where the model was never materialized,
+    check if the dbt role has CREATE TABLE on the target schema.
+
+    If the role lacks write access, prepend a privilege warning to the
+    fix suggestion. If it has access, note the verification.
+
+    Uses cloud-services-layer SHOW GRANTS ($0 cost).
+    """
+    role_name = get_current_role(conn)
+    if not role_name:
+        return
+
+    # Cache schema checks to avoid redundant queries
+    schema_cache: dict[str, dict] = {}
+
+    for report in reports:
+        if report.error_class != "runtime_error":
+            continue
+
+        for finding in report.findings:
+            # Only for "never materialized" cases (live_status == missing)
+            has_missing = any(
+                step.live_status == "missing"
+                for step in finding.lineage_trail
+            )
+            if not has_missing:
+                continue
+
+            # Extract the target schema from the lineage trail
+            target_schema = None
+            for step in finding.lineage_trail:
+                if step.live_status == "missing" and step.relation_name:
+                    parts = step.relation_name.upper().split(".")
+                    if len(parts) >= 2:
+                        target_schema = ".".join(parts[:2])
+                        break
+
+            if not target_schema:
+                continue
+
+            # Check write access (cached per schema)
+            if target_schema not in schema_cache:
+                schema_cache[target_schema] = check_write_access(
+                    conn, role_name, target_schema
+                )
+
+            result = schema_cache[target_schema]
+
+            # Adjust fix suggestion based on access check
+            if not finding.fix_suggestion:
+                continue
+
+            if not result["can_create"]:
+                # Role lacks CREATE TABLE -- prepend a privilege warning
+                grant_sql = (
+                    f"GRANT CREATE TABLE ON SCHEMA {target_schema} "
+                    f"TO ROLE {role_name};"
+                )
+                if not result["has_usage"]:
+                    # Also missing USAGE -- need both
+                    db_name = target_schema.split(".")[0]
+                    grant_sql = (
+                        f"GRANT USAGE ON DATABASE {db_name} TO ROLE {role_name};\n"
+                        f"  GRANT USAGE ON SCHEMA {target_schema} TO ROLE {role_name};\n"
+                        f"  GRANT CREATE TABLE ON SCHEMA {target_schema} TO ROLE {role_name};"
+                    )
+                finding.fix_suggestion = (
+                    f"WARNING: Role {role_name} does NOT have CREATE TABLE "
+                    f"on schema {target_schema}.\n"
+                    f"Grant access first:\n"
+                    f"  {grant_sql}\n"
+                    f"Then: {finding.fix_suggestion}"
+                )
+            else:
+                # Role has CREATE TABLE -- note verification
+                finding.fix_suggestion = (
+                    f"(Verified: {role_name} has CREATE TABLE on {target_schema})\n"
+                    f"{finding.fix_suggestion}"
+                )
 
 
 def _enrich_contract_violation(conn, finding):
@@ -169,15 +256,16 @@ def _enrich_lineage_trail(conn, finding) -> None:
             if finding.target_identifier:
                 try:
                     cols = describe_table(conn, step.relation_name)
-                    col_names = [c.name.upper() for c in cols]
-                    target_upper = finding.target_identifier.upper()
-                    if target_upper in col_names:
-                        step.live_detail = f"column '{finding.target_identifier}' found"
-                    else:
-                        step.live_status = "no_column"
-                        step.live_detail = (
-                            f"column '{finding.target_identifier}' NOT found"
-                        )
+                    if cols:
+                        col_names = [c.name.upper() for c in cols]
+                        target_upper = finding.target_identifier.upper()
+                        if target_upper in col_names:
+                            step.live_detail = f"column '{finding.target_identifier}' found"
+                        else:
+                            step.live_status = "no_column"
+                            step.live_detail = (
+                                f"column '{finding.target_identifier}' NOT found"
+                            )
                 except Exception:
                     step.live_detail = "table exists (column check failed)"
             else:
