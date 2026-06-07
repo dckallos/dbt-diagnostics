@@ -52,3 +52,22 @@
 {% endif %}
 {% endif %}
 {% endif %}
+{% if warn_details %}
+
+  ----------------------------------------------------------------------
+  {{ "WARNINGS" | bold_yellow }} ({{ warns }}):
+  ----------------------------------------------------------------------
+{% for category, items in warn_by_category.items() %}
+{% if category == "project_hygiene" %}
+  {{ "Project hygiene" | dim }} ({{ items | length }} check(s) from dbt_project_evaluator):
+{% else %}
+  {{ "Data quality" | bold_white }} ({{ items | length }} check(s)):
+{% endif %}
+{% for w in items %}
+    - {{ w.name }} ({{ w.failures }} result(s))
+{% endfor %}
+{% if category == "project_hygiene" %}
+  {{ "Run: dbt test -s package:dbt_project_evaluator" | dim }}
+{% endif %}
+{% endfor %}
+{% endif %}

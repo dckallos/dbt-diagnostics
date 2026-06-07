@@ -91,12 +91,20 @@ def render_text(
     color_enabled: bool = False,
     fails: int = 0,
     warns: int = 0,
+    warn_details: list[dict] = None,
 ) -> str:
     """Render all reports using the Jinja2 report template."""
     env = _build_env(color_enabled=color_enabled, verbose=verbose)
     template = env.get_template("report.j2")
 
     skipped_summary = _summarize_skipped(skipped_models)
+
+    # Group warn_details by category for template
+    warn_by_category = {}
+    if warn_details:
+        for w in warn_details:
+            cat = w.get("category", "data_quality")
+            warn_by_category.setdefault(cat, []).append(w)
 
     return template.render(
         reports=reports,
@@ -108,6 +116,8 @@ def render_text(
         skipped_models=skipped_models,
         skipped_summary=skipped_summary,
         verbose=verbose,
+        warn_details=warn_details or [],
+        warn_by_category=warn_by_category,
     )
 
 
