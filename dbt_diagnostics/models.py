@@ -43,6 +43,103 @@ class ColumnInfo:
 
 
 @dataclass
+class CompiledSnippet:
+    """
+    A window of compiled SQL around the error line.
+
+    Used to show the user exactly which generated SQL failed, with the
+    offending line highlighted. context_lines controls how many lines
+    before/after the error are included.
+    """
+    lines: list[str]
+    line_numbers: list[int]
+    error_line: int
+    error_position: Optional[int] = None
+
+
+@dataclass
+class LineageStep:
+    """
+    One node in a BFS lineage trail through the dbt DAG.
+
+    The trail starts at depth=0 (the failing model) and walks upstream.
+    Each step records both manifest-derived facts and (later) live-queried
+    status from Snowflake.
+    """
+    node_id: str
+    node_type: str  # "model", "source", "seed", "snapshot"
+    short_name: str  # e.g. "stg_met__artworks" (last segment of unique_id)
+    file_path: Optional[str] = None
+    relation_name: Optional[str] = None  # e.g. "ARTWORK_DB.BRONZE.RAW_MET_OBJECTS"
+    depth: int = 0
+    # Manifest-derived status
+    manifest_status: Optional[str] = None  # "declared", "not_found", "missing"
+    manifest_detail: Optional[str] = None
+    # Live-queried status (Phase 2)
+    live_status: Optional[str] = None  # "exists", "missing", "no_column"
+    live_detail: Optional[str] = None
+    # Cross-referenced from run_results
+    run_status: Optional[str] = None  # "pass", "error", "skipped", None
+    annotation: Optional[str] = None  # free-text note for the step
+
+    @property
+    def status_emoji(self) -> str:
+        """Emoji representing the combined status of this trail node."""
+        if self.live_status == "exists":
+            return "\u2705"  # green check
+        if self.live_status == "missing":
+            return "\u274c"  # red X
+        if self.live_status == "no_column":
+            return "\u26a0\ufe0f"  # warning
+        if self.manifest_status == "declared":
+            return "\u2705"
+        if self.manifest_status == "not_found":
+            return "\u274c"
+        if self.run_status == "error":
+            return "\u274c"
+        if self.run_status == "pass":
+            return "\u2705"
+        if self.run_status == "skipped":
+            return "\u23ed\ufe0f"  # skip
+        return "\u2753"  # question mark (unknown)
+
+    @property
+    def status_text(self) -> str:
+        """Text fallback when color/emoji is disabled."""
+        if self.live_status == "exists":
+            return "[PASS]"
+        if self.live_status == "missing":
+            return "[FAIL]"
+        if self.live_status == "no_column":
+            return "[WARN]"
+        if self.manifest_status == "declared":
+            return "[PASS]"
+        if self.manifest_status == "not_found":
+            return "[FAIL]"
+        if self.run_status == "error":
+            return "[FAIL]"
+        if self.run_status == "pass":
+            return "[PASS]"
+        if self.run_status == "skipped":
+            return "[SKIP]"
+        return "[????]"
+
+
+@dataclass
+class DisconnectVerdict:
+    """
+    The concluding diagnosis: where the lineage trail breaks and why.
+
+    Placed at the bottom of the trail output. Identifies the two nodes
+    between which the disconnect occurs and explains the fix.
+    """
+    between_node_a: str  # upstream node short_name
+    between_node_b: str  # downstream node short_name
+    explanation: str
+    confidence: str = "high"  # "high", "medium", "low"
+
+
+@dataclass
 class EnrichmentData:
     """
     Live-queried facts from Snowflake that ground the explanation.
@@ -81,6 +178,11 @@ class DiagnosticFinding:
     # the summary string to find the target object or identifier.
     target_object: Optional[str] = None
     target_identifier: Optional[str] = None
+    # Lineage trail fields (Phase 1 lineage trail feature).
+    # Populated by classifiers after calling dag_walker trace methods.
+    compiled_snippet: Optional["CompiledSnippet"] = None
+    lineage_trail: list["LineageStep"] = field(default_factory=list)
+    disconnect: Optional["DisconnectVerdict"] = None
 
 
 @dataclass
@@ -173,5 +275,31 @@ class DiagnosticReport:
             d["upstream_origin"] = {
                 "model_id": f.upstream_origin.model_id,
                 "file_path": f.upstream_origin.file_path,
+            }
+        if f.compiled_snippet:
+            d["compiled_snippet"] = {
+                "lines": f.compiled_snippet.lines,
+                "line_numbers": f.compiled_snippet.line_numbers,
+                "error_line": f.compiled_snippet.error_line,
+                "error_position": f.compiled_snippet.error_position,
+            }
+        if f.lineage_trail:
+            d["lineage_trail"] = [
+                {
+                    "node_id": step.node_id,
+                    "node_type": step.node_type,
+                    "short_name": step.short_name,
+                    "depth": step.depth,
+                    "manifest_status": step.manifest_status,
+                    "run_status": step.run_status,
+                }
+                for step in f.lineage_trail
+            ]
+        if f.disconnect:
+            d["disconnect"] = {
+                "between_node_a": f.disconnect.between_node_a,
+                "between_node_b": f.disconnect.between_node_b,
+                "explanation": f.disconnect.explanation,
+                "confidence": f.disconnect.confidence,
             }
         return d

@@ -9,6 +9,8 @@ import re
 from collections import deque
 from typing import Optional
 
+from dbt_diagnostics.models import LineageStep
+
 
 class DagWalker:
     """
@@ -120,3 +122,195 @@ class DagWalker:
                 return True
 
         return False
+
+    def _make_step(self, node_id: str, node: Optional[dict], depth: int) -> LineageStep:
+        """
+        Build a LineageStep from a node dict.
+
+        Extracts node_type from the unique_id prefix (model.*, source.*, etc.)
+        and short_name from the last segment.
+        """
+        # Parse node_type from unique_id prefix
+        parts = node_id.split(".")
+        node_type = parts[0] if parts else "unknown"
+        short_name = parts[-1] if parts else node_id
+
+        file_path = None
+        relation_name = None
+        if node:
+            file_path = node.get("original_file_path") or node.get("path")
+            relation_name = node.get("relation_name")
+
+        return LineageStep(
+            node_id=node_id,
+            node_type=node_type,
+            short_name=short_name,
+            file_path=file_path,
+            relation_name=relation_name,
+            depth=depth,
+        )
+
+    def trace_column_lineage(
+        self,
+        unique_id: str,
+        column_name: str,
+        max_depth: int = 5,
+        run_results: Optional[dict] = None,
+    ) -> list[LineageStep]:
+        """
+        Trace a column upstream through the DAG, recording status at EVERY node.
+
+        Unlike find_column_origin() which returns only the first match, this
+        method returns the full trail so the renderer can show the user every
+        hop the column takes (or doesn't take) through the lineage.
+
+        Args:
+            unique_id: The failing node to start from (depth 0).
+            column_name: The column to trace.
+            max_depth: Maximum BFS depth.
+            run_results: Optional parsed run_results dict for cross-referencing
+                         node run status.
+
+        Returns:
+            List of LineageStep ordered by depth (depth 0 first). The depth-0
+            entry is the failing model itself.
+        """
+        trail: list[LineageStep] = []
+        run_status_map = self._build_run_status_map(run_results)
+
+        # Depth 0: the failing model itself
+        root_node = self.get_node(unique_id)
+        root_step = self._make_step(unique_id, root_node, depth=0)
+        root_step.manifest_status = "declared"
+        root_step.run_status = run_status_map.get(unique_id)
+        root_step.annotation = "failing model"
+        trail.append(root_step)
+
+        # BFS upstream
+        visited: set[str] = {unique_id}
+        queue: deque[tuple[str, int]] = deque()
+
+        for parent_id in self.get_parents(unique_id):
+            if parent_id not in visited:
+                queue.append((parent_id, 1))
+                visited.add(parent_id)
+
+        while queue:
+            current_id, depth = queue.popleft()
+            current_node = self.get_node(current_id)
+
+            step = self._make_step(current_id, current_node, depth)
+            step.run_status = run_status_map.get(current_id)
+
+            if current_node and self._node_has_column(current_node, column_name):
+                step.manifest_status = "declared"
+                step.manifest_detail = f"column '{column_name}' found"
+            else:
+                step.manifest_status = "not_found"
+                step.manifest_detail = f"column '{column_name}' not found"
+
+            trail.append(step)
+
+            # Continue BFS if within depth limit
+            if depth < max_depth:
+                for parent_id in self.get_parents(current_id):
+                    if parent_id not in visited:
+                        queue.append((parent_id, depth + 1))
+                        visited.add(parent_id)
+
+        return trail
+
+    def trace_object_lineage(
+        self,
+        unique_id: str,
+        object_fq_name: str,
+        run_results: Optional[dict] = None,
+    ) -> list[LineageStep]:
+        """
+        Trace an object reference upstream -- used for object-not-found errors.
+
+        Checks manifest sources and upstream nodes for a matching relation_name.
+        This answers: "where should this object come from in the DAG?"
+
+        Args:
+            unique_id: The failing node (depth 0).
+            object_fq_name: Fully qualified object name from the error message
+                            (e.g. "ARTWORK_DB.BRONZE.RAW_MET_OBJECTS").
+            run_results: Optional run_results dict for cross-referencing.
+
+        Returns:
+            List of LineageStep. If the object is found in the manifest (as a
+            source or upstream model), that node appears in the trail with
+            manifest_status="declared". Otherwise all upstream nodes show
+            "not_found".
+        """
+        trail: list[LineageStep] = []
+        run_status_map = self._build_run_status_map(run_results)
+        object_upper = object_fq_name.upper()
+
+        # Depth 0: the failing model
+        root_node = self.get_node(unique_id)
+        root_step = self._make_step(unique_id, root_node, depth=0)
+        root_step.manifest_status = "declared"
+        root_step.run_status = run_status_map.get(unique_id)
+        root_step.annotation = "failing model"
+        trail.append(root_step)
+
+        # Check all sources in the manifest for a matching relation_name
+        matched_source_id = None
+        for source_id, source_node in self.sources.items():
+            relation = source_node.get("relation_name", "")
+            if relation and relation.upper() == object_upper:
+                matched_source_id = source_id
+                break
+
+        # Also check upstream nodes for matching relation_name
+        if not matched_source_id:
+            for node_id, node in self.nodes.items():
+                if node_id == unique_id:
+                    continue
+                relation = node.get("relation_name", "")
+                if relation and relation.upper() == object_upper:
+                    matched_source_id = node_id
+                    break
+
+        if matched_source_id:
+            matched_node = self.get_node(matched_source_id)
+            step = self._make_step(matched_source_id, matched_node, depth=1)
+            step.manifest_status = "declared"
+            step.manifest_detail = f"relation_name matches '{object_fq_name}'"
+            step.run_status = run_status_map.get(matched_source_id)
+            trail.append(step)
+        else:
+            # Object not found anywhere in the manifest -- record that fact
+            # as a synthetic step at depth 1
+            step = LineageStep(
+                node_id=f"unknown.{object_fq_name}",
+                node_type="unknown",
+                short_name=object_fq_name.split(".")[-1] if "." in object_fq_name else object_fq_name,
+                relation_name=object_fq_name,
+                depth=1,
+                manifest_status="missing",
+                manifest_detail="object not found in manifest sources or nodes",
+            )
+            trail.append(step)
+
+        return trail
+
+    @staticmethod
+    def _build_run_status_map(run_results: Optional[dict]) -> dict[str, str]:
+        """
+        Build a lookup from unique_id -> run status string.
+
+        Parses the run_results dict (the full JSON structure with a 'results'
+        key) into a flat map for O(1) lookups during trail building.
+        """
+        if not run_results:
+            return {}
+        status_map: dict[str, str] = {}
+        for result in run_results.get("results", []):
+            uid = result.get("unique_id", "")
+            status = result.get("status", "")
+            if uid and status:
+                status_map[uid] = status
+        return status_map
