@@ -1,0 +1,37 @@
+
+  {{ "TEST FAILURE:" | bold_white }}
+    {{ "Test:" | cyan }}       {{ finding.summary }}
+{% if finding.location and finding.location.file_path %}
+    {{ "File:" | cyan }}       {{ finding.location.file_path }}
+{% endif %}
+{% if finding.target_object %}
+    {{ "Model:" | cyan }}      {{ finding.target_object | short_name }}
+{% endif %}
+{% if finding.target_identifier %}
+    {{ "Relation:" | cyan }}   {{ finding.target_identifier }}
+{% endif %}
+{% if report.dbt_message %}
+    {{ "Result:" | cyan }}     {{ report.dbt_message }}
+{% endif %}
+{% if report.threshold %}
+    {{ "Expected:" | cyan }}   {{ "{:,}".format(report.threshold[0]) }} -- {{ "{:,}".format(report.threshold[1]) }} rows
+{% endif %}
+{% if report.query_id and verbose %}
+    {{ "Query ID:" | cyan }}   {{ report.query_id }}
+{% endif %}
+
+{% if finding.fix_suggestion %}
+  {{ "FIX:" | bold_white }}
+{% for line in finding.fix_suggestion.splitlines() %}
+    {{ line | green }}
+{% endfor %}
+
+{% endif %}
+{% if verbose %}
+{% if finding.explanation %}
+  {{ "EXPLANATION:" | bold_white }}
+{% for line in finding.explanation.split('. ') %}
+    {{ line | dim }}{{ '.' if not line.endswith('.') else '' }}
+{% endfor %}
+{% endif %}
+{% endif %}

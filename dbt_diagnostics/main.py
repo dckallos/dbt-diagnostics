@@ -30,7 +30,7 @@ from typing import Optional
 
 import yaml
 
-from dbt_diagnostics.classifiers import classify, DiagnosticContext
+from dbt_diagnostics.classifiers import classify, DiagnosticContext, TestFailureClassifier
 from dbt_diagnostics.colors import should_use_color
 from dbt_diagnostics.discover import (
     find_dbt_project,
@@ -44,6 +44,37 @@ from dbt_diagnostics.renderer import render_text
 from dbt_diagnostics.tracers.diff_tracer import diff_node
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
+
+
+# Known dbt packages that produce project-hygiene warnings (not data quality)
+_HYGIENE_PACKAGES = frozenset([
+    "dbt_project_evaluator",
+    "dbt_meta_testing",
+    "dbt_checkpoint",
+])
+
+
+def _classify_warn_category(unique_id: str) -> str:
+    """Classify a warning as 'project_hygiene' or 'data_quality'."""
+    parts = unique_id.split(".")
+    if len(parts) >= 2 and parts[1] in _HYGIENE_PACKAGES:
+        return "project_hygiene"
+    return "data_quality"
+
+
+def _extract_warn_name(unique_id: str) -> str:
+    """Extract a readable test name from a warn result's unique_id."""
+    parts = unique_id.split(".")
+    if len(parts) >= 3:
+        # Strip trailing hash and leading 'is_empty_' prefix
+        name = parts[2]
+        if name.startswith("is_empty_"):
+            name = name[len("is_empty_"):]
+        # Remove trailing underscore
+        if name.endswith("_"):
+            name = name[:-1]
+        return name
+    return unique_id
 
 
 def _load_config(config_path: Optional[Path]) -> Optional[dict]:
@@ -139,7 +170,12 @@ def classify_error(message: str) -> str:
 
 
 def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
-    """Core logic: classify and diagnose all errors. Returns (reports, skipped_ids, total)."""
+    """
+    Core logic: classify and diagnose all errors and failures.
+
+    Returns (reports, skipped_ids, total, error_count, fail_count, warn_details).
+    warn_details is a list of dicts: [{name, category, failures, message, unique_id}].
+    """
     dag_walker = DagWalker(manifest)
     column_tracer = ColumnTracer(paths["models_dir"], paths["compiled_dir"])
     context = DiagnosticContext(
@@ -152,14 +188,23 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
     )
 
     errors = []
+    failures = []
     skipped = []
+    warns = []
     for result in run_results["results"]:
-        if result["status"] == "error":
+        status = result["status"]
+        if status == "error":
             errors.append(result)
-        elif result["status"] == "skipped":
+        elif status == "fail":
+            failures.append(result)
+        elif status == "skipped":
             skipped.append(result)
+        elif status == "warn":
+            warns.append(result)
 
     reports = []
+
+    # Process errors (SQL compilation/runtime failures)
     for result in errors:
         message = result.get("message", "")
         classifier_cls = classify(message)
@@ -175,13 +220,31 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
             )
         reports.append(report)
 
+    # Process test failures (assertion violations)
+    for result in failures:
+        classifier = TestFailureClassifier(result=result, context=context)
+        report = classifier.diagnose()
+        reports.append(report)
+
     skipped_ids = [s.get("unique_id", "unknown") for s in skipped]
     total = len(run_results["results"])
+
+    # Build structured warn details
+    warn_details = []
+    for result in warns:
+        uid = result.get("unique_id", "unknown")
+        warn_details.append({
+            "unique_id": uid,
+            "name": _extract_warn_name(uid),
+            "category": _classify_warn_category(uid),
+            "failures": result.get("failures", 0),
+            "message": result.get("message", ""),
+        })
 
     # Post-classification: detect cascading errors
     _annotate_cascading_errors(reports, dag_walker)
 
-    return reports, skipped_ids, total
+    return reports, skipped_ids, total, len(errors), len(failures), warn_details
 
 
 def _annotate_cascading_errors(reports: list[DiagnosticReport], dag_walker: DagWalker):
@@ -282,7 +345,10 @@ def cmd_diagnose(args):
     run_results = load_json(paths["run_results"], "run_results.json")
     manifest = load_json(paths["manifest"], "manifest.json")
 
-    reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+    reports, skipped_ids, total, error_count, fail_count, warn_details = _diagnose_all(
+        run_results, manifest, paths
+    )
+    warn_count = len(warn_details)
 
     # Diff-aware diagnosis (optional)
     prev_manifest_path = getattr(args, "previous_manifest", None)
@@ -305,24 +371,30 @@ def cmd_diagnose(args):
         output = {
             "schema_version": "1.0",
             "total_results": total,
-            "errors": len(reports),
+            "errors": error_count,
+            "fails": fail_count,
+            "warns": warn_count,
             "skipped": len(skipped_ids),
             "reports": [r.to_json_dict() for r in reports],
+            "warn_details": warn_details,
         }
         print(json.dumps(output, indent=2, default=str))
     else:
         text = render_text(
             reports=reports,
             total=total,
-            errors=len(reports),
+            errors=error_count,
+            fails=fail_count,
+            warns=warn_count,
             skipped=len(skipped_ids),
             skipped_models=skipped_ids,
             verbose=args.verbose,
             color_enabled=color_enabled,
+            warn_details=warn_details,
         )
         print(text)
 
-    # Exit 1 when errors were diagnosed (CI can gate on this)
+    # Exit 1 when errors or failures were diagnosed (CI can gate on this)
     if reports and not getattr(args, "no_fail", False):
         sys.exit(1)
 
@@ -357,16 +429,22 @@ def cmd_demo(args):
             "compiled_dir": Path("/project/target/compiled"),
         }
 
-        reports, skipped_ids, total = _diagnose_all(run_results, manifest, paths)
+        reports, skipped_ids, total, error_count, fail_count, warn_details = _diagnose_all(
+            run_results, manifest, paths
+        )
+        warn_count = len(warn_details)
 
         text = render_text(
             reports=reports,
             total=total,
-            errors=len(reports),
+            errors=error_count,
+            fails=fail_count,
+            warns=warn_count,
             skipped=len(skipped_ids),
             skipped_models=skipped_ids,
             verbose=args.verbose,
             color_enabled=color_enabled,
+            warn_details=warn_details,
         )
         print(text)
 

@@ -1,0 +1,131 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v6.json",
+    "dbt_version": "1.11.11",
+    "generated_at": "2026-06-07T17:46:01.814885Z",
+    "invocation_id": "fixture-test-failures",
+    "env": {}
+  },
+  "results": [
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:45:57.649094Z", "completed_at": "2026-06-07T17:45:57.662245Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:45:57.662809Z", "completed_at": "2026-06-07T17:45:57.782606Z"}
+      ],
+      "thread_id": "Thread-4 (worker)",
+      "execution_time": 0.14,
+      "adapter_response": {},
+      "message": "Database Error in test dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50 (models/marts/_marts__models.yml)\n  002003 (42S02): SQL compilation error:\n  Object 'ARTWORK_DB.GOLD.DIM_ARTISTS' does not exist or not authorized.\n  compiled code at target/run/artwork_pipeline/models/marts/_marts__models.yml/dbt_expectations_expect_table__98b6db461d321538c82cbd0334d55893.sql",
+      "failures": null,
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50.818205a8b7",
+      "compiled": true,
+      "compiled_code": "\n\n\n\n    with grouped_expression as (\n    select\n        \n        \n    \n  \n( 1=1 and count(*) >= 50 and count(*) <= 1000000\n)\n as expression\n\n\n    from ARTWORK_DB.GOLD.dim_artists\n    \n\n),\nvalidation_errors as (\n\n    select\n        *\n    from\n        grouped_expression\n    where\n        not(expression = true)\n\n)\n\nselect *\nfrom validation_errors\n\n\n\n\n\n",
+      "relation_name": null,
+      "batch_results": null
+    },
+    {
+      "status": "error",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:45:57.699238Z", "completed_at": "2026-06-07T17:45:57.706208Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:45:57.706681Z", "completed_at": "2026-06-07T17:45:57.798536Z"}
+      ],
+      "thread_id": "Thread-2 (worker)",
+      "execution_time": 0.11,
+      "adapter_response": {},
+      "message": "Database Error in test dbt_expectations_expect_table_row_count_to_be_between_dim_artworks_1000000__100 (models/marts/_marts__models.yml)\n  002003 (42S02): SQL compilation error:\n  Object 'ARTWORK_DB.GOLD.DIM_ARTWORKS' does not exist or not authorized.\n  compiled code at target/run/artwork_pipeline/models/marts/_marts__models.yml/dbt_expectations_expect_table__2437f534c7ad571820982f5422ad57e9.sql",
+      "failures": null,
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artworks_1000000__100.bd83d5f1a9",
+      "compiled": true,
+      "compiled_code": "\n\n\n\n    with grouped_expression as (\n    select\n        \n        \n    \n  \n( 1=1 and count(*) >= 100 and count(*) <= 1000000\n)\n as expression\n\n\n    from ARTWORK_DB.GOLD.dim_artworks\n    \n\n),\nvalidation_errors as (\n\n    select\n        *\n    from\n        grouped_expression\n    where\n        not(expression = true)\n\n)\n\nselect *\nfrom validation_errors\n\n\n\n\n\n",
+      "relation_name": null,
+      "batch_results": null
+    },
+    {
+      "status": "fail",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:45:57.849034Z", "completed_at": "2026-06-07T17:45:57.852258Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:45:57.852493Z", "completed_at": "2026-06-07T17:45:58.011622Z"}
+      ],
+      "thread_id": "Thread-5 (worker)",
+      "execution_time": 0.16,
+      "adapter_response": {"_message": "SUCCESS 1", "code": "SUCCESS", "rows_affected": 1},
+      "message": "Got 1 result, configured to fail if != 0",
+      "failures": 1,
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__enrichment_status_1000000__100.761c259e82",
+      "compiled": true,
+      "compiled_code": "\n\n\n\n    with grouped_expression as (\n    select\n        \n        \n    \n  \n( 1=1 and count(*) >= 100 and count(*) <= 1000000\n)\n as expression\n\n\n    from ARTWORK_DB.SILVER.stg_met__enrichment_status\n    \n\n),\nvalidation_errors as (\n\n    select\n        *\n    from\n        grouped_expression\n    where\n        not(expression = true)\n\n)\n\nselect *\nfrom validation_errors\n\n\n\n\n\n",
+      "relation_name": null,
+      "batch_results": null
+    },
+    {
+      "status": "fail",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:45:57.808903Z", "completed_at": "2026-06-07T17:45:57.812609Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:45:57.812987Z", "completed_at": "2026-06-07T17:45:58.054997Z"}
+      ],
+      "thread_id": "Thread-2 (worker)",
+      "execution_time": 0.25,
+      "adapter_response": {"_message": "SUCCESS 1", "code": "SUCCESS", "rows_affected": 1},
+      "message": "Got 1 result, configured to fail if != 0",
+      "failures": 1,
+      "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_stg_met__artists_500__50.89494e8092",
+      "compiled": true,
+      "compiled_code": "\n\n\n\n    with grouped_expression as (\n    select\n        \n        \n    \n  \n( 1=1 and count(*) >= 50 and count(*) <= 500\n)\n as expression\n\n\n    from ARTWORK_DB.SILVER.stg_met__artists\n    \n\n),\nvalidation_errors as (\n\n    select\n        *\n    from\n        grouped_expression\n    where\n        not(expression = true)\n\n)\n\nselect *\nfrom validation_errors\n\n\n\n\n\n",
+      "relation_name": null,
+      "batch_results": null
+    },
+    {
+      "status": "warn",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:46:00.093065Z", "completed_at": "2026-06-07T17:46:00.105909Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:46:00.106260Z", "completed_at": "2026-06-07T17:46:00.237231Z"}
+      ],
+      "thread_id": "Thread-2 (worker)",
+      "execution_time": 0.15,
+      "adapter_response": {"_message": "SUCCESS 1", "code": "SUCCESS", "rows_affected": 1},
+      "message": "Got 5 results, configured to warn if != 0",
+      "failures": 5,
+      "unique_id": "test.dbt_project_evaluator.is_empty_fct_missing_primary_key_tests_.4d10d48da0",
+      "compiled": true,
+      "compiled_code": "\n\n    \n\n    select count(*) as n_records\n    from ARTWORK_DB.DBT_TEST__AUDIT.fct_missing_primary_key_tests\n\n",
+      "relation_name": null,
+      "batch_results": null
+    },
+    {
+      "status": "pass",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:45:57.182361Z", "completed_at": "2026-06-07T17:45:57.207502Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:45:57.211646Z", "completed_at": "2026-06-07T17:45:57.504238Z"}
+      ],
+      "thread_id": "Thread-3 (worker)",
+      "execution_time": 0.38,
+      "adapter_response": {"_message": "SUCCESS 1", "code": "SUCCESS", "rows_affected": 1},
+      "message": null,
+      "failures": 0,
+      "unique_id": "test.artwork_pipeline.accepted_values_stg_met__enrichment_status_image_status__unknown__live__dead.c22fbb680b",
+      "compiled": true,
+      "compiled_code": "\nwith all_values as (\n    select image_status as value_field, count(*) as n_records\n    from ARTWORK_DB.SILVER.stg_met__enrichment_status\n    group by image_status\n)\nselect * from all_values where value_field not in ('unknown','live','dead')\n",
+      "relation_name": null,
+      "batch_results": null
+    },
+    {
+      "status": "pass",
+      "timing": [
+        {"name": "compile", "started_at": "2026-06-07T17:45:57.159375Z", "completed_at": "2026-06-07T17:45:57.201562Z"},
+        {"name": "execute", "started_at": "2026-06-07T17:45:57.207804Z", "completed_at": "2026-06-07T17:45:57.642973Z"}
+      ],
+      "thread_id": "Thread-4 (worker)",
+      "execution_time": 0.52,
+      "adapter_response": {"_message": "SUCCESS 1", "code": "SUCCESS", "rows_affected": 1},
+      "message": null,
+      "failures": 0,
+      "unique_id": "test.artwork_pipeline.accepted_values_stg_met__images_image_type__primary__additional.0b1b5e104c",
+      "compiled": true,
+      "compiled_code": "\nwith all_values as (\n    select image_type as value_field, count(*) as n_records\n    from ARTWORK_DB.SILVER.stg_met__images\n    group by image_type\n)\nselect * from all_values where value_field not in ('primary','additional')\n",
+      "relation_name": null,
+      "batch_results": null
+    }
+  ],
+  "elapsed_time": 6.42
+}
