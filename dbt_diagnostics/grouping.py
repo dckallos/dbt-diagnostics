@@ -63,21 +63,37 @@ def _extract_schema_prefix(report: DiagnosticReport) -> Optional[str]:
 
 
 def _extract_model_names(reports: list[DiagnosticReport]) -> list[str]:
-    """Extract short model names from a list of reports."""
+    """
+    Extract short model names from a list of reports.
+
+    Priority order for extracting the dbt-selector-friendly name:
+    1. finding.target_object (e.g. 'model.artwork_pipeline.dim_artists' -> 'dim_artists')
+    2. Lineage trail step with live_status='missing' -> step.short_name
+    3. finding.target_identifier last segment, lowercased (fallback)
+    """
     names = []
     for report in reports:
+        name = None
         if report.findings:
             for finding in report.findings:
+                # Priority 1: target_object (set by test_failure classifier)
                 if finding.target_object:
-                    short = finding.target_object.split(".")[-1]
-                    if short not in names:
-                        names.append(short)
+                    name = finding.target_object.split(".")[-1]
                     break
-                elif finding.target_identifier:
-                    short = finding.target_identifier.split(".")[-1]
-                    if short not in names:
-                        names.append(short)
+                # Priority 2: lineage trail missing step's short_name
+                if finding.lineage_trail:
+                    for step in finding.lineage_trail:
+                        if step.live_status == "missing" and step.short_name:
+                            name = step.short_name
+                            break
+                    if name:
+                        break
+                # Priority 3: target_identifier last segment, lowercased
+                if finding.target_identifier:
+                    name = finding.target_identifier.split(".")[-1].lower()
                     break
+        if name and name not in names:
+            names.append(name)
     return names
 
 
