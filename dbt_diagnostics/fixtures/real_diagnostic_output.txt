@@ -1,0 +1,561 @@
+
+======================================================================
+  dbt Diagnostics
+  31 result(s) | 23 error(s) | 4 skipped
+======================================================================
+
+  ERROR: model.dbt_project_evaluator.base_exposure_relationships
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/base/base_exposure_relationships.sql
+    Problem:    Jinja compilation failed: > called by model base_exposure_relationships (models/staging/graph/base/base_exposure_relationships
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.base_metric_relationships
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/base/base_metric_relationships.sql
+    Problem:    Jinja compilation failed: > called by model base_metric_relationships (models/staging/graph/base/base_metric_relationships.sql
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.base_node_columns
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/base/base_node_columns.sql
+    Problem:    Jinja compilation failed: > called by model base_node_columns (models/staging/graph/base/base_node_columns.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.base_node_relationships
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/base/base_node_relationships.sql
+    Problem:    Jinja compilation failed: > called by model base_node_relationships (models/staging/graph/base/base_node_relationships.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.base_source_columns
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/base/base_source_columns.sql
+    Problem:    Jinja compilation failed: > called by model base_source_columns (models/staging/graph/base/base_source_columns.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.stg_exposures
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/stg_exposures.sql
+    Problem:    Jinja compilation failed: > called by model stg_exposures (models/staging/graph/stg_exposures.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.stg_metrics
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/stg_metrics.sql
+    Problem:    Jinja compilation failed: > called by model stg_metrics (models/staging/graph/stg_metrics.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.stg_nodes
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/stg_nodes.sql
+    Problem:    Jinja compilation failed: > called by model stg_nodes (models/staging/graph/stg_nodes.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.stg_sources
+  Class: compilation_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/graph/stg_sources.sql
+    Problem:    Jinja compilation failed: > called by model stg_sources (models/staging/graph/stg_sources.sql)
+
+  FIX:
+    Review the Jinja syntax at the reported line in the source file.
+
+
+  ERROR: model.dbt_project_evaluator.stg_naming_convention_prefixes
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/variables/stg_naming_convention_prefixes.sql
+    Problem:    Insufficient privileges on schema DBT_TEST__AUDIT
+
+
+  LINEAGE TRACE: SQL syntax
+  ........................................................
+
+❌ stg_naming_convention_prefixes (failing model)
+     ARTWORK_DB.DBT_TEST__AUDIT.stg_naming_convention_prefixes
+     File: models/staging/variables/stg_naming_convention_prefixes.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ DBT_TEST__AUDIT
+     DBT_TEST__AUDIT
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'DBT_TEST__AUDIT' is the furthest upstream failure.
+
+  FIX:
+    Grant access to the executing role:
+    GRANT SELECT ON SCHEMA DBT_TEST__AUDIT TO ROLE <your_transformer_role>;
+    Or verify current grants:
+    SHOW GRANTS ON SCHEMA DBT_TEST__AUDIT;
+
+
+  ERROR: model.dbt_project_evaluator.stg_naming_convention_folders
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/variables/stg_naming_convention_folders.sql
+    Problem:    Insufficient privileges on schema DBT_TEST__AUDIT
+
+
+  LINEAGE TRACE: SQL syntax
+  ........................................................
+
+❌ stg_naming_convention_folders (failing model)
+     ARTWORK_DB.DBT_TEST__AUDIT.stg_naming_convention_folders
+     File: models/staging/variables/stg_naming_convention_folders.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ DBT_TEST__AUDIT
+     DBT_TEST__AUDIT
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'DBT_TEST__AUDIT' is the furthest upstream failure.
+
+  FIX:
+    Grant access to the executing role:
+    GRANT SELECT ON SCHEMA DBT_TEST__AUDIT TO ROLE <your_transformer_role>;
+    Or verify current grants:
+    SHOW GRANTS ON SCHEMA DBT_TEST__AUDIT;
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_metering_daily_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_metering_daily_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_metering_daily_history (failing model)
+     ARTWORK_DB.SILVER.stg_metering_daily_history
+     File: models/staging/stg_metering_daily_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_access_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_access_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_access_history (failing model)
+     ARTWORK_DB.SILVER.stg_access_history
+     File: models/staging/stg_access_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_database_storage_usage_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_database_storage_usage_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_database_storage_usage_history (failing model)
+     ARTWORK_DB.SILVER.stg_database_storage_usage_history
+     File: models/staging/stg_database_storage_usage_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_metering_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_metering_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_metering_history (failing model)
+     ARTWORK_DB.SILVER.stg_metering_history
+     File: models/staging/stg_metering_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_rate_sheet_daily
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_rate_sheet_daily.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_rate_sheet_daily (failing model)
+     ARTWORK_DB.SILVER.stg_rate_sheet_daily
+     File: models/staging/stg_rate_sheet_daily.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_query_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_query_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_query_history (failing model)
+     ARTWORK_DB.SILVER.stg_query_history
+     File: models/staging/stg_query_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_remaining_balance_daily
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_remaining_balance_daily.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_remaining_balance_daily (failing model)
+     ARTWORK_DB.SILVER.stg_remaining_balance_daily
+     File: models/staging/stg_remaining_balance_daily.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_storage_usage
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_storage_usage.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_storage_usage (failing model)
+     ARTWORK_DB.SILVER.stg_storage_usage
+     File: models/staging/stg_storage_usage.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_stage_storage_usage_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_stage_storage_usage_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_stage_storage_usage_history (failing model)
+     ARTWORK_DB.SILVER.stg_stage_storage_usage_history
+     File: models/staging/stg_stage_storage_usage_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_usage_in_currency_daily
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_usage_in_currency_daily.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_usage_in_currency_daily (failing model)
+     ARTWORK_DB.SILVER.stg_usage_in_currency_daily
+     File: models/staging/stg_usage_in_currency_daily.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_serverless_task_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_serverless_task_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_serverless_task_history (failing model)
+     ARTWORK_DB.SILVER.stg_serverless_task_history
+     File: models/staging/stg_serverless_task_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ERROR: model.dbt_snowflake_monitoring.stg_warehouse_metering_history
+  Class: runtime_error
+  ======================================================================
+
+  ROOT CAUSE:
+    File:       staging/stg_warehouse_metering_history.sql
+    Problem:    Object not found: UNKNOWN
+
+
+  LINEAGE TRACE: UNKNOWN
+  ........................................................
+
+❌ stg_warehouse_metering_history (failing model)
+     ARTWORK_DB.SILVER.stg_warehouse_metering_history
+     File: models/staging/stg_warehouse_metering_history.sql
+     Manifest: None
+     Live: table does NOT exist in Snowflake
+     Run: error
+
+❌ UNKNOWN
+     UNKNOWN
+     Manifest: object not found in manifest sources or nodes
+     Live: table does NOT exist in Snowflake
+
+  ........................................................
+  VERDICT: 'UNKNOWN' is the furthest upstream failure.
+
+  FIX:
+    Verify the object exists: SHOW TABLES LIKE 'UNKNOWN' IN SCHEMA ; If it exists, check GRANTs to the executing role.
+
+
+  ----------------------------------------------------------------------
+  SKIPPED (downstream of the above):
+    - stg_exposure_relationships
+    - stg_metric_relationships
+    - stg_node_relationships
+    - stg_columns
+
