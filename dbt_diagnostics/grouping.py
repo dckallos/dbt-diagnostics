@@ -63,21 +63,48 @@ def _extract_schema_prefix(report: DiagnosticReport) -> Optional[str]:
 
 
 def _extract_model_names(reports: list[DiagnosticReport]) -> list[str]:
-    """Extract short model names from a list of reports."""
+    """
+    Extract short model names from a list of reports.
+
+    Prefers the lineage trail's short_name (lowercase, from manifest unique_id)
+    over the target_object field (which may be a FQ uppercase relation name).
+    Falls back to lowercasing the last segment of target_object/target_identifier.
+    """
     names = []
     for report in reports:
-        if report.findings:
-            for finding in report.findings:
-                if finding.target_object:
-                    short = finding.target_object.split(".")[-1]
-                    if short not in names:
-                        names.append(short)
+        if not report.findings:
+            continue
+
+        name = None
+        for finding in report.findings:
+            # Best source: lineage trail step with live_status="missing"
+            # These have short_name derived from the manifest (lowercase)
+            if finding.lineage_trail:
+                for step in finding.lineage_trail:
+                    if step.live_status == "missing" and step.short_name:
+                        name = step.short_name
+                        break
+                if name:
                     break
-                elif finding.target_identifier:
-                    short = finding.target_identifier.split(".")[-1]
-                    if short not in names:
-                        names.append(short)
-                    break
+
+            # Second best: target_object that looks like a model unique_id
+            # (e.g. "model.artwork_pipeline.dim_artists")
+            if finding.target_object and finding.target_object.startswith("model."):
+                name = finding.target_object.split(".")[-1]
+                break
+
+            # Fallback: target_object is a FQ relation name (UPPERCASE)
+            # Lowercase the last segment for dbt selector compatibility
+            if finding.target_object:
+                name = finding.target_object.split(".")[-1].lower()
+                break
+            elif finding.target_identifier:
+                name = finding.target_identifier.split(".")[-1].lower()
+                break
+
+        if name and name not in names:
+            names.append(name)
+
     return names
 
 
