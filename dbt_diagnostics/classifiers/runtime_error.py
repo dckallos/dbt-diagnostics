@@ -149,12 +149,43 @@ class RuntimeErrorClassifier(BaseClassifier):
 
         # Build explanation
         if parent_failed:
-            explanation = (
-                f"Object {object_name} is produced by upstream model "
-                f"{parent_failed}. If that model failed or was skipped, "
-                f"this table won't exist. Check the upstream error first."
-            )
-            fix = f"Fix the error in {parent_failed}, then re-run."
+            # Check if the parent actually errored in run_results, or was
+            # never materialized (skipped / not run at all)
+            parent_run_status = self._get_run_status(parent_failed)
+            if parent_run_status == "error":
+                explanation = (
+                    f"Object {object_name} is produced by upstream model "
+                    f"{parent_failed}. That model failed with an error. "
+                    f"Fix the upstream error first."
+                )
+                fix = f"Fix the error in {parent_failed}, then re-run."
+            elif parent_run_status == "skipped":
+                parent_short = parent_failed.split(".")[-1] if "." in parent_failed else parent_failed
+                explanation = (
+                    f"Object {object_name} is produced by upstream model "
+                    f"{parent_failed}, which was skipped in this run. "
+                    f"The table does not exist in Snowflake yet."
+                )
+                fix = (
+                    f"Model has not been materialized. Run:\n"
+                    f"  dbt run -s {parent_short}\n"
+                    f"Then re-run this model."
+                )
+            else:
+                # Parent is in manifest but has no run_results entry (never executed)
+                parent_short = parent_failed.split(".")[-1] if "." in parent_failed else parent_failed
+                explanation = (
+                    f"Object {object_name} is produced by upstream model "
+                    f"{parent_failed}, but that model has not been "
+                    f"materialized yet (no run record found). "
+                    f"Run the upstream model first."
+                )
+                fix = (
+                    f"Model has not been materialized. Run:\n"
+                    f"  dbt run -s {parent_short}\n"
+                    f"Or run a full build: dbt build\n"
+                    f"Then re-run this model."
+                )
         elif is_known_ref:
             explanation = (
                 f"Object {object_name} is declared in the manifest but does "
@@ -426,6 +457,20 @@ class RuntimeErrorClassifier(BaseClassifier):
                 relation = (node.get("relation_name") or "").upper()
                 if relation == target:
                     return pid
+        return None
+
+    def _get_run_status(self, unique_id: str) -> Optional[str]:
+        """
+        Look up the run status of a node from run_results.
+
+        Returns 'error', 'pass', 'skipped', 'fail', etc. or None if
+        the node has no entry in run_results (was never executed).
+        """
+        if not self.context.run_results:
+            return None
+        for result in self.context.run_results.get("results", []):
+            if result.get("unique_id") == unique_id:
+                return result.get("status")
         return None
 
     def _find_object_line(self, object_name: str) -> Optional[int]:

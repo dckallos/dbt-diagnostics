@@ -232,6 +232,13 @@ class DiagnosticReport:
     skipped_downstream: list[str] = field(default_factory=list)
     cascade_note: Optional[str] = None
     diff: Optional["DiffResult"] = None
+    # Test failure metadata (populated by TestFailureClassifier).
+    # These are report-level because they apply to the whole test result,
+    # not to individual findings within the result.
+    threshold: Optional[tuple] = None  # (min_rows, max_rows) for row-count tests
+    relation: Optional[str] = None  # FQ relation name from compiled SQL
+    query_id: Optional[str] = None  # Snowflake query_id from adapter_response
+    dbt_message: Optional[str] = None  # Raw dbt result message (e.g. "Got 1 result...")
 
     @property
     def has_findings(self) -> bool:
@@ -242,7 +249,7 @@ class DiagnosticReport:
         Produce a stable, versioned JSON representation for CI consumers.
         This schema is documented and will not change without a version bump.
         """
-        return {
+        d = {
             "schema_version": "1.0",
             "unique_id": self.unique_id,
             "model_name": self.unique_id.split(".")[-1] if "." in self.unique_id else self.unique_id,
@@ -251,6 +258,16 @@ class DiagnosticReport:
             "findings": [self._finding_to_dict(f) for f in self.findings],
             "skipped_downstream": self.skipped_downstream,
         }
+        # Include test failure metadata when present
+        if self.threshold is not None:
+            d["threshold"] = {"min": self.threshold[0], "max": self.threshold[1]}
+        if self.relation is not None:
+            d["relation"] = self.relation
+        if self.query_id is not None:
+            d["query_id"] = self.query_id
+        if self.dbt_message is not None:
+            d["dbt_message"] = self.dbt_message
+        return d
 
     @staticmethod
     def _finding_to_dict(f: "DiagnosticFinding") -> dict:

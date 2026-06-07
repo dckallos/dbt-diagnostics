@@ -21,6 +21,7 @@ from dbt_diagnostics.colors import (
     status_indicator,
 )
 from dbt_diagnostics.models import DiagnosticReport, LintFinding
+from dbt_diagnostics.grouping import ReportGroup, group_reports
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -89,6 +90,9 @@ def render_text(
     skipped_models: list[str],
     verbose: bool = False,
     color_enabled: bool = False,
+    fails: int = 0,
+    warns: int = 0,
+    warn_details: list[dict] = None,
 ) -> str:
     """Render all reports using the Jinja2 report template."""
     env = _build_env(color_enabled=color_enabled, verbose=verbose)
@@ -96,14 +100,30 @@ def render_text(
 
     skipped_summary = _summarize_skipped(skipped_models)
 
+    # Group warn_details by category for template
+    warn_by_category = {}
+    if warn_details:
+        for w in warn_details:
+            cat = w.get("category", "data_quality")
+            warn_by_category.setdefault(cat, []).append(w)
+
+    # Group related reports
+    report_groups, ungrouped_reports = group_reports(reports)
+
     return template.render(
         reports=reports,
+        report_groups=report_groups,
+        ungrouped_reports=ungrouped_reports,
         total=total,
         errors=errors,
+        fails=fails,
+        warns=warns,
         skipped=skipped,
         skipped_models=skipped_models,
         skipped_summary=skipped_summary,
         verbose=verbose,
+        warn_details=warn_details or [],
+        warn_by_category=warn_by_category,
     )
 
 

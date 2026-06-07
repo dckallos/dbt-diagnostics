@@ -36,7 +36,7 @@
      File: {{ step.file_path }}
 {% endif %}
 {% if step.manifest_status and step.manifest_status != "not_checked" %}
-     Manifest: {{ step.manifest_detail }}
+     Manifest: {{ step.manifest_detail if step.manifest_detail else "present" }}
 {% endif %}
 {% if step.live_status %}
      Live: {{ step.live_detail }}
