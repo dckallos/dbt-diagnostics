@@ -137,6 +137,11 @@ that should have produced the missing parents. Grain is free here: the
   NOTE: section 8 rates this Low-effort / High-value; strong candidate to
   promote into the first epic alongside UC #5.
 - Target-aware materialization opinion (table-on-dev) as guidance, not a linter.
+- DEFERRED FUTURE EPIC -- live invariant-scan: run `distinctness`/`orphan_fk`
+  on declared grains/relationships on a PASSING build to catch drift before it
+  fails. Explicitly fenced off from static linting (it must stay LIVE, not
+  re-enter the crowded lint space). Not written as issues yet; needs a go/no-go
+  decision before it becomes real work.
 
 ## 7. Open questions
 - Probe cost ceiling: cap DISTINCT scans by row count or sample above N?
@@ -161,6 +166,7 @@ Estimates are based on reading `dag_walker.py`, `enrich.py`, and
 | UNION-branch attribution (Issue 1) | Medium | A | Med-High / rare |
 | UC #7 orphan-FK | Med-High | B | Medium |
 | UC #2 upstream grain tracing | High | B | Highest ceiling / narrow trigger |
+| Static grain-consistency cross-check | Low-Med | A ($0) | Proactive / prevents Issue 3 class |
 
 Per-feature notes:
 
@@ -173,7 +179,7 @@ Per-feature notes:
   in the backlog.
 - **UNION attribution (Medium / rare).** Reuses the `contract_violation`
   enrichment + reconciliation path. Effort driver is the parser dependency
-  (section 9), not the logic. High value per occurrence, low frequency: a
+  (section 7), not the logic. High value per occurrence, low frequency: a
   delighter.
 - **UC #7 (Med-High / Medium).** Grain is free (relationship test config), and
   `dag_walker` gives upstream attribution. But `orphan_fk` is the first
@@ -184,3 +190,27 @@ Per-feature notes:
   only branches on contract_violation/runtime_error); a new Tier-B
   `distinctness` probe per hop; grain resolution; a grain-based disconnect
   verdict. Justified, but built last and gated for the reasons in 4.1.
+- **Static grain-consistency cross-check (Low-Med / proactive).** The one
+  proactive check on-thesis (see section 9). $0, offline, no failure required.
+  Shares the parser decision with UNION attribution.
+
+## 9. Proactive vs. reactive coverage
+
+The first epic (UC #5, #2, #7, UNION attribution, incremental stale-state) is
+**reactive by design**: every trigger is a failure that already happened. The
+value is lower mean-time-to-root-cause, not prevention. This is intentional --
+it targets the proven, costly debugging sessions (Issues 1-3).
+
+The single proactive check that stays on-thesis is the **static
+grain-consistency cross-check** (issue #10): it prevents the Issue 3 fan-out
+class by detecting grain-declaration disagreement before any test fails, and
+it does so without re-entering the crowded static-lint space (it cross-checks
+declarations the model already makes, $0, offline).
+
+Broader proactive prevention -- a live invariant-scan that runs Tier-B probes
+on a PASSING build to catch drift -- is recorded as a DEFERRED FUTURE EPIC in
+section 6. It is intentionally NOT written as issues yet: it must remain LIVE
+(not slide into static linting), and it needs an explicit go/no-go before
+becoming real work. Naming it here so the boundary is on the record:
+reactive root-cause now; one cheap proactive cross-check (#10); live
+invariant-scan later, only if chosen.
