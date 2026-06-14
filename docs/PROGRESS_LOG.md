@@ -113,3 +113,40 @@ End of session -- 2026-06-14 continuity and workflow scaffolding
   pushed; the real modules are unchanged.
 
 End of session -- 2026-06-14 issue #7 single-root-cause aggregator implemented
+
+---
+
+## 2026-06-14 -- issue #7 merged (test fix + follow-up cleanup)
+
+**What changed**
+- Owner re-ran the suite on the Mac: `pytest dbt_diagnostics/tests -q` ->
+  354 passed, 0 failed.
+- The only baseline failure was a stale assertion in `tests/test_main.py`
+  pinning the top-level `--json` `schema_version == "1.0"`. Updated it to
+  `"1.1"` and added a positive assertion for the new additive
+  `root_cause_groups` key so the schema change is covered (commit 64ccc84).
+- Marked PR #16 ready and squash-merged it into `donkey-kong-sandbox`
+  (issue #7 closed).
+- Closed issue #19 as a duplicate of #17: the attested-run-identity hook
+  follow-up was already filed as #17 by the implementing session.
+
+**Corrections to the prior entry**
+- The aggregator PR is #16 (the prior entry said "#14"); now merged.
+- The empirical 354-test run also clears the prior entry's caveat -- the new
+  modules' assumptions about `models.py` / `grants.py` attributes are valid
+  against the real modules (the 18 new tests exercise them and pass).
+
+**Current state**
+- `donkey-kong-sandbox`: now includes the #7 aggregator (one squashed commit).
+- Open follow-up: #17 -- attested run-identity dbt hook (Tier A, opt-in).
+
+**Next steps**
+- Optional: eyeball `dbt-diagnostics demo` for the new ROOT CAUSE section.
+- Next epic-#4 feature by build order: #9 (incremental stale-state detector,
+  Tier A), then the gated flagship #5.
+
+**Be careful**
+- Tier A only; no static linting; keep `--json` schema additive.
+- `main` stays stable; only promote `donkey-kong-sandbox` -> `main` at a release.
+
+End of session -- 2026-06-14 issue #7 merged
