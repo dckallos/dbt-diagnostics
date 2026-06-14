@@ -1,5 +1,37 @@
 # dbt_diagnostics CHANGELOG
 
+## [Unreleased]
+
+### Single-root-cause aggregator (#7)
+
+I collapsed repeated "object does not exist" (Snowflake 002003) errors into a
+single root-cause group with one database-grounded verdict, instead of printing
+N identical lines. When a whole test suite fails because one upstream object is
+missing, the output is now one line, not forty-six.
+
+- New `root_cause.py`: groups object-not-exist reports by the missing object
+  and emits a three-way verdict -- `never_built` (run `dbt build`, not
+  `dbt test`), `exists_now` (built by another process / re-run), or `denied`
+  (routed to a grant check). The `denied` branch is decided by SHOW GRANTS, not
+  by SHOW TABLES, because SHOW TABLES cannot tell "absent" from "invisible to
+  this role."
+- New `enrichers/run_identity.py`: recovers the role the run actually used from
+  the failing `query_id` via INFORMATION_SCHEMA.QUERY_HISTORY (ground truth),
+  with a fallback ladder (recovered -> declared profile -> session role) and a
+  drift warning when the recovered role disagrees with the profile. An empty
+  history lookup is classified as "not yet" (lagging) vs "never" using a
+  watermark comparison, with one bounded retry so the CLI never hangs.
+- `--json` `schema_version` bumped to `"1.1"` (additive only): new top-level
+  `root_cause_groups` array. No existing keys changed.
+- Terminal: new ROOT CAUSE section that reuses the `lineage_trace` partial and
+  shows the verdict, the role checked + its provenance, the fix, and the
+  Tier-A probe queries.
+- Tier A only ($0 cloud-services metadata). Offline or unconfirmable state
+  degrades to "unverified" plus the exact query to run; nothing raises.
+- Tests: `tests/test_root_cause.py`, `tests/test_run_identity.py`.
+
+---
+
 ## v0.5.0 -- 2026-06-07 (workspace only; not yet tested on Mac)
 
 ### Lineage Trail Enhancement (Phase 1 + Phase 2)

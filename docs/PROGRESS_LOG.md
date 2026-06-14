@@ -59,3 +59,53 @@
   and a PR.
 
 End of session -- 2026-06-14 continuity and workflow scaffolding
+
+---
+
+## 2026-06-14 -- #7 single-root-cause aggregator implemented (PR open)
+
+**What changed**
+- Implemented issue #7 on branch `feat/7-root-cause-aggregator` (cut from
+  `donkey-kong-sandbox`) and opened a PR back into `donkey-kong-sandbox`.
+  PR is NOT merged -- it is the owner's to review.
+- New `dbt_diagnostics/root_cause.py`: collapses Snowflake 002003
+  "object does not exist" errors into one `RootCauseGroup` per missing object
+  and emits a three-way verdict (never_built / exists_now / denied). The
+  `denied` branch is decided by SHOW GRANTS, not SHOW TABLES (SHOW TABLES
+  cannot separate "absent" from "invisible to this role").
+- New `dbt_diagnostics/enrichers/run_identity.py`: recovers the run's role from
+  the failing query_id via INFORMATION_SCHEMA.QUERY_HISTORY (Tier 0, ground
+  truth), with a fallback ladder (recovered -> declared -> session) and a
+  drift warning. Distinguishes "lagging" (history catching up) from
+  "not_found" via a watermark compare, with one bounded retry.
+- Wired into `main.py` (--json `schema_version` 1.1 + new `root_cause_groups`
+  key, additive), `renderer.py` (new optional `root_cause_groups` arg), and
+  `templates/report.j2` (ROOT CAUSE section reusing the `lineage_trace`
+  partial).
+- Tests: `tests/test_root_cause.py`, `tests/test_run_identity.py`.
+- Tier A only ($0 metadata). Offline / unconfirmable -> "unverified" + the
+  query to run; nothing raises.
+
+**Verification (important caveat)**
+- This work was authored from a Snowsight Cortex session whose sandbox CANNOT
+  reach github.com or PyPI and has NO pytest installed, so the full suite
+  (336 baseline) was NOT run here. What WAS done: `py_compile` on all new/
+  changed Python, a Jinja parse of `report.j2`, and the 18 NEW tests executed
+  via a minimal stdlib runner against vendored copies of `models.py`/`grants.py`
+  -- all 18 pass. The owner MUST run `pytest dbt_diagnostics/tests -q` on the
+  Mac before merging and confirm the 336 baseline (now ~354) is green.
+
+**Likely follow-ups for the review pass**
+- Existing tests that assert the top-level `--json` `schema_version == "1.0"`
+  will need updating to `"1.1"` (intended, additive bump).
+- Snapshot/golden tests of `report.j2` output for runs containing 002003
+  errors will gain a ROOT CAUSE section -- update expected output.
+- A separate follow-up issue is being filed for the Tier-1 "attested identity"
+  dbt pre-execution hook (highest-fidelity role capture; out of #7 scope).
+
+**Be careful**
+- Do not merge the PR automatically -- owner reviews.
+- Keep the JSON schema additive (do not rename/remove 1.0 keys).
+- Do not re-introduce static linting; do not add a Tier-B scanning probe.
+
+End of session -- 2026-06-14 #7 single-root-cause aggregator implemented (PR open)
