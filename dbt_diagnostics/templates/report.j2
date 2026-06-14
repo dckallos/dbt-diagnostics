@@ -3,6 +3,38 @@
   {{ "dbt Diagnostics" | bold_white }}
   {{ total }} result(s) | {{ errors }} error(s) | {{ fails }} fail(s) | {{ warns }} warn(s) | {{ skipped }} skipped
 ======================================================================
+{% if root_cause_groups %}
+
+  ======================================================================
+  {{ "ROOT CAUSE" | bold_white }} ({{ root_cause_groups | length }} group(s))
+  ======================================================================
+{% for rc in root_cause_groups %}
+
+  {{ "*" | bold_red }} {{ rc.title }}
+    {{ ("Verdict: " + rc.headline) | bold_white }}
+{% if rc.role_checked %}
+    Role checked: {{ rc.role_checked }} ({{ rc.role_provenance }})
+{% endif %}
+    {{ rc.detail | dim }}
+{% set finding = rc.representative_finding %}
+{% if finding and finding.lineage_trail %}
+{% set trace_target = rc.object_names[0] %}
+{% include 'findings/lineage_trace.j2' ignore missing %}
+{% endif %}
+{% if rc.fix %}
+    {{ "FIX:" | bold_white }}
+{% for line in rc.fix.splitlines() %}
+      {{ line | green }}
+{% endfor %}
+{% endif %}
+{% if rc.probe_queries %}
+    {{ "Probe queries (Tier A, $0):" | dim }}
+{% for q in rc.probe_queries %}
+      {{ q | dim }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
 {% for group in report_groups %}
 
   ----------------------------------------------------------------------
