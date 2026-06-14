@@ -1,2 +1,5 @@
 /dbt_diagnostics.egg-info
-**/__pycache__/
+/dbt_diagnostics/__pycache__
+/dbt_diagnostics/classifiers/__pycache__
+/dbt_diagnostics/enrichers/__pycache__
+/dbt_diagnostics/tracers/__pycache__
