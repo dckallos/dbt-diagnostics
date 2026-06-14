@@ -38,16 +38,15 @@ class TestFailStatusProcessing:
             "compiled_dir": Path("/project/target/compiled"),
         }
 
-        reports, skipped_ids, total, error_count, fail_count, warn_count = (
+        reports, skipped_ids, total, error_count, fail_count, warn_details = (
             _diagnose_all(run_results, manifest, paths)
         )
-
         # Fixture has: 2 errors + 2 fails + 1 warn + 2 passes = 7 total
         # Reports are generated for errors + fails = 4
         assert len(reports) == 4
         assert error_count == 2
         assert fail_count == 2
-        assert warn_count == 1
+        assert len(warn_details) == 1
         assert total == 7
 
     def test_fail_reports_have_test_failure_class(self):
@@ -141,13 +140,12 @@ class TestHeaderCounts:
             "compiled_dir": Path("/project/target/compiled"),
         }
 
-        _, _, total, error_count, fail_count, warn_count = _diagnose_all(
+        _, _, total, error_count, fail_count, warn_details = _diagnose_all(
             run_results, manifest, paths
         )
-
         assert error_count == 2
         assert fail_count == 2
-        assert warn_count == 1
+        assert len(warn_details) == 1
         assert total == 7
 
 
@@ -177,7 +175,7 @@ class TestUnmaterializedModelAdvice:
                     "unique_id": "test.artwork_pipeline.dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50.818205a8b7",
                     "message": "Database Error in test dbt_expectations_expect_table_row_count_to_be_between_dim_artists_1000000__50 (models/marts/_marts__models.yml)\\n  002003 (42S02): SQL compilation error:\\n  Object 'ARTWORK_DB.GOLD.DIM_ARTISTS' does not exist or not authorized.",
                     "compiled_code": "\\n\\n\\n\\n    with grouped_expression as (\\n    select\\n( 1=1 and count(*) >= 50 and count(*) <= 1000000\\n)\\n as expression\\n\\n    from ARTWORK_DB.GOLD.dim_artists\\n),\\nvalidation_errors as (\\n    select *\\n    from grouped_expression\\n    where not(expression = true)\\n)\\nselect *\\nfrom validation_errors",
-                    "failures": null,
+                    "failures": None,
                     "adapter_response": {}
                 }
             ]
