@@ -34,4 +34,4 @@ include = ["dbt_diagnostics*"]
 dbt_diagnostics = ["templates/**/*.j2", "fixtures/*.json"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["dbt_diagnostics/tests"]
