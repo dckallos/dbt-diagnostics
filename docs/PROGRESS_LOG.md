@@ -59,3 +59,94 @@
   and a PR.
 
 End of session -- 2026-06-14 continuity and workflow scaffolding
+
+---
+
+## 2026-06-14 -- issue #7 single-root-cause aggregator implemented
+
+**What changed**
+- Cut `feat/7-root-cause-aggregator` off `donkey-kong-sandbox` and implemented
+  issue #7 (the first Live Verification Engine probe).
+- New `dbt_diagnostics/root_cause.py`: collapses Snowflake "object does not
+  exist" (002003) errors into one `RootCauseGroup` per missing object, with a
+  single live-disambiguated verdict (`never_built` / `exists_now` / `denied` /
+  `unverified`). `denied` is decided by `SHOW GRANTS`, not by `table_exists`,
+  since `SHOW TABLES` cannot separate "missing" from "invisible to the role".
+  Reuses `schema_inspector.table_exists` and `grants.check_role_grants`.
+- New `dbt_diagnostics/enrichers/run_identity.py`: recovers the run's role from
+  the failing `query_id` via `INFORMATION_SCHEMA.QUERY_HISTORY` (Tier 0), with
+  declared-profile (Tier 2) and session (Tier 3) fallbacks; watermark check
+  separates "lagging" from "never" with one bounded retry; flags role drift.
+- Wired into `main.py` (`cmd_diagnose` + `_try_enrich` build the groups; `--json`
+  bumped to `schema_version` 1.1 with an additive `root_cause_groups` key),
+  `renderer.py` (new `root_cause_groups` arg), and `report.j2` (new ROOT CAUSE
+  section reusing the `lineage_trace` partial).
+- Added `tests/test_root_cause.py` (10) and `tests/test_run_identity.py` (8).
+- Updated `CHANGELOG.md` `[Unreleased]`.
+- workspace stage: pushed to GitHub branch `feat/7-root-cause-aggregator`
+  (three commits). applied-to-account: n/a. pushed-to-Mac: no (branch is remote).
+
+**Verification (important caveat)**
+- This was authored from a Cortex Code Snowsight sandbox that CANNOT run the
+  repo's pytest suite (no PyPI/pytest, no github clone -- proxy allowlist). I
+  verified by: `py_compile` on all new/changed Python; a standalone runner that
+  executed all 18 new test functions against the real `root_cause` /
+  `run_identity` logic (18/18 pass); and a Jinja render of `report.j2` + the
+  `lineage_trace` partial (collapsed-group case and empty case both OK).
+- NOT yet run on a Mac: the full 336-test baseline. The `--json`
+  `schema_version` 1.0 -> 1.1 bump WILL break any existing test that asserts the
+  top-level version string -- those assertions must be updated to 1.1 (additive
+  key add is intended). Run `pytest dbt_diagnostics/tests -q` locally and fix
+  any version-string assertions before merging.
+
+**Next steps**
+- On the Mac: pull the branch, run `pytest dbt_diagnostics/tests -q`, fix any
+  schema_version assertions, eyeball `dbt-diagnostics demo` for the new ROOT
+  CAUSE section, then review PR #14.
+- File/triage the follow-up issue: opt-in dbt `on-run-start` identity-stamp hook
+  (highest-fidelity role source; out of #7 scope).
+
+**Be careful**
+- Do not merge PR #14 from the agent -- owner reviews and merges.
+- Do not re-introduce static linting; keep probes Tier A (no warehouse scans).
+- The vendored `models.py` / `grants.py` used for the sandbox test-run were NOT
+  pushed; the real modules are unchanged.
+
+End of session -- 2026-06-14 issue #7 single-root-cause aggregator implemented
+
+---
+
+## 2026-06-14 -- issue #7 merged (test fix + follow-up cleanup)
+
+**What changed**
+- Owner re-ran the suite on the Mac: `pytest dbt_diagnostics/tests -q` ->
+  354 passed, 0 failed.
+- The only baseline failure was a stale assertion in `tests/test_main.py`
+  pinning the top-level `--json` `schema_version == "1.0"`. Updated it to
+  `"1.1"` and added a positive assertion for the new additive
+  `root_cause_groups` key so the schema change is covered (commit 64ccc84).
+- Marked PR #16 ready and squash-merged it into `donkey-kong-sandbox`
+  (issue #7 closed).
+- Closed issue #19 as a duplicate of #17: the attested-run-identity hook
+  follow-up was already filed as #17 by the implementing session.
+
+**Corrections to the prior entry**
+- The aggregator PR is #16 (the prior entry said "#14"); now merged.
+- The empirical 354-test run also clears the prior entry's caveat -- the new
+  modules' assumptions about `models.py` / `grants.py` attributes are valid
+  against the real modules (the 18 new tests exercise them and pass).
+
+**Current state**
+- `donkey-kong-sandbox`: now includes the #7 aggregator (one squashed commit).
+- Open follow-up: #17 -- attested run-identity dbt hook (Tier A, opt-in).
+
+**Next steps**
+- Optional: eyeball `dbt-diagnostics demo` for the new ROOT CAUSE section.
+- Next epic-#4 feature by build order: #9 (incremental stale-state detector,
+  Tier A), then the gated flagship #5.
+
+**Be careful**
+- Tier A only; no static linting; keep `--json` schema additive.
+- `main` stays stable; only promote `donkey-kong-sandbox` -> `main` at a release.
+
+End of session -- 2026-06-14 issue #7 merged

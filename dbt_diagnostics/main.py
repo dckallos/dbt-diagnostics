@@ -41,6 +41,7 @@ from dbt_diagnostics.discover import (
 )
 from dbt_diagnostics.models import DiagnosticReport
 from dbt_diagnostics.renderer import render_text
+from dbt_diagnostics.root_cause import build_root_cause_groups
 from dbt_diagnostics.tracers.diff_tracer import diff_node
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
@@ -303,8 +304,35 @@ def _load_env_file(env_file: Optional[str], project_dir: Optional[Path]):
                 return
 
 
+def _declared_role(paths: dict) -> Optional[str]:
+    """Resolve the role declared in the dbt profile/target, if any."""
+    try:
+        from dbt_diagnostics.enrichers.connection import parse_profile
+        kwargs = parse_profile(
+            paths["profile_name"], paths["target_name"], paths.get("project_dir")
+        )
+        if kwargs:
+            return kwargs.get("role")
+    except Exception:
+        pass
+    return None
+
+
+def _representative_query_id(reports) -> Optional[str]:
+    """Any failing query_id from the reports, used to recover the run's role."""
+    for report in reports:
+        if getattr(report, "query_id", None):
+            return report.query_id
+    return None
+
+
 def _try_enrich(reports, paths: dict, run_results: dict, env_file: Optional[str]):
-    """Attempt live enrichment. Warn and return gracefully on failure."""
+    """
+    Attempt live enrichment and build root-cause groups while the connection is
+    open. Returns the list of RootCauseGroup (possibly empty) on success, or
+    None when no live connection was available (caller then builds offline,
+    "unverified" groups).
+    """
     try:
         from dbt_diagnostics.enrichers import open_connection, enrich_reports
     except ImportError:
@@ -314,7 +342,7 @@ def _try_enrich(reports, paths: dict, run_results: dict, env_file: Optional[str]
             "  Falling back to offline mode.\n",
             file=sys.stderr,
         )
-        return
+        return None
 
     # Load .env before parsing profiles (env_var() references need env vars set)
     _load_env_file(env_file, paths.get("project_dir"))
@@ -330,10 +358,18 @@ def _try_enrich(reports, paths: dict, run_results: dict, env_file: Optional[str]
             "  Falling back to offline mode.\n",
             file=sys.stderr,
         )
-        return
+        return None
 
     try:
         enrich_reports(conn, reports, run_results)
+        from dbt_diagnostics.root_cause import LiveObjectProbe
+        probe = LiveObjectProbe(
+            conn,
+            declared_role=_declared_role(paths),
+            run_results=run_results,
+            representative_query_id=_representative_query_id(reports),
+        )
+        return build_root_cause_groups(reports, probe=probe)
     finally:
         conn.close()
 
@@ -357,9 +393,15 @@ def cmd_diagnose(args):
         for report in reports:
             report.diff = diff_node(report.unique_id, manifest, prev_manifest)
 
-    # Live enrichment (default ON; --no-live suppresses)
+    # Live enrichment (default ON; --no-live suppresses). The live path also
+    # builds the disambiguated root-cause groups while the connection is open.
+    root_cause_groups = None
     if not args.no_live:
-        _try_enrich(reports, paths, run_results, args.env_file)
+        root_cause_groups = _try_enrich(reports, paths, run_results, args.env_file)
+    if root_cause_groups is None:
+        # Offline (or no connector / connect failure): group anyway and degrade
+        # each verdict to "unverified" with the query to run.
+        root_cause_groups = build_root_cause_groups(reports, probe=None)
 
     color_enabled = should_use_color(
         force_color=getattr(args, "color", False),
@@ -369,13 +411,14 @@ def cmd_diagnose(args):
 
     if args.json:
         output = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "total_results": total,
             "errors": error_count,
             "fails": fail_count,
             "warns": warn_count,
             "skipped": len(skipped_ids),
             "reports": [r.to_json_dict() for r in reports],
+            "root_cause_groups": [g.to_json_dict() for g in root_cause_groups],
             "warn_details": warn_details,
         }
         print(json.dumps(output, indent=2, default=str))
@@ -391,6 +434,7 @@ def cmd_diagnose(args):
             verbose=args.verbose,
             color_enabled=color_enabled,
             warn_details=warn_details,
+            root_cause_groups=root_cause_groups,
         )
         print(text)
 
@@ -434,6 +478,9 @@ def cmd_demo(args):
         )
         warn_count = len(warn_details)
 
+        # Offline grouping for the demo (no live connection).
+        root_cause_groups = build_root_cause_groups(reports, probe=None)
+
         text = render_text(
             reports=reports,
             total=total,
@@ -445,6 +492,7 @@ def cmd_demo(args):
             verbose=args.verbose,
             color_enabled=color_enabled,
             warn_details=warn_details,
+            root_cause_groups=root_cause_groups,
         )
         print(text)
 

@@ -93,6 +93,7 @@ def render_text(
     fails: int = 0,
     warns: int = 0,
     warn_details: list[dict] = None,
+    root_cause_groups: list = None,
 ) -> str:
     """Render all reports using the Jinja2 report template."""
     env = _build_env(color_enabled=color_enabled, verbose=verbose)
@@ -114,6 +115,7 @@ def render_text(
         reports=reports,
         report_groups=report_groups,
         ungrouped_reports=ungrouped_reports,
+        root_cause_groups=root_cause_groups or [],
         total=total,
         errors=errors,
         fails=fails,
