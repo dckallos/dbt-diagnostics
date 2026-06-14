@@ -65,55 +65,51 @@ End of session -- 2026-06-14 continuity and workflow scaffolding
 ## 2026-06-14 -- issue #7 single-root-cause aggregator implemented
 
 **What changed**
-- Implemented issue #7 on branch `feat/7-root-cause-aggregator` (cut from
-  `donkey-kong-sandbox`). Opened as a PR for review; NOT merged.
-- New `dbt_diagnostics/root_cause.py`: collapses same-signature 002003
-  "object does not exist" errors into one `RootCauseGroup` and attaches one
-  Tier-A verdict (never_built / exists_now / denied / unverified). The denied
-  branch is decided via grants, not a bare `table_exists` False (SHOW TABLES
-  cannot tell "absent" from "invisible"). Offline degrades to "unverified" +
-  the query to run.
-- New `dbt_diagnostics/enrichers/run_identity.py`: recovers the run's role
-  from query history (query_id -> INFORMATION_SCHEMA.QUERY_HISTORY.ROLE_NAME),
-  with a fidelity ladder (recovered -> declared -> session), a watermark check
-  that distinguishes "lagging" from "never", a single bounded retry, and a
-  drift warning when recovered != declared.
-- Wired into `main.py` (root_cause_groups built live while the connection is
-  open, else offline) and surfaced in both outputs: `--json` schema_version
-  1.0 -> 1.1 (additive) with a new `root_cause_groups` array; terminal gains a
-  ROOT CAUSE section reusing `findings/lineage_trace.j2`. `renderer.render_text`
-  takes an optional `root_cause_groups` arg (defaults to none).
-- Tests: `tests/test_root_cause.py` + `tests/test_run_identity.py` (18 cases).
+- Cut `feat/7-root-cause-aggregator` off `donkey-kong-sandbox` and implemented
+  issue #7 (the first Live Verification Engine probe).
+- New `dbt_diagnostics/root_cause.py`: collapses Snowflake "object does not
+  exist" (002003) errors into one `RootCauseGroup` per missing object, with a
+  single live-disambiguated verdict (`never_built` / `exists_now` / `denied` /
+  `unverified`). `denied` is decided by `SHOW GRANTS`, not by `table_exists`,
+  since `SHOW TABLES` cannot separate "missing" from "invisible to the role".
+  Reuses `schema_inspector.table_exists` and `grants.check_role_grants`.
+- New `dbt_diagnostics/enrichers/run_identity.py`: recovers the run's role from
+  the failing `query_id` via `INFORMATION_SCHEMA.QUERY_HISTORY` (Tier 0), with
+  declared-profile (Tier 2) and session (Tier 3) fallbacks; watermark check
+  separates "lagging" from "never" with one bounded retry; flags role drift.
+- Wired into `main.py` (`cmd_diagnose` + `_try_enrich` build the groups; `--json`
+  bumped to `schema_version` 1.1 with an additive `root_cause_groups` key),
+  `renderer.py` (new `root_cause_groups` arg), and `report.j2` (new ROOT CAUSE
+  section reusing the `lineage_trace` partial).
+- Added `tests/test_root_cause.py` (10) and `tests/test_run_identity.py` (8).
+- Updated `CHANGELOG.md` `[Unreleased]`.
+- workspace stage: pushed to GitHub branch `feat/7-root-cause-aggregator`
+  (three commits). applied-to-account: n/a. pushed-to-Mac: no (branch is remote).
 
-**Verification (IMPORTANT -- read before merging)**
-- This window ran inside Cortex Code in Snowsight, which CANNOT reach github
-  over git or install pytest. Work was authored over the GitHub API.
-- The 18 NEW tests were executed locally via a minimal runner (vendored stubs
-  for models/grants): 18/18 pass. All new modules pass `py_compile`, and
-  `report.j2` was render-tested (46 errors -> one ROOT CAUSE line).
-- The full 336-test baseline was NOT run in this environment. You MUST run
-  `pytest dbt_diagnostics/tests -q` on the Mac before merging. Likely needing
-  updates: any existing test asserting the top-level `--json` `schema_version`
-  equals "1.0" (now "1.1"), and any snapshot test of terminal output for runs
-  containing 002003 errors (new ROOT CAUSE section).
-
-**Current state**
-- `feat/7-root-cause-aggregator` pushed (5 commits: feat module, feat
-  wiring+template, feat main/renderer, tests, docs). PR opened into
-  `donkey-kong-sandbox`. Not merged.
-- `donkey-kong-sandbox` unchanged by this window apart from the branch.
+**Verification (important caveat)**
+- This was authored from a Cortex Code Snowsight sandbox that CANNOT run the
+  repo's pytest suite (no PyPI/pytest, no github clone -- proxy allowlist). I
+  verified by: `py_compile` on all new/changed Python; a standalone runner that
+  executed all 18 new test functions against the real `root_cause` /
+  `run_identity` logic (18/18 pass); and a Jinja render of `report.j2` + the
+  `lineage_trace` partial (collapsed-group case and empty case both OK).
+- NOT yet run on a Mac: the full 336-test baseline. The `--json`
+  `schema_version` 1.0 -> 1.1 bump WILL break any existing test that asserts the
+  top-level version string -- those assertions must be updated to 1.1 (additive
+  key add is intended). Run `pytest dbt_diagnostics/tests -q` locally and fix
+  any version-string assertions before merging.
 
 **Next steps**
-- Run the full suite on the Mac; reconcile the two test-update risks above.
-- Review the 3-way verdict heuristic against a real 002003 run_results.json
-  (confirm `adapter_response.query_id` is present on failed nodes; if often
-  absent, prioritise the Tier-1 hook follow-up).
-- Consider the follow-up issue for the pre-execution dbt hook (attested run
-  identity) filed alongside this PR.
+- On the Mac: pull the branch, run `pytest dbt_diagnostics/tests -q`, fix any
+  schema_version assertions, eyeball `dbt-diagnostics demo` for the new ROOT
+  CAUSE section, then review PR #14.
+- File/triage the follow-up issue: opt-in dbt `on-run-start` identity-stamp hook
+  (highest-fidelity role source; out of #7 scope).
 
 **Be careful**
-- Do not merge the PR; it is the owner's to review.
-- Do not re-introduce static linting; do not add Tier-B scans (scope guard).
-- `--json` changes must stay additive.
+- Do not merge PR #14 from the agent -- owner reviews and merges.
+- Do not re-introduce static linting; keep probes Tier A (no warehouse scans).
+- The vendored `models.py` / `grants.py` used for the sandbox test-run were NOT
+  pushed; the real modules are unchanged.
 
 End of session -- 2026-06-14 issue #7 single-root-cause aggregator implemented
