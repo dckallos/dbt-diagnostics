@@ -1,5 +1,24 @@
 # dbt_diagnostics CHANGELOG
 
+## [Unreleased]
+
+### Fixed
+- CI test suite green. No production-code changes; all four failures were
+  test/fixture defects:
+  - `testpaths` corrected to `dbt_diagnostics/tests` so a bare `pytest`
+    collects the suite (it previously found nothing and exited non-zero).
+  - Two stale tests in `test_test_failure.py` unpacked the 6th return value of
+    `_diagnose_all` as a `warn_count` int; it now returns a `warn_details`
+    list. Updated them to assert `len(warn_details)`.
+  - Fixed a JSON `null` literal used inside a Python dict in
+    `test_test_failure.py` (`null` -> `None`).
+  - Added the `query_id` field to the executed results in
+    `fixtures/test_failures.json`. Real Snowflake `adapter_response` always
+    includes `query_id`; the fixture had omitted it, breaking
+    `test_query_id_in_fail_report`. (See the fixture-fidelity issue.)
+
+---
+
 ## v0.5.0 -- 2026-06-07 (workspace only; not yet tested on Mac)
 
 ### Lineage Trail Enhancement (Phase 1 + Phase 2)
