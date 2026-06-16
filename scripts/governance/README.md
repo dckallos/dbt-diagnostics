@@ -6,7 +6,7 @@ from a maintainer's local terminal with `gh`; nothing here runs in CI or from
 the agent. Keeping the bodies and scripts in the repo means the policy can be
 reviewed, diffed, and rolled back like any other change.
 
-Tracking issue: #32.
+Tracking issue: #30.
 
 ## What the policy is
 
@@ -87,6 +87,22 @@ unprotected, otherwise restores the saved config):
   `exports/<branch>.json`; records `null` when a branch is unprotected.
 - `rollback-branch-protection.sh` -- restore from `exports/`.
 - `exports/` -- generated before-state snapshots (created on first run).
+
+## exports/ vs policy files
+
+Two kinds of JSON live here and must not be confused:
+
+- `policy.<branch>.json` -- the DESIRED state. Editing one of these and
+  re-applying is how you change the live policy.
+- `exports/<branch>.json` -- a HISTORICAL before-state snapshot written by the
+  apply/export scripts. `null` means the branch was unprotected at snapshot
+  time. Rollback restores whatever is in the snapshot; a snapshot never defines
+  policy. Do not hand-edit a snapshot to change rules -- edit the matching
+  `policy.<branch>.json` instead.
+
+A snapshot is only trustworthy if it was taken with working admin credentials.
+If `gh` auth is broken when a snapshot is written, treat that `exports/` file as
+suspect and re-run `export-branch-protection.sh` once `gh auth status` is green.
 
 ## Changing the policy
 
