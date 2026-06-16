@@ -1,84 +1,95 @@
-# Branch protection governance
+# Branch-protection governance
 
-Version-controlled branch protection policy for `dckallos/dbt-diagnostics`, plus
-thin `gh` wrappers to inspect, apply, and roll it back.
+This directory is the version-controlled source of truth for the GitHub
+branch-protection policy on `dckallos/dbt-diagnostics`. The policy is applied
+from a maintainer's local terminal with `gh`; nothing here runs in CI or from
+the agent. Keeping the bodies and scripts in the repo means the policy can be
+reviewed, diffed, and rolled back like any other change.
 
-The policy JSON under `policies/` is the source of truth. The scripts are thin
-wrappers around the GitHub REST branch-protection endpoint
-(`/repos/{owner}/{repo}/branches/{branch}/protection`). Applying a policy is a
-local, operator-run step: it needs an admin-scoped token and is deliberately not
-automated in CI or done by an agent.
+Tracking issue: #32.
+
+## What the policy is
+
+Both `donkey-kong-sandbox` (default / integration) and `main` (release) get the
+same classic branch-protection config (`policy.<branch>.json`):
+
+- Require a pull request before merging (`required_approving_review_count: 0`).
+- Require the `test` status check to pass, and be up to date (`strict: true`).
+- Require linear history (matches the squash-merge convention).
+- Require conversation resolution before merging.
+- Block force pushes and branch deletion.
+- `enforce_admins: false` -- the repo owner keeps a break-glass path.
+- `restrictions: null` -- push-restriction lists are org-only; not applicable to
+  a user repo.
+
+### Why the two branches are identical
+
+This is a solo-maintained repo. A non-zero required-approval count would
+deadlock the only maintainer (you cannot approve your own PR), and with
+`enforce_admins: false` an admin bypasses approvals anyway. So review-count
+asymmetry between `main` and `donkey-kong-sandbox` would be cosmetic. The
+protections that actually bite -- PR required, CI green, linear history, no
+force-push, no deletion -- apply equally to both.
+
+`main` still matters because promoting `donkey-kong-sandbox -> main` is the
+release event (version bump + PyPI publish, at the maintainer's choice). Keeping
+identical guardrails on `main` ensures a release can only land through a green
+PR. The files are kept separate so `main` can diverge later (e.g. enabling
+`required_signatures` or `require_last_push_approval`) without touching the
+integration branch.
 
 ## Prerequisites
 
-- GitHub CLI (`gh`) installed and authenticated: `gh auth login`.
-- Your token must have admin rights on the repo (branch protection is an admin
-  setting).
-- Default repo is `dckallos/dbt-diagnostics`; override with `REPO=owner/name`.
-
-## Policies
-
-| Branch                | File                              | Intent                                  |
-|-----------------------|-----------------------------------|-----------------------------------------|
-| `donkey-kong-sandbox` | `policies/donkey-kong-sandbox.json` | Integration branch, exactly per CONTRIBUTING.md |
-| `main`                | `policies/main.json`              | Release branch; mirrors sandbox (harden if desired) |
-
-The `donkey-kong-sandbox` policy encodes what `CONTRIBUTING.md` specifies:
-
-- Require a pull request before merging (1 approving review).
-- Require status checks to pass, strict (branch up to date): the CI job `test`.
-- Require linear history.
-- No direct pushes (`restrictions: null`, no force pushes, no deletions).
-- `enforce_admins: false`.
-
-`main.json` mirrors this. Because `main` is the released branch, you may want to
-harden it (for example `enforce_admins: true`, a higher review count, or
-`required_conversation_resolution: true`). Edit `policies/main.json` and commit
-the change so the policy stays version-controlled.
+- `gh` authenticated as a repo admin: `gh auth login`.
+- `jq` (used by the export script to pretty-print snapshots).
 
 ## Usage
 
-All scripts take the branch name as the first argument.
-
-Inspect current state (do this first, to capture the before-state):
+Dry-run first -- prints the target and JSON body, changes nothing:
 
 ```
-./show-protection.sh donkey-kong-sandbox
-# save an audit snapshot:
-./show-protection.sh main > main.protection.before.json
+./scripts/governance/apply-branch-protection.sh --dry-run
 ```
 
-Dry-run (prints the body that would be sent, applies nothing):
+Apply to both branches (auto-exports the current state first):
 
 ```
-./apply-protection.sh donkey-kong-sandbox --dry-run
+./scripts/governance/apply-branch-protection.sh
 ```
 
-Apply (defaults to `policies/<branch>.json`):
+Apply to one branch only:
 
 ```
-./apply-protection.sh donkey-kong-sandbox
-./apply-protection.sh main
-# or an explicit policy file:
-./apply-protection.sh donkey-kong-sandbox policies/donkey-kong-sandbox.json
+./scripts/governance/apply-branch-protection.sh --branch main
 ```
 
-Roll back (removes all protection from the branch):
+Snapshot the current live policy into `exports/` (the committed before-state):
 
 ```
-./remove-protection.sh donkey-kong-sandbox
+./scripts/governance/export-branch-protection.sh
 ```
 
-## Notes
+Roll back to the last snapshot (deletes protection if the branch was previously
+unprotected, otherwise restores the saved config):
 
-- The required status check context is the CI job name `test` (see
-  `.github/workflows/ci.yml`). If the job is renamed, update the `contexts`
-  array in the policy JSON to match, or the check will never be satisfied.
-- The GET response shape (what `show-protection.sh` prints) is NOT identical to
-  the PUT request body (what the policy JSON holds): the GET response is nested
-  with `url`/`enabled` fields. Treat `show-protection.sh` output as an audit
-  snapshot, not a re-appliable body. The policy JSON is the appliable form.
-- Classic branch protection is used here (not rulesets) to match the existing
-  CONTRIBUTING.md guidance. Switching to rulesets is a separate decision.
-- Re-running `apply-protection.sh` is idempotent: the PUT replaces the full
-  protection config each time.
+```
+./scripts/governance/rollback-branch-protection.sh --dry-run   # preview
+./scripts/governance/rollback-branch-protection.sh
+```
+
+## Files
+
+- `policy.donkey-kong-sandbox.json` -- protection body for the integration branch.
+- `policy.main.json` -- protection body for the release branch.
+- `apply-branch-protection.sh` -- idempotent apply (`PUT` replaces the whole
+  config); exports current state before changing anything.
+- `export-branch-protection.sh` -- write current live protection to
+  `exports/<branch>.json`; records `null` when a branch is unprotected.
+- `rollback-branch-protection.sh` -- restore from `exports/`.
+- `exports/` -- generated before-state snapshots (created on first run).
+
+## Changing the policy
+
+Edit the relevant `policy.<branch>.json`, open a PR into
+`donkey-kong-sandbox`, and after merge run `apply-branch-protection.sh`. The PR
+is the review record; the apply step makes the live repo match what merged.
