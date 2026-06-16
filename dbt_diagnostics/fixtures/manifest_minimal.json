@@ -1,4 +1,8 @@
 {
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12/index.html",
+    "dbt_version": "1.11.11"
+  },
   "nodes": {
     "model.artwork_pipeline.dim_artists": {
       "unique_id": "model.artwork_pipeline.dim_artists",
