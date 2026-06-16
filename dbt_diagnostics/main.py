@@ -543,77 +543,6 @@ def cmd_demo(args):
         print(text)
 
 
-def cmd_lint(args):
-    """Lint command: check compiled SQL for issues before dbt build."""
-    from dbt_diagnostics.linters import LINTER_REGISTRY
-    from dbt_diagnostics.renderer import render_lint
-
-    paths = _resolve_from_args(args)
-
-    manifest_path = paths.get("manifest")
-    if not manifest_path or not manifest_path.exists():
-        print("Error: manifest.json not found. Run `dbt compile` first.", file=sys.stderr)
-        sys.exit(2)
-
-    try:
-        manifest = load_json(manifest_path, "manifest.json")
-    except ArtifactLoadError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    compiled_dir = paths.get("compiled_dir")
-
-    # Collect compiled SQL from manifest nodes (compiled_code field)
-    nodes = manifest.get("nodes", {})
-    model_count = 0
-    all_findings = []
-
-    for node_id, node in nodes.items():
-        if node.get("resource_type") != "model":
-            continue
-        compiled_sql = node.get("compiled_code", "") or ""
-        if not compiled_sql:
-            # Try loading from target/compiled/ directory
-            if compiled_dir:
-                rel_path = node.get("path", "")
-                compiled_file = compiled_dir / rel_path
-                if compiled_file.exists():
-                    compiled_sql = compiled_file.read_text()
-            if not compiled_sql:
-                continue
-
-        model_count += 1
-        for linter_cls in LINTER_REGISTRY:
-            linter = linter_cls()
-            findings = linter.lint(node_id, compiled_sql, node)
-            all_findings.extend(findings)
-
-    color_enabled = should_use_color(
-        force_color=getattr(args, "color", False),
-        no_color=getattr(args, "no_color", False),
-        is_json=getattr(args, "json", False),
-    )
-
-    if getattr(args, "json", False):
-        output = {
-            "schema_version": "1.0",
-            "lint_findings": [f.to_json_dict() for f in all_findings],
-            "model_count": model_count,
-            "total_findings": len(all_findings),
-        }
-        print(json.dumps(output, indent=2))
-    else:
-        text = render_lint(
-            findings=all_findings,
-            model_count=model_count,
-            color_enabled=color_enabled,
-        )
-        print(text)
-
-    if all_findings and not getattr(args, "no_fail", False):
-        sys.exit(1)
-
-
 def main():
     parser = argparse.ArgumentParser(
         prog="dbt-diagnostics",
@@ -692,7 +621,6 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("demo", help="Run against bundled fixtures to show capabilities")
     subparsers.add_parser("diagnose", help="Diagnose errors from dbt build artifacts (default)")
-    subparsers.add_parser("lint", help="Pre-execution lint: check compiled SQL for issues without running dbt")
 
     args = parser.parse_args()
 
@@ -702,8 +630,6 @@ def main():
 
     if args.command == "demo":
         cmd_demo(args)
-    elif args.command == "lint":
-        cmd_lint(args)
     else:
         cmd_diagnose(args)
 

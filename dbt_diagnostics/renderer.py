@@ -20,7 +20,7 @@ from dbt_diagnostics.colors import (
     dim,
     status_indicator,
 )
-from dbt_diagnostics.models import DiagnosticReport, LintFinding
+from dbt_diagnostics.models import DiagnosticReport
 from dbt_diagnostics.grouping import ReportGroup, group_reports
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -126,19 +126,4 @@ def render_text(
         verbose=verbose,
         warn_details=warn_details or [],
         warn_by_category=warn_by_category,
-    )
-
-
-def render_lint(
-    findings: list[LintFinding],
-    model_count: int,
-    color_enabled: bool = False,
-) -> str:
-    """Render lint findings using the lint_report template."""
-    env = _build_env(color_enabled=color_enabled)
-    template = env.get_template("lint_report.j2")
-
-    return template.render(
-        findings=findings,
-        model_count=model_count,
     )

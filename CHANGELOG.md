@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Removed the pre-execution linter (scope guard, issue #25)
+
+I removed the `dbt_diagnostics/linters/` package and the `lint` subcommand. The
+tool's purpose is live, database-grounded root-cause analysis, not static
+linting, and the linter checks duplicated enforcement that dbt's own contract
+layer (and sqlfluff/dbt_project_evaluator) already provide. Keeping them was a
+standing scope-guard violation documented in `AGENTS.md`.
+
+- Deleted the `linters/` package, the `lint` CLI subcommand and its dispatch in
+  `main.py`, the `LintFinding` model, `render_lint` in `renderer.py`, the
+  `lint_report.j2` template, and `tests/test_linters.py`.
+- No change to the diagnose `--json` output shape; `schema_version` is
+  unchanged. The lint path had its own separate output and is gone entirely.
+- The `type_hazard` TIMESTAMP_LTZ-vs-NTZ regex is deleted cleanly here, not
+  migrated. Re-homing it as a post-failure enricher on the contract-violation
+  classifier is tracked separately.
+
 ### Testing and reliability uplift (testing epic, issue #23)
 
 I raised the testing bar from happy-path fixtures to adversarial, generative,
