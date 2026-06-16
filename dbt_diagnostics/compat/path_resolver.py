@@ -55,16 +55,18 @@ def resolve(doc: SchemaDoc, path: str) -> list[Presence]:
         if not frontier:
             return []
 
-    leaf, _leaf_into_members = _split(tokens[-1])
+    leaf, leaf_into_members = _split(tokens[-1])
+    leaf_field = leaf
+
     out: list[Presence] = []
     for obj in frontier:
         obj = doc.deref(obj)
         props = obj.get("properties", {})
         required = set(obj.get("required", []))
         label = obj.get("title") or obj.get("$id") or obj.get("type", "?")
-        if leaf in props:
-            types, nullable = SchemaDoc.norm_type(doc.deref(props[leaf]) or props[leaf])
-            out.append(Presence(str(label), True, leaf in required, types, nullable))
+        if leaf_field in props:
+            types, nullable = SchemaDoc.norm_type(doc.deref(props[leaf_field]) or props[leaf_field])
+            out.append(Presence(str(label), True, leaf_field in required, types, nullable))
         else:
             out.append(Presence(str(label), False, False, frozenset(), False))
     return out
