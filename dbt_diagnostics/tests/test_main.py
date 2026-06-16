@@ -89,7 +89,7 @@ class TestDiagnoseCommand:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         # Top-level schema keys
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
         assert "total_results" in data
         assert "errors" in data
         assert "reports" in data
@@ -97,6 +97,11 @@ class TestDiagnoseCommand:
         # Additive in schema_version 1.1: root-cause groups are always present.
         assert "root_cause_groups" in data
         assert isinstance(data["root_cause_groups"], list)
+        # Additive in schema_version 1.2: detected dbt artifact schema identity.
+        assert "artifact_schema" in data
+        assert "run_results" in data["artifact_schema"]
+        assert "manifest" in data["artifact_schema"]
+        assert "all_supported" in data["artifact_schema"]
         # Per-report stable keys
         report = data["reports"][0]
         assert "schema_version" in report

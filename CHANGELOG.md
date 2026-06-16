@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Artifact schema version auto-detection
+
+The tool now reads the dbt artifact's own embedded schema version
+(metadata.dbt_schema_version) and reports whether it has been validated
+against captured golden fixtures. On an unvalidated or unknown version,
+a NOTE is emitted to stderr and parsing continues -- the "degrade to
+unverified, never crash" contract.
+
+- New `schema_version.py`: `detect_artifact_version()` and
+  `check_compatibility()`. Parses the schema URL from metadata, falls
+  back to shape-based kind inference when metadata is absent, and returns
+  a `CompatibilityReport` with notes for anything unvalidated. Never
+  raises on any input shape.
+- Terminal: notes emitted to stderr on unvalidated versions (silent on
+  the happy path).
+- `--json`: new additive `artifact_schema` key; `schema_version` bumped
+  1.1 -> 1.2.
+- Tests: `test_schema_version.py` (22 tests) locks the detection and
+  degradation contract.
+
 ### Single-root-cause aggregator (issue #7, epic #4)
 
 I shipped the first Live Verification Engine probe. When many results share the
