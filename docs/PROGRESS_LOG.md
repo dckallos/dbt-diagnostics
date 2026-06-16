@@ -150,3 +150,50 @@ End of session -- 2026-06-14 issue #7 single-root-cause aggregator implemented
 - `main` stays stable; only promote `donkey-kong-sandbox` -> `main` at a release.
 
 End of session -- 2026-06-14 issue #7 merged
+
+---
+
+## 2026-06-16 -- schema-version detection + defensive handling merged; audit
+
+**What changed (since 2026-06-14)**
+- PR #22 merged: artifact schema version auto-detection (`schema_version.py`,
+  22 tests, `--json` schema_version bumped 1.1 -> 1.2 additive). Closes #20.
+- PR #26 merged: defensive artifact handling (`ArtifactLoadError`, shape
+  guards in `_diagnose_all` and `DagWalker`, 11 robustness tests). Closes #24.
+- Issues closed: #20, #21 (duplicate of #20), #24.
+- Issue #25 filed: remove `linters/` package (resolves scope-guard
+  contradiction). Audit complete; type_hazard regex to be salvaged as a
+  post-failure enricher.
+- PR #27 opened (draft): chaos + property test tiers (issue #23). Cannot push
+  workflow files (missing `workflows` scope). Needs local reconciliation
+  against the post-#26 core.
+- Project audit performed: AGENTS.md now has a "docs follow code" convention
+  rule to prevent design-doc drift.
+
+**Current state**
+- `donkey-kong-sandbox` HEAD: 78540e4 (includes #7 + #22 + #26).
+- Workspace is one commit behind (has #22 but not #26). Sync needed.
+- Open issues: #4 (epic), #5, #6, #8, #9, #10, #12, #15, #23, #25.
+- Open PR: #27 (draft, test tiers).
+
+**Next steps**
+- Land #25 (remove linters/) -- unblocks #8 and resolves the last scope-guard
+  contradiction.
+- Decide PR #27 fate: reconcile against post-#26, push workflow files
+  manually, or strip to essentials (see audit notes).
+- Decide Tier-B cost ceiling and grain source to unblock #5 and #6.
+- Add labels to issues (priority, tier, status).
+
+**Open decisions**
+- Tier-B cost ceiling: row-count cap / SAMPLE / per-run query cap / walk depth.
+- Grain source: declared uniqueness tests only (conservative) vs. also infer
+  from `generate_surrogate_key` args (broader but riskier).
+- PR #27 scope: keep full (chaos + property + tooling + CI) or strip to just
+  the injectors and property tests without CI/tooling changes?
+
+**Be careful**
+- Do not merge PR #27 without running the suite locally against post-#26.
+- Do not update design doc section 2 past-tense until #25 actually lands.
+- Do not re-introduce static linting.
+
+End of session -- 2026-06-16 audit and catch-up
