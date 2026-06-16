@@ -42,6 +42,7 @@ from dbt_diagnostics.discover import (
 from dbt_diagnostics.models import DiagnosticReport
 from dbt_diagnostics.renderer import render_text
 from dbt_diagnostics.root_cause import build_root_cause_groups
+from dbt_diagnostics.schema_version import check_compatibility
 from dbt_diagnostics.tracers.diff_tracer import diff_node
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
@@ -381,6 +382,13 @@ def cmd_diagnose(args):
     run_results = load_json(paths["run_results"], "run_results.json")
     manifest = load_json(paths["manifest"], "manifest.json")
 
+    # Auto-detect the dbt artifact schema version. Never raises; on an
+    # unvalidated/unknown version it produces notes and we keep going.
+    compat = check_compatibility(run_results, manifest)
+    if not args.json:
+        for note in compat.notes:
+            print(f"NOTE: {note}", file=sys.stderr)
+
     reports, skipped_ids, total, error_count, fail_count, warn_details = _diagnose_all(
         run_results, manifest, paths
     )
@@ -411,7 +419,7 @@ def cmd_diagnose(args):
 
     if args.json:
         output = {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "total_results": total,
             "errors": error_count,
             "fails": fail_count,
@@ -420,6 +428,7 @@ def cmd_diagnose(args):
             "reports": [r.to_json_dict() for r in reports],
             "root_cause_groups": [g.to_json_dict() for g in root_cause_groups],
             "warn_details": warn_details,
+            "artifact_schema": compat.to_json_dict(),
         }
         print(json.dumps(output, indent=2, default=str))
     else:

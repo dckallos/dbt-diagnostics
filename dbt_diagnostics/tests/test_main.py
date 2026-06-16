@@ -89,7 +89,7 @@ class TestDiagnoseCommand:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         # Top-level schema keys
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
         assert "total_results" in data
         assert "errors" in data
         assert "reports" in data
@@ -97,6 +97,11 @@ class TestDiagnoseCommand:
         # Additive in schema_version 1.1: root-cause groups are always present.
         assert "root_cause_groups" in data
         assert isinstance(data["root_cause_groups"], list)
+        # Additive in schema_version 1.2: detected dbt artifact schema identity.
+        assert "artifact_schema" in data
+        assert "run_results" in data["artifact_schema"]
+        assert "manifest" in data["artifact_schema"]
+        assert "all_supported" in data["artifact_schema"]
         # Per-report stable keys
         report = data["reports"][0]
         assert "schema_version" in report
@@ -229,3 +234,66 @@ class TestMissingProject:
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code != 0
+
+
+class TestSchemaVersionDetection:
+    """Tests for the artifact_schema key in --json output."""
+
+    def test_unvalidated_schema_emits_note_to_stderr(self, capsys, monkeypatch, tmp_path):
+        """An artifact with a future schema version should produce a NOTE on stderr."""
+        (tmp_path / "dbt_project.yml").write_text("name: test\nversion: '1.0'\n")
+        (tmp_path / "target").mkdir()
+
+        # Create a run_results with a future schema version
+        future_rr = {
+            "metadata": {
+                "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v99.json",
+                "dbt_version": "99.0.0",
+            },
+            "results": [],
+        }
+        rr_path = tmp_path / "run_results.json"
+        rr_path.write_text(json.dumps(future_rr))
+
+        manifest_path = str(FIXTURES_DIR / "manifest_minimal.json")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "dbt-diagnostics",
+                "--no-fail",
+                "--project-dir", str(tmp_path),
+                "--run-results", str(rr_path),
+                "--manifest", manifest_path,
+            ],
+        )
+        from dbt_diagnostics.main import main
+
+        main()
+        captured = capsys.readouterr()
+        assert "NOTE:" in captured.err
+        assert "not been validated" in captured.err
+
+    def test_validated_schema_no_note(self, capsys, monkeypatch, tmp_path):
+        """Validated schemas (v6 run-results, v12 manifest) produce no notes."""
+        (tmp_path / "dbt_project.yml").write_text("name: test\nversion: '1.0'\n")
+        (tmp_path / "target").mkdir()
+
+        rr_path = str(FIXTURES_DIR / "contract_type_mismatch.json")
+        manifest_path = str(FIXTURES_DIR / "manifest_minimal.json")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "dbt-diagnostics",
+                "--no-fail",
+                "--project-dir", str(tmp_path),
+                "--run-results", rr_path,
+                "--manifest", manifest_path,
+            ],
+        )
+        from dbt_diagnostics.main import main
+
+        main()
+        captured = capsys.readouterr()
+        assert "NOTE:" not in captured.err
