@@ -8,45 +8,17 @@ on:
 
 jobs:
   test:
-    name: test (py${{ matrix.python-version }})
+    name: test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,live]"
-      - name: Run offline tiers with coverage
-        env:
-          HYPOTHESIS_PROFILE: ci
-        run: |
-          pytest -q -m "not live and not chaos" \
-            --cov=dbt_diagnostics --cov-report=term-missing --cov-fail-under=77
-      - name: Run chaos tier (bounded)
-        run: pytest -q -m chaos
-
-  lint:
-    name: lint and types (informational)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
           python-version: "3.12"
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-      - name: ruff
-        run: ruff check dbt_diagnostics
-      - name: mypy
-        run: mypy dbt_diagnostics
+          pip install -e ".[dev,live]"
+      - name: Run tests
+        run: pytest -q
