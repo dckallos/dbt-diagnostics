@@ -197,3 +197,43 @@ End of session -- 2026-06-14 issue #7 merged
 - Do not re-introduce static linting.
 
 End of session -- 2026-06-16 audit and catch-up
+
+---
+
+## 2026-06-16 -- branch-protection policy as code
+
+**What changed**
+- Opened issue #32 (chore) to track codifying branch protection.
+- On branch `chore/branch-protection-policies` (off `donkey-kong-sandbox`), added
+  `scripts/governance/`: `policy.donkey-kong-sandbox.json`, `policy.main.json`,
+  and idempotent `apply-`, `export-`, `rollback-` shell scripts plus a README.
+- CHANGELOG `[Unreleased]` notes the governance scripts.
+
+**Decisions (mine, this session)**
+- Classic branch protection (not rulesets): single user repo, matches the
+  existing CONTRIBUTING example, trivial per-branch export/rollback.
+- Solo maintainer -> `required_approving_review_count: 0` (a non-zero count
+  would deadlock the only merger).
+- `enforce_admins: false` on both branches -> owner break-glass.
+- `main` policy == `donkey-kong-sandbox` policy by design; files split so `main`
+  can diverge later (e.g. signed commits) without touching the integration branch.
+
+**Current state**
+- Scripts committed on `chore/branch-protection-policies`; PR opened into
+  `donkey-kong-sandbox` (`Closes #32`).
+- Policy is NOT yet live on GitHub: the agent cannot set branch protection (no
+  MCP endpoint; no `gh`/token in the sandbox). Live state before this work:
+  both branches report `protected: false`.
+
+**Next steps**
+- Operator runs `./scripts/governance/apply-branch-protection.sh --dry-run`, then
+  without `--dry-run`, from a local `gh` admin session. The first real run writes
+  before-state snapshots into `scripts/governance/exports/`.
+- Merge the PR after CI `test` is green.
+
+**Be careful**
+- Re-running `apply-` is safe (PUT replaces the whole config); `rollback-` needs a
+  prior `export-` snapshot to restore from.
+- `restrictions` must stay `null` (push-restriction lists are org-only).
+
+End of session -- 2026-06-16 branch-protection policy as code
