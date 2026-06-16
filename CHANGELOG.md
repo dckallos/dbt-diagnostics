@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Defensive artifact handling (robustness hardening)
+
+The artifact-loading path and orchestration loop now tolerate malformed,
+truncated, or hostile inputs without crashing.
+
+- `load_json()` raises a new `ArtifactLoadError` (not `sys.exit(1)`
+  directly), making it testable from non-CLI contexts. The CLI entry
+  points catch and exit cleanly with an explained message.
+- `_diagnose_all()` validates artifact shape defensively: checks
+  `isinstance(run_results, dict)`, verifies `results` is a list, skips
+  non-dict entries. Extends the "degrade, never raise" contract to the
+  orchestration layer.
+- `DagWalker._build_run_status_map()`: same defensive treatment (guards
+  against non-dict run_results and non-dict entries in the results list).
+- New `tests/robustness/test_malformed_artifacts.py` (11 parametrized
+  malformed shapes) locks the degradation contract.
+- `conftest.py`: Hypothesis profile registration now emits a warning
+  when hypothesis is absent (instead of silently passing).
+
 ### Artifact schema version auto-detection
 
 The tool now reads the dbt artifact's own embedded schema version

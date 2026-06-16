@@ -1,4 +1,4 @@
-"""
+""" 
 dbt_diagnostics/tracers/dag_walker.py
 
 Walks the dbt DAG (from manifest.json) to trace column origins upstream.
@@ -308,7 +308,10 @@ class DagWalker:
         if not run_results:
             return {}
         status_map: dict[str, str] = {}
-        for result in run_results.get("results", []):
+        raw = run_results.get("results") if isinstance(run_results, dict) else None
+        for result in raw if isinstance(raw, list) else []:
+            if not isinstance(result, dict):
+                continue
             uid = result.get("unique_id", "")
             status = result.get("status", "")
             if uid and status:
