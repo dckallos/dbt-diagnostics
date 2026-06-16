@@ -1,4 +1,4 @@
-"""
+""" 
 dbt_diagnostics/main.py
 
 Entry point. Loads dbt artifacts, classifies errors, traces root causes,
@@ -46,6 +46,16 @@ from dbt_diagnostics.schema_version import check_compatibility
 from dbt_diagnostics.tracers.diff_tracer import diff_node
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
+
+
+class ArtifactLoadError(Exception):
+    """Raised when a dbt artifact cannot be loaded (missing, corrupt, unreadable)."""
+
+    def __init__(self, label: str, path: Path, reason: str):
+        self.label = label
+        self.path = path
+        self.reason = reason
+        super().__init__(f"{label} at {path}: {reason}")
 
 
 # Known dbt packages that produce project-hygiene warnings (not data quality)
@@ -156,13 +166,23 @@ def _resolve_from_args(args) -> dict:
 
 
 def load_json(path: Path, label: str) -> dict:
-    """Load a JSON artifact, exit with a clear message if missing."""
+    """Load a JSON artifact. Raises ArtifactLoadError on any failure."""
     if not path.exists():
-        print(f"ERROR: {label} not found at {path}", file=sys.stderr)
-        print("  Run `dbt build` first to generate artifacts.", file=sys.stderr)
-        sys.exit(1)
-    with open(path) as f:
-        return json.load(f)
+        raise ArtifactLoadError(
+            label, path, "file not found; run `dbt build` first to generate artifacts"
+        )
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ArtifactLoadError(
+            label, path,
+            f"not valid JSON: {exc}. The artifact may be truncated; re-run `dbt build`."
+        ) from exc
+    except OSError as exc:
+        raise ArtifactLoadError(
+            label, path, f"could not read file: {exc}"
+        ) from exc
 
 
 def classify_error(message: str) -> str:
@@ -193,8 +213,16 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
     failures = []
     skipped = []
     warns = []
-    for result in run_results["results"]:
-        status = result["status"]
+    # Be defensive about artifact shape: a malformed or partially-written
+    # run_results may lack "results", make it a non-list, or hold non-dict
+    # entries. Degrade (skip the junk), never raise -- the same contract the
+    # classifiers and schema-version detector follow.
+    raw_results = run_results.get("results") if isinstance(run_results, dict) else None
+    results_list = raw_results if isinstance(raw_results, list) else []
+    for result in results_list:
+        if not isinstance(result, dict):
+            continue
+        status = result.get("status")
         if status == "error":
             errors.append(result)
         elif status == "fail":
@@ -208,7 +236,7 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
 
     # Process errors (SQL compilation/runtime failures)
     for result in errors:
-        message = result.get("message", "")
+        message = result.get("message") or ""
         classifier_cls = classify(message)
 
         if classifier_cls:
@@ -229,7 +257,7 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
         reports.append(report)
 
     skipped_ids = [s.get("unique_id", "unknown") for s in skipped]
-    total = len(run_results["results"])
+    total = len(results_list)
 
     # Build structured warn details
     warn_details = []
@@ -379,8 +407,12 @@ def cmd_diagnose(args):
     """Default command: diagnose errors from dbt artifacts."""
     paths = _resolve_from_args(args)
 
-    run_results = load_json(paths["run_results"], "run_results.json")
-    manifest = load_json(paths["manifest"], "manifest.json")
+    try:
+        run_results = load_json(paths["run_results"], "run_results.json")
+        manifest = load_json(paths["manifest"], "manifest.json")
+    except ArtifactLoadError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Auto-detect the dbt artifact schema version. Never raises; on an
     # unvalidated/unknown version it produces notes and we keep going.
@@ -397,9 +429,14 @@ def cmd_diagnose(args):
     # Diff-aware diagnosis (optional)
     prev_manifest_path = getattr(args, "previous_manifest", None)
     if prev_manifest_path:
-        prev_manifest = load_json(Path(prev_manifest_path), "previous manifest")
-        for report in reports:
-            report.diff = diff_node(report.unique_id, manifest, prev_manifest)
+        try:
+            prev_manifest = load_json(Path(prev_manifest_path), "previous manifest")
+        except ArtifactLoadError as exc:
+            print(f"WARNING: {exc} -- skipping diff analysis", file=sys.stderr)
+            prev_manifest = None
+        if prev_manifest:
+            for report in reports:
+                report.diff = diff_node(report.unique_id, manifest, prev_manifest)
 
     # Live enrichment (default ON; --no-live suppresses). The live path also
     # builds the disambiguated root-cause groups while the connection is open.
@@ -518,7 +555,12 @@ def cmd_lint(args):
         print("Error: manifest.json not found. Run `dbt compile` first.", file=sys.stderr)
         sys.exit(2)
 
-    manifest = load_json(manifest_path, "manifest.json")
+    try:
+        manifest = load_json(manifest_path, "manifest.json")
+    except ArtifactLoadError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     compiled_dir = paths.get("compiled_dir")
 
     # Collect compiled SQL from manifest nodes (compiled_code field)
