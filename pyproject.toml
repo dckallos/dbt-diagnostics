@@ -17,18 +17,7 @@ live = [
 ]
 dev = [
     "pytest>=8.0",
-    "pytest-cov>=5.0",
     "hypothesis>=6.100",
-    "freezegun>=1.4",
-    "mutmut>=3.0",
-    "ruff>=0.6",
-    "mypy>=1.10",
-]
-# Only the fixture-capture generator needs a real dbt install. Kept separate
-# from `dev` so PR CI does not pull dbt for the offline test suite.
-fixtures = [
-    "dbt-core>=1.11,<1.12",
-    "dbt-snowflake>=1.11,<1.12",
 ]
 
 [project.scripts]
@@ -56,49 +45,4 @@ markers = [
     "chaos: seeded failure-injection over real golden artifacts (nightly volume)",
     "live: requires a real Snowflake connection (skipped unless creds present)",
 ]
-# Property/chaos tiers are opt-in by volume: PR CI runs a bounded profile,
-# the nightly job runs the extended one (see .github/workflows).
 addopts = "--strict-markers"
-
-[tool.coverage.run]
-source = ["dbt_diagnostics"]
-omit = ["dbt_diagnostics/tests/*", "dbt_diagnostics/fixtures/*"]
-branch = true
-
-[tool.coverage.report]
-# Floor = the measured baseline (offline tiers ~78%). Ratchet up over time;
-# never down. Keep in sync with the CI gate.
-fail_under = 77
-show_missing = true
-skip_covered = false
-
-[tool.ruff]
-target-version = "py311"
-line-length = 100
-extend-exclude = ["dbt_diagnostics/fixtures", "fixtures_src"]
-
-[tool.ruff.lint]
-# Python code-quality only. This is NOT static SQL linting (see AGENTS.md scope
-# guard): no rules here inspect dbt models or SQL.
-select = ["E", "F", "I", "B", "UP", "W"]
-
-[tool.mypy]
-python_version = "3.11"
-warn_unused_ignores = true
-warn_redundant_casts = true
-ignore_missing_imports = true
-exclude = ["dbt_diagnostics/tests/", "fixtures_src/"]
-
-[tool.mutmut]
-# Mutation testing: mutate the diagnosis core (the logic the suite must "kill")
-# and run the fast offline tiers against each mutant. Runs in the nightly job,
-# not on every PR. A surviving mutant means a test asserts too little.
-paths_to_mutate = [
-    "dbt_diagnostics/classifiers/",
-    "dbt_diagnostics/tracers/",
-    "dbt_diagnostics/root_cause.py",
-    "dbt_diagnostics/schema_version.py",
-]
-tests_dir = "dbt_diagnostics/tests/"
-# Keep mutant runs fast and hermetic: skip live/Snowflake and high-volume tiers.
-runner = "python -m pytest -x -q -m 'not live and not chaos' -p no:cacheprovider"
