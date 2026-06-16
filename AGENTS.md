@@ -55,6 +55,12 @@ Before stopping, leave the repo resumable:
 - Update `CHANGELOG.md` (under `## [Unreleased]`) in any PR that changes
   behavior.
 - `--json` `schema_version` is additive-only (see CONTRIBUTING.md).
+- **Docs follow code, never lead it.** Design docs describe the target state
+  and are annotated as such (e.g. "to be removed, tracked by #N") until the
+  corresponding PR merges. `PROGRESS_LOG.md` is updated only after a PR
+  merges or at session end -- never before. `CHANGELOG.md` is written in the
+  PR itself (shipped with the code). No document may describe current state
+  using past tense for work that has not yet landed on `donkey-kong-sandbox`.
 - See CONTRIBUTING.md for the full Definition of Done and release process.
 
 ## Voice and authorship

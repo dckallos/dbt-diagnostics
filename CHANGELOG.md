@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Testing and reliability uplift (testing epic, issue #23)
+
+I raised the testing bar from happy-path fixtures to adversarial, generative,
+and reproducible failure testing. The malformed-artifact robustness tier and
+the core "degrade, never raise" hardening it surfaced shipped separately under
+"Defensive artifact handling" (this release); this entry covers the generative
+tiers built on top.
+
+- New test tiers under `dbt_diagnostics/tests/` (`contract/`, `property/`,
+  `e2e/`, `chaos/`; `robustness/` shipped with the defensive-handling work),
+  each with a pytest marker, documented in `tests/README.md`. The pre-existing
+  flat suite stays in place and migrates into tiers one PR at a time.
+- Failure-injection engine (`tests/chaos/injectors.py`): a seeded `ChaosEngine`
+  that perturbs real captured artifacts and asserts two contracts -- robustness
+  (no mutation makes `classify()` raise) and detection (an injected fault
+  signature is localized to exactly the owning classifier). Exploration is
+  random; every run is replayable from its recorded seed.
+- Property tier (`tests/property/`): Hypothesis generators for synthetic-valid
+  `run_results`, asserting accounting and total-function invariants over a wide
+  input space. Hypothesis profiles (`dev`/`ci`/`nightly`) are selected via
+  `HYPOTHESIS_PROFILE`.
+- `pyproject.toml`: hypothesis added to `dev` extra; pytest markers registered
+  with `--strict-markers` enforced.
+
 ### Defensive artifact handling (robustness hardening)
 
 The artifact-loading path and orchestration loop now tolerate malformed,

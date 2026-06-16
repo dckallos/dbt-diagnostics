@@ -17,6 +17,7 @@ live = [
 ]
 dev = [
     "pytest>=8.0",
+    "hypothesis>=6.100",
 ]
 
 [project.scripts]
@@ -35,3 +36,13 @@ dbt_diagnostics = ["templates/**/*.j2", "fixtures/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["dbt_diagnostics/tests"]
+markers = [
+    "unit: fast, isolated unit tests (default tier, runs on every PR)",
+    "contract: assert artifact parsing/classification against golden fixtures",
+    "property: Hypothesis property-based tests over generated artifacts",
+    "robustness: malformed/adversarial artifacts must degrade, not crash",
+    "e2e: end-to-end CLI runs including --json schema validation",
+    "chaos: seeded failure-injection over real golden artifacts (nightly volume)",
+    "live: requires a real Snowflake connection (skipped unless creds present)",
+]
+addopts = "--strict-markers"
