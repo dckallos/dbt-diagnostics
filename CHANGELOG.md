@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Testing and reliability uplift (testing epic, issue #23)
+
+I raised the testing bar from happy-path fixtures to adversarial, generative,
+and reproducible failure testing. The malformed-artifact robustness tier and
+the core "degrade, never raise" hardening it surfaced shipped separately under
+"Defensive artifact handling" (this release); this entry covers the generative
+and tooling tiers built on top.
+
+- New test tiers under `dbt_diagnostics/tests/` (`contract/`, `property/`,
+  `e2e/`, `chaos/`; `robustness/` shipped with the defensive-handling work),
+  each with a pytest marker, documented in `tests/README.md`. The pre-existing
+  flat suite stays in place and migrates one PR at a time.
+- Failure-injection engine (`tests/chaos/injectors.py`): a seeded `ChaosEngine`
+  that perturbs real captured artifacts and asserts two contracts -- robustness
+  (no mutation makes `classify()` raise) and detection (an injected fault
+  signature is localized to exactly the owning classifier). Exploration is
+  random; every run is replayable from its recorded seed.
+- Property tier (`tests/property/`): Hypothesis generators for synthetic-valid
+  `run_results`, asserting accounting and total-function invariants over a wide
+  input space. Hypothesis profiles (`dev`/`ci`/`nightly`) are selected via
+  `HYPOTHESIS_PROFILE`.
+- Tooling: `pyproject.toml` gains a full `dev` test extra (pytest-cov,
+  hypothesis, freezegun, mutmut, ruff, mypy), a separate `fixtures` extra
+  (dbt-core/dbt-snowflake, for the future capture generator), coverage config
+  with a ratcheting floor (77%, the measured baseline), ruff/mypy config
+  (Python-quality only -- not static SQL linting), and `[tool.mutmut]`.
+- CI: a Python 3.11/3.12/3.13 matrix with the offline tiers, a coverage gate,
+  and a bounded chaos pass, plus a nightly hardening job (high-volume
+  Hypothesis/chaos sweep and mutation testing). The workflow files
+  (`ci.yml`, `nightly.yml`) are added separately because they require the
+  GitHub `workflows` permission.
+
 ### Defensive artifact handling (robustness hardening)
 
 The artifact-loading path and orchestration loop now tolerate malformed,
@@ -85,63 +117,7 @@ visual breadcrumb trail upstream through the DAG, with compiled SQL context
 and a verdict naming the exact disconnect point. Live enrichment is ON by
 default (DESCRIBE TABLE populates each trail step).
 
-**Phase 1 -- Template + Renderer Layer (sub-tasks 5-6):**
-
-- Created `templates/findings/lineage_trace.j2` -- reusable Jinja2 partial
-  that renders both the compiled SQL snippet and the lineage trail. Included
-  by all four error-class templates via `{% include %}`.
-- Updated `colors.py` with `status_indicator()` helper (emoji vs text
-  fallback depending on `color_enabled`).
-- Updated `renderer.py` -- `_build_env()` now sets `color_enabled` and
-  `verbose` as Jinja globals so included partials can branch on them.
-  Registered `status_indicator` as a Jinja filter.
-- Updated all error-class templates (`runtime_error.j2`, `schema_change_error.j2`,
-  `data_error.j2`, `compilation_error.j2`) to include the lineage trace partial
-  after root-cause and before fix suggestion. Each sets an appropriate
-  `trace_target` (column name, FQ object, "data flow", "compilation").
-- Fixed `runtime_error.j2` trace_target to fall back to `finding.target_object`
-  when `target_identifier` is None (object-not-found errors).
-- Created `tests/test_lineage_integration.py` -- 57 integration tests covering
-  all 12 real fixtures across color/no-color/verbose modes. Parametrized over
-  every fixture to verify no-crash, trail structure, and rendering.
-
-**Phase 2 -- Live Enrichment Wiring (sub-tasks 2a-2d):**
-
-- Flipped `--live` to `--no-live` in `main.py`. Live enrichment is now ON by
-  default with graceful fallback (missing connector -> warn + continue offline;
-  connection failure -> warn + continue offline; `--no-live` -> silent skip).
-- Added `_enrich_lineage_trail()` in `enrichers/enrich.py` -- iterates each
-  LineageStep with a `relation_name`, calls `table_exists()` and
-  `describe_table()` to populate `live_status` / `live_detail`. For
-  column-lineage findings, checks whether the specific target column exists.
-- Created `enrichers/grants.py` (new file) with `check_role_grants()` and
-  `get_current_role()` -- SHOW GRANTS TO ROLE wrapper for privilege-error
-  diagnosis. Exported via `enrichers/__init__.py`.
-- Added `_identify_disconnect()` in `enrichers/enrich.py` -- scans the trail
-  for the pass-to-fail transition after live enrichment, populates
-  `finding.disconnect` (DisconnectVerdict) with between-nodes, explanation,
-  and confidence level.
-
-**Acceptance criteria met:**
-
-- 288 tests passing (231 existing + 57 new integration tests).
-- Running any fixture through classifier + renderer produces:
-  - "COMPILED SQL (line N):" section when snippet exists
-  - "LINEAGE TRACE:" section when trail is non-empty
-  - Correct emoji/text status per step
-- `--no-color` mode produces `[PASS]`/`[FAIL]`/`[????]` instead of emoji.
-- `--no-live` suppresses all Snowflake queries.
-- Default mode attempts live enrichment with graceful fallback.
-- DisconnectVerdict populated with correct between-nodes.
-- "VERDICT:" line appears in rendered output.
-
-**Files created:** `templates/findings/lineage_trace.j2`, `enrichers/grants.py`,
-`tests/test_lineage_integration.py`.
-
-**Files modified:** `colors.py`, `renderer.py`, `main.py`,
-`enrichers/enrich.py`, `enrichers/__init__.py`,
-`templates/findings/runtime_error.j2`, `templates/findings/schema_change_error.j2`,
-`templates/findings/data_error.j2`, `templates/findings/compilation_error.j2`.
+See git history for the full v0.5.0 and earlier notes.
 
 ---
 
