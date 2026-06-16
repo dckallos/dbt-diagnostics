@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Version-controlled branch-protection policy (governance, issue #32)
+
+I codified the branch-protection policy for `donkey-kong-sandbox` and `main` as
+in-repo scripts under `scripts/governance/`, so the policy is reviewable,
+diffable, and roll-back-able like any other change. The maintainer applies it
+from a local `gh` session; nothing runs in CI or from an agent.
+
+- Added `policy.donkey-kong-sandbox.json` and `policy.main.json` (classic
+  protection bodies), plus `apply-`, `export-`, and `rollback-` shell scripts
+  and a README.
+- Policy: require a PR before merging, require the `test` status check (strict),
+  require linear history and conversation resolution, block force-push and
+  deletion, `enforce_admins: false` (owner break-glass). Both branches are
+  identical by design under solo maintainership; the files are split so `main`
+  can diverge later.
+- No tool behavior or `--json` `schema_version` change.
+
 ### Removed the pre-execution linter (scope guard, issue #25)
 
 I removed the `dbt_diagnostics/linters/` package and the `lint` subcommand. The
