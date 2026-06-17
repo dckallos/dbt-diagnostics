@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Fail if automated AI-authorship markers appear in source files OR commit messages.
+# Enforces the AGENTS.md "Voice and authorship" rule across the known AI coding
+# tools (Claude Code, Cortex Code/CoCo, GitHub Copilot, Cursor, aider, Devin,
+# OpenCode, Gemini/Jules, Codex, Cody, Tabnine, Windsurf, ...). The forbidden thing
+# is an AUTOMATED authorship CLAIM -- a legitimate human "Co-authored-by: Jane" is
+# intentionally NOT flagged, and a commit that merely DISCUSSES a marker (e.g. one
+# that removes them, or docs that quote one) is not flagged either.
+#
+# Why two pattern sets:
+#   - FILE_ERE  (broad): source-file headers, where CoCo writes the attribution
+#     header and tools write "Generated with ...". Scans *.py *.sql *.ipynb.
+#   - COMMIT_ERE (strict): only real trailers/footers/identity, anchored to their
+#     structural location (trailers/footers at line start; the author tag on the
+#     commit identity line), so prose that mentions a marker in a commit body is
+#     not a false hit.
+#
+# Escape hatch: put the token  authorship-marker-ok  on the same line (or in the
+# commit body) to intentionally allow a reference.
+#
+# Usage:
+#   check_no_attribution.sh                     # files + commits (base auto-detected)
+#   check_no_attribution.sh --base <ref>        # set the commit-range base explicitly
+#   check_no_attribution.sh --files-only        # skip the commit scan
+#   check_no_attribution.sh --commits-only      # skip the file scan
+#   check_no_attribution.sh <path> [<path>...]  # scan only the given files (pre-commit)
+#
+# Env: BASE overrides the commit-range base; GITHUB_BASE_REF (set in PR CI) is used
+# if present. CI should checkout with fetch-depth: 0 so the base ref is reachable.
+#
+# Exit: 0 clean; 1 if any marker is found; 2 on usage error.
+set -uo pipefail
+
+ALLOW='authorship-marker-ok'
+
+# Known AI tool identities and their no-reply emails. Extend as new tools appear.
+AI_NAMES='claude code|claude|cortex code|coco|codex|copilot|cursor|gemini|google jules|jules|aider|devin|opencode|open code|windsurf|amazon q|sourcegraph cody|cody|tabnine|continue\.dev|sweep|codeium'
+AI_EMAILS='noreply@anthropic\.com|noreply@snowflake\.com|noreply@cursor\.com|noreply@openai\.com|copilot@users\.noreply\.github\.com|[0-9]+\+copilot@users\.noreply\.github\.com|devin-ai-integration'
+
+# Broad set for source-file headers (POSIX ERE, matched case-insensitively).
+FILE_ERE="co-authored-by:[[:space:]].*(${AI_NAMES})"
+FILE_ERE="${FILE_ERE}|co-authored[ -]with[[:space:]]+(${AI_NAMES})"
+FILE_ERE="${FILE_ERE}|generated[[:space:]]+(with|by)[[:space:]:]+\[?(${AI_NAMES})"
+FILE_ERE="${FILE_ERE}|(${AI_EMAILS})"
+FILE_ERE="${FILE_ERE}|claude\.(com/claude-code|ai/code)"
+FILE_ERE="${FILE_ERE}|\\(aider\\)"
+FILE_ERE="${FILE_ERE}|\\\\ud83e\\\\udd16"
+
+# Strict set for commit messages: real trailers/footers/identity only, anchored to
+# their structural location so a quoted/prose mention in a commit body is NOT a
+# false positive. The author-tag check is pinned to the commit identity line, which
+# this script emits prefixed with "commit ".
+COMMIT_ERE="^[[:space:]]*co-authored-by:[[:space:]].*(${AI_NAMES})"
+COMMIT_ERE="${COMMIT_ERE}|^[^A-Za-z]*generated[[:space:]]+(with|by)[[:space:]:]+\[?(${AI_NAMES})"
+COMMIT_ERE="${COMMIT_ERE}|(${AI_EMAILS})"
+COMMIT_ERE="${COMMIT_ERE}|claude\.(com/claude-code|ai/code)"
+COMMIT_ERE="${COMMIT_ERE}|^commit .*\\(aider\\)"
+
+GLOBS=( '*.py' '*.sql' '*.ipynb' )
+MODE='all'   # all | files | commits
+
+err() { printf '%s\n' "$*" >&2; }
+drop_allowed() { grep -v -- "$ALLOW" | grep -v -E '^[[:space:]]*$' || true; }
+
+scan_tracked_files() {
+  { git grep -nI -i -E -e "$FILE_ERE" -- "${GLOBS[@]}" 2>/dev/null || true
+    # Raw robot-emoji bytes (needs a PCRE-enabled git; skipped silently otherwise).
+    git grep -nI -P -e '\x{1F916}' -- "${GLOBS[@]}" 2>/dev/null || true
+  } | drop_allowed
+}
+
+scan_explicit_files() {
+  local f
+  for f in "$@"; do
+    case "$f" in
+      *.py|*.sql|*.ipynb)
+        [ -f "$f" ] && { grep -nHI -i -E -e "$FILE_ERE" -- "$f" 2>/dev/null || true; } ;;
+    esac
+  done | drop_allowed
+}
+
+resolve_base() {
+  if [ -n "${BASE:-}" ]; then printf '%s' "$BASE"; return; fi
+  if [ -n "${GITHUB_BASE_REF:-}" ] && git rev-parse --verify -q "origin/${GITHUB_BASE_REF}" >/dev/null; then
+    printf '%s' "origin/${GITHUB_BASE_REF}"; return
+  fi
+  if git rev-parse --verify -q origin/donkey-kong-sandbox >/dev/null; then
+    printf '%s' "origin/donkey-kong-sandbox"; return
+  fi
+  printf '%s' ''
+}
+
+scan_commits() {
+  local base range; base="$(resolve_base)"
+  if [ -n "$base" ]; then
+    range="${base}..HEAD"
+  else
+    range='HEAD'
+    err "note: no base ref reachable; scanning all reachable commit messages (use --base or fetch-depth: 0)"
+  fi
+  # Author/committer identity + subject + body for every commit in range. The
+  # identity line is prefixed "commit " so the author-tag pattern can anchor to it.
+  git log --no-merges --format='commit %h | %an <%ae> | %cn <%ce> | %s%n%b' "$range" 2>/dev/null \
+    | grep -nI -i -E -e "$COMMIT_ERE" | drop_allowed
+}
+
+# --- argument parsing ----------------------------------------------------------
+PATHS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --base) BASE="${2:-}"; shift 2 || { err "usage: --base <ref>"; exit 2; } ;;
+    --files-only) MODE='files'; shift ;;
+    --commits-only) MODE='commits'; shift ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    --) shift; while [ "$#" -gt 0 ]; do PATHS+=("$1"); shift; done ;;
+    -*) err "unknown flag: $1"; exit 2 ;;
+    *) PATHS+=("$1"); shift ;;
+  esac
+done
+
+# --- run -----------------------------------------------------------------------
+violations=''
+if [ "${#PATHS[@]}" -gt 0 ]; then
+  violations="$(scan_explicit_files "${PATHS[@]}")"
+else
+  [ "$MODE" != 'commits' ] && violations+="$(scan_tracked_files)"$'\n'
+  [ "$MODE" != 'files' ]   && violations+="$(scan_commits)"$'\n'
+fi
+violations="$(printf '%s' "$violations" | grep -v -E '^[[:space:]]*$' || true)"
+
+if [ -n "$violations" ]; then
+  err "ERROR: automated AI-authorship marker(s) found (AGENTS.md Voice and authorship rule forbids them):"
+  err "$violations"
+  err ""
+  err "Remove the marker. If a hit is a deliberate reference, add the token '${ALLOW}' on that line."
+  exit 1
+fi
+echo "OK: no AI-authorship markers in source files or commit messages."

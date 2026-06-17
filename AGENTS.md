@@ -71,6 +71,21 @@ own work. Do not add automated-authorship markers of any kind (no "Generated
 with ...", no `Co-Authored-By` trailers, no third-party attribution). Write
 plainly and directly.
 
+## Automation and tooling limitations (agent notes)
+
+- The GitHub API token used by the coding agent CANNOT modify files under
+  `.github/workflows/*` (the token lacks the `workflows` permission). Any push
+  touching a workflow file fails with 404/403. When CI config must change, the
+  agent hands the maintainer the new `ci.yml` content to commit by hand.
+- The workspace is a Snowsight Workspace (a git-backed stage), not a local
+  clone, and the agent has no local `git` remote. It operates on GitHub via the
+  API (get/create/update file, push_files, PRs). Do not assume uncommitted
+  changes carry across a branch switch in the UI; commit or push first.
+- The agent's environment auto-injects an authorship marker
+  ("Co-authored with CoCo") into code files. This repo's voice rule forbids it,
+  so the agent strips the marker before pushing. A CI check should reject the
+  marker on `*.py`/`*.sql`/`*.ipynb` as a backstop.
+
 ## Scope guard (the project thesis)
 
 The tool's purpose is **live, database-grounded root-cause analysis**. Two

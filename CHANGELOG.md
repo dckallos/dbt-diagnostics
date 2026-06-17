@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Cross-version compatibility layer for consumed artifact fields (feat, issue #35)
+
+I added `dbt_diagnostics/compat/`, a small offline layer that hardens the ~12
+artifact dict paths the classifiers/enrichers read, so the tool parses and
+diagnoses artifacts across dbt-core versions without crashing and without a
+third-party parser dependency.
+
+- New package: `consumed_paths.py` (declarative registry of consumed paths with
+  version fallbacks and a Tier-A `live_recovery` per field), `schema_model.py`
+  (stdlib JSON Schema resolver: `$ref`, `$defs`/`definitions`, `allOf`,
+  `anyOf`/`oneOf`), `path_resolver.py` (resolve a path across node-type unions to
+  per-definition presence), `safe.py` (never-raising accessors with the dbt 1.3
+  `compiled_code`/`raw_code` <- `compiled_sql`/`raw_sql` fallbacks), and
+  `DESIGN.md`.
+- New tooling: `scripts/compat/schema_diff.py` (CI gate; diffs two first-party
+  schemas by consumed path, nonzero exit only on an unguarded break) and
+  `scripts/compat/fetch_schemas.py` (the only networked code; caches first-party
+  schemas + `PROVENANCE.json` for the offline diff).
+- Tests: `dbt_diagnostics/tests/test_compat_schema_diff.py` (marker `unit`).
+- First-party is the source of truth (schemas.getdbt.com / dbt-core + real
+  artifacts); `dbt-artifacts-parser` is not a dependency or oracle. Runtime stays
+  offline. No change to the diagnose `--json` `schema_version` shape (additive).
+
 ### Version-controlled branch-protection policy (governance, issue #32)
 
 I codified the branch-protection policy for `donkey-kong-sandbox` and `main` as
