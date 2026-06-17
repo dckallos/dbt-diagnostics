@@ -7,6 +7,14 @@ on:
     branches: [donkey-kong-sandbox, main]
 
 jobs:
+  guards:
+    name: guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No automated-authorship markers
+        run: bash scripts/governance/check_no_attribution.sh
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -22,3 +30,42 @@ jobs:
           pip install -e ".[dev,live]"
       - name: Run tests
         run: pytest -q
+
+  compat-schema-gate:
+    name: compat-schema-gate
+    runs-on: ubuntu-latest
+    # Activates once the first-party schema cache is committed (issue #40).
+    # Until then there is nothing to diff and the job is skipped.
+    if: ${{ hashFiles('dbt_diagnostics/fixtures/schemas/manifest/v12.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Diff consumed paths across manifest schema versions
+        run: |
+          set -e
+          for v in 4 5 6 7 8 9 10 11; do
+            n=$((v + 1))
+            base="dbt_diagnostics/fixtures/schemas/manifest/v${v}.json"
+            new="dbt_diagnostics/fixtures/schemas/manifest/v${n}.json"
+            if [ -f "$base" ] && [ -f "$new" ]; then
+              python scripts/compat/schema_diff.py "$base" "$new" --artifact manifest
+            fi
+          done
+      - name: Diff consumed paths across run-results schema versions
+        run: |
+          set -e
+          for v in 4 5; do
+            n=$((v + 1))
+            base="dbt_diagnostics/fixtures/schemas/run-results/v${v}.json"
+            new="dbt_diagnostics/fixtures/schemas/run-results/v${n}.json"
+            if [ -f "$base" ] && [ -f "$new" ]; then
+              python scripts/compat/schema_diff.py "$base" "$new" --artifact run-results
+            fi
+          done
