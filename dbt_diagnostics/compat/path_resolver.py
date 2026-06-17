@@ -1,6 +1,5 @@
 # Resolve a consumed dot-path (e.g. "nodes[].relation_name") against a dbt artifact
 # JSON schema, walking through node-type unions to per-definition presence records.
-# Co-authored with CoCo
 """
 Turns a registry path into authoritative, per-node-type presence facts for one schema
 version. "[]" descends into a collection's member schema (dict values or array items).
@@ -56,7 +55,12 @@ def resolve(doc: SchemaDoc, path: str) -> list[Presence]:
             return []
 
     leaf, leaf_into_members = _split(tokens[-1])
-    leaf_field = leaf
+    if leaf_into_members:
+        # the leaf itself is a collection (e.g. depends_on.nodes is array of strings);
+        # presence is about the property holding that collection.
+        leaf_field = leaf
+    else:
+        leaf_field = leaf
 
     out: list[Presence] = []
     for obj in frontier:

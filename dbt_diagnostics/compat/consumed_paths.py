@@ -1,7 +1,6 @@
 # Registry of dbt-artifact fields dbt-diagnostics consumes, each with version-aware
 # fallbacks and a live-warehouse recovery path (offline file is a hint; the warehouse
 # is the source of truth).
-# Co-authored with CoCo
 """
 The single declarative source for "what we read from dbt artifacts, what to fall back
 to across versions, and what the live (Tier A) layer does when the offline value is

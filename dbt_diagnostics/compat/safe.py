@@ -1,7 +1,6 @@
 # Version-tolerant, never-raising accessors for the dbt artifact fields we consume.
 # Mirrors the fallbacks declared in consumed_paths.REGISTRY so the runtime reader and
 # the static schema-diff cannot drift apart.
-# Co-authored with CoCo
 """
 These helpers implement the runtime side of the cross-version contract: read the
 primary key, fall back to known historical aliases, and return None (never raise)

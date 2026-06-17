@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Diff two first-party dbt artifact JSON schemas by CONSUMED-path presence and exit
 # nonzero when a field we read disappears without a declared fallback (a CI gate).
-# Co-authored with CoCo
 """
 Usage:
     python -m scripts.compat.schema_diff BASE.json NEW.json --artifact manifest

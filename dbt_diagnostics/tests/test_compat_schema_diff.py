@@ -1,6 +1,5 @@
 # Unit tests for the cross-version compat engine: schema resolver, consumed-path
 # diffing (incl. the dbt 1.3 compiled_sql->compiled_code rename), and safe accessors.
-# Co-authored with CoCo
 """Synthetic-schema tests so the engine is provable offline, with no network or real
 artifacts. Real first-party schemas are exercised separately via the contract tier."""
 

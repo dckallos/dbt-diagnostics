@@ -1,6 +1,5 @@
 # Minimal JSON Schema graph walker for dbt artifact schemas: resolves $ref, $defs vs
 # definitions, allOf merges, and anyOf/oneOf unions into concrete object subschemas.
-# Co-authored with CoCo
 """
 dbt's published artifact schemas mix JSON Schema draft-07 (`definitions`) and 2020-12
 (`$defs`), reference node types via `$ref`, and express the `nodes`/`results`

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Acquire FIRST-PARTY dbt artifact JSON schemas into the offline fixture cache and
 # record provenance. Run where network is available (dev/CI); never at runtime.
-# Co-authored with CoCo
 """
 Downloads the canonical schemas published at schemas.getdbt.com (generated from
 dbt-core) into dbt_diagnostics/fixtures/schemas/<artifact>/v<N>.json and writes a
