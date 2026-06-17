@@ -8,12 +8,12 @@
 # that removes them, or docs that quote one) is not flagged either.
 #
 # Why two pattern sets:
-#   - FILE_ERE  (broad): source-file headers, where CoCo writes "# Co-authored with
-#     CoCo" and tools write "Generated with ...". Scans *.py *.sql *.ipynb.
-#   - COMMIT_ERE (strict): only real trailers/footers/identity, anchored to line
-#     start, so prose that mentions a marker in a commit body is not a false hit.
-#     This is where Co-authored-by: / "Generated with" trailers and aider's
-#     "(aider)" author tag actually live.
+#   - FILE_ERE  (broad): source-file headers, where CoCo writes the attribution
+#     header and tools write "Generated with ...". Scans *.py *.sql *.ipynb.
+#   - COMMIT_ERE (strict): only real trailers/footers/identity, anchored to their
+#     structural location (trailers/footers at line start; the author tag on the
+#     commit identity line), so prose that mentions a marker in a commit body is
+#     not a false hit.
 #
 # Escape hatch: put the token  authorship-marker-ok  on the same line (or in the
 # commit body) to intentionally allow a reference.
@@ -47,12 +47,14 @@ FILE_ERE="${FILE_ERE}|\\(aider\\)"
 FILE_ERE="${FILE_ERE}|\\\\ud83e\\\\udd16"
 
 # Strict set for commit messages: real trailers/footers/identity only, anchored to
-# line start so a quoted/prose mention in a commit body is NOT a false positive.
+# their structural location so a quoted/prose mention in a commit body is NOT a
+# false positive. The author-tag check is pinned to the commit identity line, which
+# this script emits prefixed with "commit ".
 COMMIT_ERE="^[[:space:]]*co-authored-by:[[:space:]].*(${AI_NAMES})"
 COMMIT_ERE="${COMMIT_ERE}|^[^A-Za-z]*generated[[:space:]]+(with|by)[[:space:]:]+\[?(${AI_NAMES})"
 COMMIT_ERE="${COMMIT_ERE}|(${AI_EMAILS})"
 COMMIT_ERE="${COMMIT_ERE}|claude\.(com/claude-code|ai/code)"
-COMMIT_ERE="${COMMIT_ERE}|\\(aider\\)"
+COMMIT_ERE="${COMMIT_ERE}|^commit .*\\(aider\\)"
 
 GLOBS=( '*.py' '*.sql' '*.ipynb' )
 MODE='all'   # all | files | commits
@@ -96,7 +98,8 @@ scan_commits() {
     range='HEAD'
     err "note: no base ref reachable; scanning all reachable commit messages (use --base or fetch-depth: 0)"
   fi
-  # Author/committer identity + subject + body for every commit in range.
+  # Author/committer identity + subject + body for every commit in range. The
+  # identity line is prefixed "commit " so the author-tag pattern can anchor to it.
   git log --no-merges --format='commit %h | %an <%ae> | %cn <%ce> | %s%n%b' "$range" 2>/dev/null \
     | grep -nI -i -E -e "$COMMIT_ERE" | drop_allowed
 }
