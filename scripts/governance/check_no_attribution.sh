@@ -4,18 +4,19 @@
 # tools (Claude Code, Cortex Code/CoCo, GitHub Copilot, Cursor, aider, Devin,
 # OpenCode, Gemini/Jules, Codex, Cody, Tabnine, Windsurf, ...). The forbidden thing
 # is an AUTOMATED authorship CLAIM -- a legitimate human "Co-authored-by: Jane" is
-# intentionally NOT flagged.
+# intentionally NOT flagged, and a commit that merely DISCUSSES a marker (e.g. one
+# that removes them, or docs that quote one) is not flagged either.
 #
-# Why both files and commits: the most common marker is a COMMIT TRAILER
-# (e.g. "Co-authored-by: Claude <noreply@anthropic.com>", "Generated with Claude
-# Code", VS Code's "Co-authored-by: Copilot", aider's "(aider)" author tag), which
-# a file-only scan never sees. We scan:
-#   1. Tracked source files: *.py *.sql *.ipynb (incl. notebook JSON + escaped emoji).
-#   2. Commit messages and author/committer identity over a range (PR base..HEAD).
+# Why two pattern sets:
+#   - FILE_ERE  (broad): source-file headers, where CoCo writes "# Co-authored with
+#     CoCo" and tools write "Generated with ...". Scans *.py *.sql *.ipynb.
+#   - COMMIT_ERE (strict): only real trailers/footers/identity, anchored to line
+#     start, so prose that mentions a marker in a commit body is not a false hit.
+#     This is where Co-authored-by: / "Generated with" trailers and aider's
+#     "(aider)" author tag actually live.
 #
 # Escape hatch: put the token  authorship-marker-ok  on the same line (or in the
-# commit body) to intentionally allow a reference -- e.g. this guard's own tests,
-# or a doc that quotes a marker.
+# commit body) to intentionally allow a reference.
 #
 # Usage:
 #   check_no_attribution.sh                     # files + commits (base auto-detected)
@@ -36,15 +37,22 @@ ALLOW='authorship-marker-ok'
 AI_NAMES='claude code|claude|cortex code|coco|codex|copilot|cursor|gemini|google jules|jules|aider|devin|opencode|open code|windsurf|amazon q|sourcegraph cody|cody|tabnine|continue\.dev|sweep|codeium'
 AI_EMAILS='noreply@anthropic\.com|noreply@snowflake\.com|noreply@cursor\.com|noreply@openai\.com|copilot@users\.noreply\.github\.com|[0-9]+\+copilot@users\.noreply\.github\.com|devin-ai-integration'
 
-# Text markers (POSIX ERE, matched case-insensitively). Each branch is anchored to
-# an attribution CONTEXT to avoid flagging innocent prose or human co-authors.
-ERE="co-authored-by:[[:space:]].*(${AI_NAMES})"                       # AI co-author trailer
-ERE="${ERE}|co-authored[ -]with[[:space:]]+(${AI_NAMES})"             # "Co-authored with CoCo" style
-ERE="${ERE}|generated[[:space:]]+(with|by)[[:space:]:]+\[?(${AI_NAMES})"  # "Generated with [Claude Code]"
-ERE="${ERE}|(${AI_EMAILS})"                                          # any known AI no-reply email
-ERE="${ERE}|claude\.(com/claude-code|ai/code)"                       # Claude Code footer URLs
-ERE="${ERE}|\\(aider\\)"                                             # aider appends "(aider)" to the author
-ERE="${ERE}|\\\\ud83e\\\\udd16"                                      # robot emoji, JSON-escaped (notebooks)
+# Broad set for source-file headers (POSIX ERE, matched case-insensitively).
+FILE_ERE="co-authored-by:[[:space:]].*(${AI_NAMES})"
+FILE_ERE="${FILE_ERE}|co-authored[ -]with[[:space:]]+(${AI_NAMES})"
+FILE_ERE="${FILE_ERE}|generated[[:space:]]+(with|by)[[:space:]:]+\[?(${AI_NAMES})"
+FILE_ERE="${FILE_ERE}|(${AI_EMAILS})"
+FILE_ERE="${FILE_ERE}|claude\.(com/claude-code|ai/code)"
+FILE_ERE="${FILE_ERE}|\\(aider\\)"
+FILE_ERE="${FILE_ERE}|\\\\ud83e\\\\udd16"
+
+# Strict set for commit messages: real trailers/footers/identity only, anchored to
+# line start so a quoted/prose mention in a commit body is NOT a false positive.
+COMMIT_ERE="^[[:space:]]*co-authored-by:[[:space:]].*(${AI_NAMES})"
+COMMIT_ERE="${COMMIT_ERE}|^[^A-Za-z]*generated[[:space:]]+(with|by)[[:space:]:]+\[?(${AI_NAMES})"
+COMMIT_ERE="${COMMIT_ERE}|(${AI_EMAILS})"
+COMMIT_ERE="${COMMIT_ERE}|claude\.(com/claude-code|ai/code)"
+COMMIT_ERE="${COMMIT_ERE}|\\(aider\\)"
 
 GLOBS=( '*.py' '*.sql' '*.ipynb' )
 MODE='all'   # all | files | commits
@@ -53,7 +61,7 @@ err() { printf '%s\n' "$*" >&2; }
 drop_allowed() { grep -v -- "$ALLOW" | grep -v -E '^[[:space:]]*$' || true; }
 
 scan_tracked_files() {
-  { git grep -nI -i -E -e "$ERE" -- "${GLOBS[@]}" 2>/dev/null || true
+  { git grep -nI -i -E -e "$FILE_ERE" -- "${GLOBS[@]}" 2>/dev/null || true
     # Raw robot-emoji bytes (needs a PCRE-enabled git; skipped silently otherwise).
     git grep -nI -P -e '\x{1F916}' -- "${GLOBS[@]}" 2>/dev/null || true
   } | drop_allowed
@@ -64,7 +72,7 @@ scan_explicit_files() {
   for f in "$@"; do
     case "$f" in
       *.py|*.sql|*.ipynb)
-        [ -f "$f" ] && { grep -nHI -i -E -e "$ERE" -- "$f" 2>/dev/null || true; } ;;
+        [ -f "$f" ] && { grep -nHI -i -E -e "$FILE_ERE" -- "$f" 2>/dev/null || true; } ;;
     esac
   done | drop_allowed
 }
@@ -90,7 +98,7 @@ scan_commits() {
   fi
   # Author/committer identity + subject + body for every commit in range.
   git log --no-merges --format='commit %h | %an <%ae> | %cn <%ce> | %s%n%b' "$range" 2>/dev/null \
-    | grep -nI -i -E -e "$ERE" | drop_allowed
+    | grep -nI -i -E -e "$COMMIT_ERE" | drop_allowed
 }
 
 # --- argument parsing ----------------------------------------------------------
@@ -100,7 +108,7 @@ while [ "$#" -gt 0 ]; do
     --base) BASE="${2:-}"; shift 2 || { err "usage: --base <ref>"; exit 2; } ;;
     --files-only) MODE='files'; shift ;;
     --commits-only) MODE='commits'; shift ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     --) shift; while [ "$#" -gt 0 ]; do PATHS+=("$1"); shift; done ;;
     -*) err "unknown flag: $1"; exit 2 ;;
     *) PATHS+=("$1"); shift ;;
