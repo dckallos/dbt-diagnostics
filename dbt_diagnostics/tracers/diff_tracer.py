@@ -9,6 +9,7 @@ import difflib
 from typing import Optional
 
 from dbt_diagnostics.models import DiffResult
+from dbt_diagnostics.compat import safe
 
 
 def diff_node(
@@ -41,8 +42,8 @@ def diff_node(
         )
 
     # Compare compiled_code
-    current_code = current_node.get("compiled_code", "") or ""
-    previous_code = previous_node.get("compiled_code", "") or ""
+    current_code = safe.node_compiled_code(current_node) or ""
+    previous_code = safe.node_compiled_code(previous_node) or ""
     node_changed = current_code != previous_code
 
     changed_lines: list[str] = []
@@ -88,8 +89,8 @@ def diff_node(
             parent_previous = previous_nodes.get(parent_id)
 
             if parent_current and parent_previous:
-                parent_cur_code = parent_current.get("compiled_code", "") or ""
-                parent_prev_code = parent_previous.get("compiled_code", "") or ""
+                parent_cur_code = safe.node_compiled_code(parent_current) or ""
+                parent_prev_code = safe.node_compiled_code(parent_previous) or ""
                 if parent_cur_code != parent_prev_code:
                     upstream_changes.append({
                         "model_id": parent_id,

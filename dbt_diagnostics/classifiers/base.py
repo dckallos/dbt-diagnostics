@@ -1,3 +1,4 @@
+# dbt_diagnostics/classifiers/base.py
 """
 dbt_diagnostics/classifiers/base.py
 
@@ -11,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from dbt_diagnostics.compat import safe
 from dbt_diagnostics.models import DiagnosticReport
 from dbt_diagnostics.tracers.dag_walker import DagWalker
 from dbt_diagnostics.tracers.column_tracer import ColumnTracer
@@ -47,7 +49,7 @@ class BaseClassifier(ABC):
         self.context = context
         self.unique_id = result.get("unique_id", "unknown")
         self.message = result.get("message", "")
-        self.compiled_code = result.get("compiled_code", "")
+        self.compiled_code = safe.node_compiled_code(result) or ""
 
     @classmethod
     @abstractmethod

@@ -1,3 +1,4 @@
+# dbt_diagnostics/classifiers/data_error.py
 """
 dbt_diagnostics/classifiers/data_error.py
 
@@ -8,6 +9,7 @@ string too long (100078), and division by zero (100035).
 import re
 from typing import Optional
 
+from dbt_diagnostics.compat import safe
 from dbt_diagnostics.classifiers.base import BaseClassifier
 from dbt_diagnostics.models import (
     DiagnosticReport,
@@ -105,7 +107,7 @@ class DataErrorClassifier(BaseClassifier):
             node_type=node_type,
             short_name=short_name,
             file_path=(node or {}).get("original_file_path"),
-            relation_name=(node or {}).get("relation_name"),
+            relation_name=safe.node_relation_name(node),
             depth=0,
             manifest_status="not_checked",
             manifest_detail=None,
@@ -128,7 +130,7 @@ class DataErrorClassifier(BaseClassifier):
                 node_type=p_type,
                 short_name=p_short,
                 file_path=(parent_node or {}).get("original_file_path"),
-                relation_name=(parent_node or {}).get("relation_name"),
+                relation_name=safe.node_relation_name(parent_node),
                 depth=1,
                 manifest_status="declared",
                 manifest_detail="supplies data that may contain bad values",

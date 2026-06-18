@@ -20,3 +20,4 @@ htmlcov/
 coverage.xml
 
 **/.folder
+format_files.sh

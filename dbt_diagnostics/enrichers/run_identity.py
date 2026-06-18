@@ -1,3 +1,4 @@
+# dbt_diagnostics/enrichers/run_identity.py
 """
 dbt_diagnostics/enrichers/run_identity.py
 
@@ -16,8 +17,14 @@ comparison against the run's own timestamp. We never block for long, and we
 never raise: callers get a role plus its provenance and the queries used.
 """
 
+import logging
 import time
+from datetime import datetime, timezone
 from typing import Optional
+
+from dbt_diagnostics.compat import safe
+
+logger = logging.getLogger(__name__)
 
 # Provenance strings mirror dbt_diagnostics.root_cause (kept local to avoid an
 # import cycle; values must stay in sync).
@@ -38,8 +45,7 @@ def _end_time_for(run_results: Optional[dict], query_id: Optional[str]) -> Optio
     if not run_results or not query_id:
         return None
     for result in run_results.get("results", []):
-        adapter = result.get("adapter_response") or {}
-        if adapter.get("query_id") == query_id:
+        if safe.result_query_id(result) == query_id:
             for t in result.get("timing", []):
                 if t.get("name") == "execute" and t.get("completed_at"):
                     return t["completed_at"]
@@ -92,6 +98,37 @@ def _history_watermark(conn) -> Optional[object]:
         return None
 
 
+def _to_aware_utc(value) -> Optional[datetime]:
+    """
+    Coerce a dbt/Snowflake timestamp into a timezone-aware UTC datetime, or None
+    if it cannot be parsed. A naive value is assumed to be UTC (dbt writes run
+    timings in UTC and Snowflake history END_TIME is treated as UTC here) so that
+    aware/naive pairs are always comparable rather than raising.
+    """
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Coerce a datetime to aware-UTC, assuming UTC when it is naive.
+
+    dbt writes run timestamps in UTC and Snowflake END_TIME is tz-aware, so
+    treating a naive value as UTC lets us compare the two sides without raising
+    regardless of which one carries tzinfo.
+    """
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def _is_lagging(conn, run_end_time: Optional[str]) -> bool:
     """
     Decide whether an empty query_id lookup is "not yet" (history is behind the
@@ -105,16 +142,26 @@ def _is_lagging(conn, run_end_time: Optional[str]) -> bool:
     if watermark is None:
         return True  # nothing visible yet at all -> almost certainly catching up
     try:
-        from datetime import datetime
         run_dt = datetime.fromisoformat(str(run_end_time).replace("Z", "+00:00"))
         wm_dt = watermark
-        if isinstance(watermark, str):
-            wm_dt = datetime.fromisoformat(watermark.replace("Z", "+00:00"))
-        if run_dt.tzinfo and wm_dt.tzinfo is None:
-            wm_dt = wm_dt.replace(tzinfo=run_dt.tzinfo)
-        return wm_dt < run_dt
-    except Exception:
+        if isinstance(wm_dt, str):
+            wm_dt = datetime.fromisoformat(wm_dt.replace("Z", "+00:00"))
+        if not isinstance(wm_dt, datetime):
+            return False  # unrecognized watermark type -> cannot compare safely
+        # Normalize both sides to aware-UTC so a naive/aware mix never raises.
+        return _as_utc(wm_dt) < _as_utc(run_dt)
+    except (ValueError, TypeError, AttributeError) as exc:
+        logger.debug("run-lag comparison failed (%s); assuming not lagging", exc)
         return False
+    watermark = _history_watermark(conn)
+    if watermark is None:
+        return True  # nothing visible yet at all -> almost certainly catching up
+    run_dt = _to_aware_utc(run_end_time)
+    wm_dt = _to_aware_utc(watermark)
+    if run_dt is None or wm_dt is None:
+        # Unparseable on either side -> cannot decide; do not retry pointlessly.
+        return False
+    return wm_dt < run_dt
 
 
 def recover_role_by_query_id(

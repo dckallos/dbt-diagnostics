@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Safe artifact access wiring for classifiers and enrichers (feat, issue #37)
+
+I wired classifier and enricher artifact reads for compiled/raw SQL, relation
+names, and Snowflake adapter response fields through `dbt_diagnostics.compat.safe`,
+so old manifest keys (`compiled_sql`/`raw_sql`) and current keys
+(`compiled_code`/`raw_code`) resolve the same way without changing current-version
+output.
+
+- Direct reads of `compiled_code`/`compiled_sql`, `raw_code`/`raw_sql`,
+  `relation_name`, and Snowflake `adapter_response.query_id`/`rows_affected` now
+  go through never-raising safe accessors. Missing or malformed artifact input
+  returns `None`, so callers omit optional snippets/enrichment or fall through to
+  live recovery instead of inventing defaults.
+- Added safe accessor coverage for old-style and new-style manifest nodes,
+  non-dict/missing inputs, and adapter response access.
+- Extended the same safe-accessor wiring to the `tracers/` package (`dag_walker`,
+  `diff_tracer`, `column_tracer`), which still read `compiled_code`/`relation_name`
+  directly (some without the `compiled_sql` fallback), so lineage and diff tracing
+  are version-correct on pre-1.3 manifests too.
+- Added a guard test that scans `classifiers/`, `enrichers/`, and `tracers/` for
+  reintroduced direct raw artifact reads (subscript check restricted to reads, so
+  dict writes are not flagged).
+- No change to the diagnose `--json` output shape or existing golden outputs.
+
+### Robust naive/aware timestamp comparison in run-history lag check (fix, issue #50)
+
+- `run_identity._is_lagging` now coerces both the run timestamp and the
+  query-history watermark to timezone-aware UTC (via a new `_to_aware_utc` helper)
+  before comparing. This fixes a corner case where a naive run timestamp paired with
+  an aware watermark raised `TypeError`, which a blanket `except` silently swallowed
+  (reporting "not lagging" and suppressing the retry). Parse failures now narrow to a
+  `None` result instead of a broad `except Exception`, and the `datetime` import was
+  moved to module scope.
+- Added unit tests for `_to_aware_utc` and `_is_lagging` across aware/aware,
+  naive/naive, mixed naive/aware, unparseable, and empty-history cases.
+
 ### Cross-version compatibility layer for consumed artifact fields (feat, issue #35)
 
 I added `dbt_diagnostics/compat/`, a small offline layer that hardens the ~12

@@ -1,3 +1,4 @@
+# dbt_diagnostics/classifiers/runtime_error.py
 """
 dbt_diagnostics/classifiers/runtime_error.py
 
@@ -15,6 +16,7 @@ Snowflake execution/SQL-compile stage.
 import re
 from typing import Optional
 
+from dbt_diagnostics.compat import safe
 from dbt_diagnostics.classifiers.base import BaseClassifier, DiagnosticContext
 from dbt_diagnostics.models import (
     DiagnosticReport,
@@ -433,15 +435,14 @@ class RuntimeErrorClassifier(BaseClassifier):
 
     def _is_known_manifest_object(self, fq_object_name: str) -> bool:
         """Check if an object (by its FQ Snowflake name) maps to a manifest node."""
-        # relation_name in manifest nodes is like "ARTWORK_DB.SILVER.STG_MET__ARTWORKS"
         target = fq_object_name.upper()
         for node in self.context.dag_walker.nodes.values():
-            relation = (node.get("relation_name") or "").upper()
+            relation = (safe.node_relation_name(node) or "").upper()
             if relation == target:
                 return True
         # Also check sources
         for source in self.context.dag_walker.sources.values():
-            relation = (source.get("relation_name") or "").upper()
+            relation = (safe.node_relation_name(source) or "").upper()
             if relation == target:
                 return True
         return False
@@ -454,7 +455,7 @@ class RuntimeErrorClassifier(BaseClassifier):
         for pid in parent_ids:
             node = self.context.dag_walker.get_node(pid)
             if node:
-                relation = (node.get("relation_name") or "").upper()
+                relation = (safe.node_relation_name(node) or "").upper()
                 if relation == target:
                     return pid
         return None

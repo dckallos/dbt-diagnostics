@@ -13,6 +13,8 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.optimizer.scope import build_scope
 
+from dbt_diagnostics.compat import safe
+
 
 class ColumnTraceResult:
     """Result of tracing a column through a SQL model."""
@@ -56,7 +58,7 @@ def build_schema_from_manifest(manifest: dict) -> dict:
     sources = manifest.get("sources", {})
 
     for node in list(nodes.values()) + list(sources.values()):
-        relation_name = node.get("relation_name", "")
+        relation_name = safe.node_relation_name(node) or ""
         columns = node.get("columns", {})
         if not relation_name or not columns:
             continue

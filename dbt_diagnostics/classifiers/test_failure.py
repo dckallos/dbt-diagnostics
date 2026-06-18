@@ -1,3 +1,4 @@
+# dbt_diagnostics/classifiers/test_failure.py
 """
 dbt_diagnostics/classifiers/test_failure.py
 
@@ -11,6 +12,7 @@ a configured threshold. The test itself worked -- the data failed.
 import re
 from typing import Optional
 
+from dbt_diagnostics.compat import safe
 from dbt_diagnostics.classifiers.base import BaseClassifier, DiagnosticContext
 from dbt_diagnostics.models import (
     DiagnosticReport,
@@ -59,7 +61,7 @@ class TestFailureClassifier(BaseClassifier):
         test_name = self._extract_test_name()
         tested_model = self._extract_tested_model()
         failures_count = self.result.get("failures", None)
-        compiled_sql = self.result.get("compiled_code", "") or ""
+        compiled_sql = safe.node_compiled_code(self.result) or ""
 
         # Extract structured info from compiled SQL
         threshold = self._extract_threshold(compiled_sql)
@@ -176,8 +178,7 @@ class TestFailureClassifier(BaseClassifier):
 
     def _extract_query_id(self) -> Optional[str]:
         """Extract the Snowflake query_id from adapter_response."""
-        adapter_resp = self.result.get("adapter_response", {})
-        return adapter_resp.get("query_id")
+        return safe.result_query_id(self.result)
 
     def _build_fix_suggestion(
         self,

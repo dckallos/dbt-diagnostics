@@ -1,3 +1,4 @@
+# dbt_diagnostics/enrichers/enrich.py
 """
 dbt_diagnostics/enrichers/enrich.py
 
@@ -8,6 +9,7 @@ with live Snowflake data. Each error class gets different enrichment logic.
 import re
 from typing import Optional
 
+from dbt_diagnostics.compat import safe
 from dbt_diagnostics.models import (
     DiagnosticReport,
     DisconnectVerdict,
@@ -216,7 +218,7 @@ def _enrich_runtime_error(conn, finding, report, result_data):
         timing = result_data.get("timing", [])
         execute_timing = next((t for t in timing if t["name"] == "execute"), None)
         if execute_timing:
-            compiled = result_data.get("compiled_code", "")
+            compiled = safe.node_compiled_code(result_data) or ""
             match = find_matching_query(
                 conn,
                 compiled,
