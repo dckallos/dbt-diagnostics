@@ -49,13 +49,28 @@ from dbt_diagnostics.tracers.column_tracer import ColumnTracer
 
 
 class ArtifactLoadError(Exception):
-    """Raised when a dbt artifact cannot be loaded (missing, corrupt, unreadable)."""
+    """Raised when a dbt artifact cannot be loaded (missing, corrupt, unreadable).
 
-    def __init__(self, label: str, path: Path, reason: str):
+    `kind` classifies the failure so callers can react differently:
+      - "not_found": the artifact is absent (user has not run `dbt build` yet).
+      - "corrupt":   the artifact is present but truncated/empty/unparseable
+                     (the signature of an interrupted run -- itself diagnosable).
+    """
+
+    def __init__(self, label: str, path: Path, reason: str, kind: str = "corrupt"):
         self.label = label
         self.path = path
         self.reason = reason
+        self.kind = kind
         super().__init__(f"{label} at {path}: {reason}")
+
+
+def _corrupt_artifact_note(label: str) -> str:
+    """The single user-facing note for a present-but-unparseable artifact."""
+    return (
+        f"{label} appears truncated or corrupted (interrupted run?); "
+        "re-run `dbt build` to regenerate it"
+    )
 
 
 # Known dbt packages that produce project-hygiene warnings (not data quality)
@@ -166,22 +181,41 @@ def _resolve_from_args(args) -> dict:
 
 
 def load_json(path: Path, label: str) -> dict:
-    """Load a JSON artifact. Raises ArtifactLoadError on any failure."""
+    """Load a JSON artifact. Raises ArtifactLoadError on any failure.
+
+    Missing files raise kind="not_found". A present-but-unparseable artifact --
+    empty, truncated mid-write, or holding non-UTF8 bytes (all signatures of an
+    interrupted `dbt build`) -- raises kind="corrupt" so the caller can surface
+    the interrupted-run note instead of a stack trace.
+    """
     if not path.exists():
         raise ArtifactLoadError(
-            label, path, "file not found; run `dbt build` first to generate artifacts"
+            label, path,
+            "file not found; run `dbt build` first to generate artifacts",
+            kind="not_found",
         )
     try:
-        with open(path) as f:
-            return json.load(f)
-    except json.JSONDecodeError as exc:
-        raise ArtifactLoadError(
-            label, path,
-            f"not valid JSON: {exc}. The artifact may be truncated; re-run `dbt build`."
-        ) from exc
+        raw = path.read_bytes()
     except OSError as exc:
         raise ArtifactLoadError(
-            label, path, f"could not read file: {exc}"
+            label, path, f"could not read file: {exc}", kind="corrupt"
+        ) from exc
+
+    if not raw.strip():
+        raise ArtifactLoadError(
+            label, path, _corrupt_artifact_note(label), kind="corrupt"
+        )
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ArtifactLoadError(
+            label, path, _corrupt_artifact_note(label), kind="corrupt"
+        ) from exc
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ArtifactLoadError(
+            label, path, _corrupt_artifact_note(label), kind="corrupt"
         ) from exc
 
 
@@ -411,7 +445,12 @@ def cmd_diagnose(args):
         run_results = load_json(paths["run_results"], "run_results.json")
         manifest = load_json(paths["manifest"], "manifest.json")
     except ArtifactLoadError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        # A present-but-unparseable artifact is the signature of an interrupted
+        # run -- itself a diagnosable condition. Surface a single clean note
+        # rather than a stack trace; a genuinely missing artifact is a hard
+        # error (the user has not run `dbt build` yet).
+        prefix = "NOTE" if exc.kind == "corrupt" else "ERROR"
+        print(f"{prefix}: {exc.reason}", file=sys.stderr)
         sys.exit(1)
 
     # Auto-detect the dbt artifact schema version. Never raises; on an

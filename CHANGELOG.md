@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Harden the artifact read path against interrupted-run corruption (fix, issue #38)
+
+An interrupted `dbt build` can leave a half-written, empty, or non-UTF8
+`run_results.json`/`manifest.json` behind. The read boundary now treats that as
+a diagnosable condition rather than a crash or an opaque error.
+
+- `load_json` reads bytes and classifies failures: a missing file raises
+  `ArtifactLoadError(kind="not_found")` (run `dbt build` first), while an empty,
+  truncated, or non-UTF8 artifact raises `ArtifactLoadError(kind="corrupt")`
+  carrying a single user-facing note: "<artifact> appears truncated or corrupted
+  (interrupted run?); re-run `dbt build` to regenerate it". `cmd_diagnose`
+  surfaces the corrupt case as a clean `NOTE:` instead of a stack trace.
+- Fixed a real escape: non-UTF8 bytes previously raised `UnicodeDecodeError` (a
+  `ValueError`, not an `OSError`), which slipped past `load_json`'s handlers and
+  surfaced as a traceback. It now degrades like any other corrupt artifact.
+- `compat.schema_model.SchemaDoc` tolerates a non-dict schema root so
+  `path_resolver.resolve` returns an empty result instead of raising on a
+  malformed schema document.
+- Added `robustness`-marked tests for every threat case (truncated, empty,
+  whitespace-only, non-UTF8, wrong-shape JSON, missing `nodes`/`results`,
+  metadata without a valid schema URL, null entries) asserting no exception
+  escapes and a degraded result/note is produced; added `unit`-marked tests
+  proving `compat.safe.*` return `None` and `path_resolver.resolve` returns an
+  empty list on non-dict / missing-key inputs.
+- No change to the `diagnose --json` output shape; `artifact_schema` is
+  additive and unchanged.
+
 ### Safe artifact access wiring for classifiers and enrichers (feat, issue #37)
 
 I wired classifier and enricher artifact reads for compiled/raw SQL, relation

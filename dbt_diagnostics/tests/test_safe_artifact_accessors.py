@@ -10,6 +10,8 @@ import pytest
 
 from dbt_diagnostics.compat import safe
 
+pytestmark = pytest.mark.unit
+
 
 def test_compiled_and_raw_accessors_prefer_new_manifest_keys():
     """Current manifests expose compiled_code/raw_code."""
