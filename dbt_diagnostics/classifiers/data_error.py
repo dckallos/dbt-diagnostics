@@ -200,4 +200,3 @@ class DataErrorClassifier(BaseClassifier):
                 "or use IFF(divisor = 0, NULL, numerator / divisor) AS result."
             ),
         )
-    

@@ -54,7 +54,7 @@ def _violations_in(path: Path, package_root: Path) -> list[str]:
                     f"direct .get({key_node.value!r})"
                 )
 
-        if isinstance(node, ast.Subscript):
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
             key = _literal_key(node.slice)
             if key in FORBIDDEN_KEYS:
                 violations.append(
