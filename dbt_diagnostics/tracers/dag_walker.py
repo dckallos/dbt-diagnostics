@@ -10,6 +10,7 @@ from collections import deque
 from typing import Optional
 
 from dbt_diagnostics.models import LineageStep
+from dbt_diagnostics.compat import safe
 
 
 class DagWalker:
@@ -113,7 +114,7 @@ class DagWalker:
             return True
 
         # Check compiled SQL for the column alias
-        compiled = node.get("compiled_code", "")
+        compiled = safe.node_compiled_code(node) or ""
         if compiled:
             pattern = re.compile(
                 rf"\bAS\s+{re.escape(column_name)}\b", re.IGNORECASE
@@ -139,7 +140,7 @@ class DagWalker:
         relation_name = None
         if node:
             file_path = node.get("original_file_path") or node.get("path")
-            relation_name = node.get("relation_name")
+            relation_name = safe.node_relation_name(node)
 
         return LineageStep(
             node_id=node_id,
@@ -259,7 +260,7 @@ class DagWalker:
         # Check all sources in the manifest for a matching relation_name
         matched_source_id = None
         for source_id, source_node in self.sources.items():
-            relation = source_node.get("relation_name", "")
+            relation = safe.node_relation_name(source_node) or ""
             if relation and relation.upper() == object_upper:
                 matched_source_id = source_id
                 break
@@ -269,7 +270,7 @@ class DagWalker:
             for node_id, node in self.nodes.items():
                 if node_id == unique_id:
                     continue
-                relation = node.get("relation_name", "")
+                relation = safe.node_relation_name(node) or ""
                 if relation and relation.upper() == object_upper:
                     matched_source_id = node_id
                     break

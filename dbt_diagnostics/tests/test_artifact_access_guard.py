@@ -21,7 +21,7 @@ FORBIDDEN_KEYS = {
     "rows_affected",
 }
 
-SCAN_DIRS = ("classifiers", "enrichers")
+SCAN_DIRS = ("classifiers", "enrichers", "tracers")
 
 
 def _literal_key(node):
