@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 class ConsumedPath:
     """One artifact field the tool reads, plus its cross-version survival strategy."""
 
-    artifact: str                       # "manifest" | "run-results"
+    artifact: str                       # "manifest" | "run-results" | "catalog"
     path: str                           # dot-path; "[]" descends into dict values/array items
     fallbacks: tuple[str, ...] = ()     # sibling keys to try if the primary leaf is absent
     nullable_expected: bool = False     # None is a normal value (e.g. seeds/tests relation_name)
@@ -96,6 +96,29 @@ REGISTRY: tuple[ConsumedPath, ...] = (
     ConsumedPath(
         "run-results", "results[].adapter_response.rows_affected",
         adapter_specific=True, nullable_expected=True,
+    ),
+    # ---- catalog.json (dbt docs generate; best-effort, often stale/absent) ----
+    # Last-known column types per node, compared against the live warehouse for
+    # schema-drift diagnosis (#42). Catalog is a hint only; when it is missing or
+    # stale the live INFORMATION_SCHEMA recovery is authoritative.
+    ConsumedPath(
+        "catalog", "nodes[].columns[].type",
+        nullable_expected=True,
+        live_recovery="INFORMATION_SCHEMA.COLUMNS.DATA_TYPE for the relation "
+                      "(catalog is a hint; the live type is authoritative)",
+        classifiers=("schema_change_error",),
+    ),
+    ConsumedPath(
+        "catalog", "nodes[].columns[].name",
+        nullable_expected=True,
+        live_recovery="INFORMATION_SCHEMA.COLUMNS.COLUMN_NAME for the relation",
+        classifiers=("schema_change_error",),
+    ),
+    ConsumedPath(
+        "catalog", "sources[].columns[].type",
+        nullable_expected=True,
+        live_recovery="INFORMATION_SCHEMA.COLUMNS.DATA_TYPE for the source relation",
+        classifiers=("schema_change_error",),
     ),
 )
 

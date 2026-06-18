@@ -225,7 +225,9 @@ def classify_error(message: str) -> str:
     return cls.error_class if cls else "unknown"
 
 
-def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
+def _diagnose_all(
+    run_results: dict, manifest: dict, paths: dict, catalog: Optional[dict] = None
+) -> tuple:
     """
     Core logic: classify and diagnose all errors and failures.
 
@@ -241,6 +243,7 @@ def _diagnose_all(run_results: dict, manifest: dict, paths: dict) -> tuple:
         compiled_dir=paths["compiled_dir"],
         manifest=manifest,
         run_results=run_results,
+        catalog=catalog,
     )
 
     errors = []
@@ -460,8 +463,20 @@ def cmd_diagnose(args):
         for note in compat.notes:
             print(f"NOTE: {note}", file=sys.stderr)
 
+    # catalog.json (from `dbt docs generate`) is a strictly optional hint about
+    # last-known column types. It is frequently stale or absent at failure time,
+    # so load it best-effort: absent or unparseable -> None, and the live
+    # INFORMATION_SCHEMA recovery takes over with no change in behavior.
+    catalog = None
+    catalog_path = paths.get("catalog")
+    if catalog_path is not None:
+        try:
+            catalog = load_json(catalog_path, "catalog.json")
+        except ArtifactLoadError:
+            catalog = None
+
     reports, skipped_ids, total, error_count, fail_count, warn_details = _diagnose_all(
-        run_results, manifest, paths
+        run_results, manifest, paths, catalog=catalog
     )
     warn_count = len(warn_details)
 

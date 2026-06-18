@@ -990,3 +990,52 @@ only to OPTIMIZE (add a one-line fallback alias after a rename to keep the cheap
 offline path) - a rare, product-judgment call, not maintenance toil. High-confidence
 renames are auto-PROPOSED but human-approved, never auto-applied, because a silent
 wrong rename mapping is worse than graceful degradation to the live layer.
+
+## [2026-06-18] #40 -- schema-diff gate wired in CI; first-party confirmation tasks remain PROVISIONAL
+
+The CI `compat-schema-gate` job runs `scripts/compat/schema_diff.py` against the
+committed cache on every PR (manifest v4->v12 and run-results v4->v6 adjacent
+pairs, plus a catalog v1 / sources v3 presence check). It is cache-aware: until
+`dbt_diagnostics/fixtures/schemas/manifest/v12.json` is committed it skips, so the
+gate cannot block before the cache lands. The synthetic-break proof
+(`tests/test_compat_schema_gate.py`, `-m contract`) shows that dropping a consumed
+field with no declared fallback makes `schema_diff` exit nonzero (gate fails).
+
+STATUS: the five first-party confirmation tasks below stay **PROVISIONAL**. The
+sandbox has NO network, so `fetch_schemas.py` (the only networked component) could
+not be run here to populate the first-party cache. They are NOT promoted to
+CONFIRMED. Maintainer steps to resolve (run locally, with network):
+
+```
+# 1. Populate the offline first-party schema cache (manifest v4-12, run-results
+#    v4-6, catalog v1, sources v3) + PROVENANCE.json (url + sha256 per file):
+python scripts/compat/fetch_schemas.py
+
+# 2. Verify the gate is green on the current matrix (exit 0):
+for v in 4 5 6 7 8 9 10 11; do n=$((v+1)); \
+  python scripts/compat/schema_diff.py \
+    dbt_diagnostics/fixtures/schemas/manifest/v$v.json \
+    dbt_diagnostics/fixtures/schemas/manifest/v$n.json --artifact manifest; done
+for v in 4 5; do n=$((v+1)); \
+  python scripts/compat/schema_diff.py \
+    dbt_diagnostics/fixtures/schemas/run-results/v$v.json \
+    dbt_diagnostics/fixtures/schemas/run-results/v$n.json --artifact run-results; done
+
+# 3. Commit the cache so CI runs fully offline thereafter:
+git add dbt_diagnostics/fixtures/schemas && git commit -m "chore(compat): commit first-party schema cache"
+```
+
+TODO (promote each to CONFIRMED with a first-party schemas.getdbt.com URL once the
+cache is committed and inspected):
+- [ ] `nodes[].relation_name` present manifest v1-v12 (currently PROVISIONAL; lens
+      was the third-party mirror). Assert `present_anywhere(doc, "nodes[].relation_name")`
+      for every cached manifest vN.
+- [ ] `compiled_sql` -> `compiled_code` boundary at manifest v7: assert
+      `present_anywhere(v6, "nodes[].compiled_sql")` and
+      `present_anywhere(v7, "nodes[].compiled_code")`.
+- [ ] run-results major per dbt 1.3-1.6 (assumed v4 throughout): confirm from the
+      cached `metadata.dbt_schema_version` of golden run_results per tag.
+- [ ] catalog.json (assumed v1) and sources.json (assumed v3) majors across the line.
+- [ ] dbt-common extraction (~1.5/1.6) and dbt-adapters split (~1.8) release tags
+      from dbt-core deps per tag (affects `adapter_response` provenance).
+

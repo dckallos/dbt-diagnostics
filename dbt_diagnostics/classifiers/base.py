@@ -30,6 +30,9 @@ class DiagnosticContext:
     compiled_dir: Path
     manifest: Optional[dict] = None
     run_results: Optional[dict] = None
+    # Optional catalog.json (from `dbt docs generate`). Strictly best-effort: a
+    # stale-tolerant hint about last-known column types. None when absent.
+    catalog: Optional[dict] = None
 
 
 class BaseClassifier(ABC):

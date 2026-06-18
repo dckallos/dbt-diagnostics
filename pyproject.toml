@@ -32,7 +32,14 @@ where = ["."]
 include = ["dbt_diagnostics*"]
 
 [tool.setuptools.package-data]
-dbt_diagnostics = ["templates/**/*.j2", "fixtures/*.json"]
+dbt_diagnostics = [
+    "templates/**/*.j2",
+    "fixtures/*.json",
+    # First-party dbt artifact schema cache (issue #40): committed so the
+    # compat schema-diff gate runs fully offline. Shipped with the package so
+    # the cache is available wherever the package is installed.
+    "fixtures/schemas/**/*.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["dbt_diagnostics/tests"]

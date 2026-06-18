@@ -97,6 +97,10 @@ def resolve_project_paths(project_dir: Path) -> dict:
         "target_dir": project_dir / "target",
         "run_results": project_dir / "target" / "run_results.json",
         "manifest": project_dir / "target" / "manifest.json",
+        # Produced only by `dbt docs generate`, so frequently absent/stale at
+        # failure time. Consumed strictly best-effort (see #42): the live
+        # warehouse remains the source of truth for column types.
+        "catalog": project_dir / "target" / "catalog.json",
         "compiled_dir": project_dir / "target" / "compiled",
         "models_dir": project_dir / "models",
     }
