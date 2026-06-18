@@ -17,8 +17,8 @@ class SchemaDoc:
     """Wraps a parsed JSON Schema document and resolves its internal references."""
 
     def __init__(self, root: dict):
-        self.root = root
-        self.defs: dict = root.get("$defs") or root.get("definitions") or {}
+        self.root = root if isinstance(root, dict) else {}
+        self.defs: dict = self.root.get("$defs") or self.root.get("definitions") or {}
 
     def deref(self, node: Any) -> dict:
         """Follow a $ref chain to a concrete schema dict; tolerate cycles and leaves."""

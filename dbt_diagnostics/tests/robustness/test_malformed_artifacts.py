@@ -20,7 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from dbt_diagnostics.main import ArtifactLoadError, _diagnose_all, load_json
+from dbt_diagnostics.main import (
+    ArtifactLoadError,
+    _corrupt_artifact_note,
+    _diagnose_all,
+    load_json,
+)
+from dbt_diagnostics.schema_version import detect_artifact_version
 
 pytestmark = pytest.mark.robustness
 
@@ -42,19 +48,43 @@ def test_truncated_json_raises_artifact_load_error(tmp_path):
     bad.write_text('{"results": [ {"status": "err')  # truncated mid-object
     with pytest.raises(ArtifactLoadError) as exc_info:
         load_json(bad, "run_results.json")
-    assert "not valid JSON" in str(exc_info.value)
+    assert exc_info.value.kind == "corrupt"
+    assert "truncated or corrupted (interrupted run?)" in str(exc_info.value)
+    assert exc_info.value.reason == _corrupt_artifact_note("run_results.json")
 
 
-def test_empty_file_raises_artifact_load_error(tmp_path):
+def test_empty_file_raises_corrupt_artifact_load_error(tmp_path):
     bad = tmp_path / "manifest.json"
     bad.write_text("")
-    with pytest.raises(ArtifactLoadError):
+    with pytest.raises(ArtifactLoadError) as exc_info:
         load_json(bad, "manifest.json")
+    assert exc_info.value.kind == "corrupt"
+    assert "truncated or corrupted (interrupted run?)" in str(exc_info.value)
 
 
-def test_missing_file_raises_artifact_load_error(tmp_path):
+def test_whitespace_only_file_is_corrupt(tmp_path):
+    bad = tmp_path / "run_results.json"
+    bad.write_text("   \n\t  ")
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        load_json(bad, "run_results.json")
+    assert exc_info.value.kind == "corrupt"
+
+
+def test_non_utf8_bytes_raise_corrupt_not_unicode_error(tmp_path):
+    """Garbage/non-UTF8 bytes must degrade to a corrupt ArtifactLoadError, not
+    let a UnicodeDecodeError (a ValueError, not OSError) escape as a traceback."""
+    bad = tmp_path / "manifest.json"
+    bad.write_bytes(b"\xff\xfe\x00\x01\x80\x81 not utf-8 at all")
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        load_json(bad, "manifest.json")
+    assert exc_info.value.kind == "corrupt"
+    assert "truncated or corrupted (interrupted run?)" in str(exc_info.value)
+
+
+def test_missing_file_raises_not_found(tmp_path):
     with pytest.raises(ArtifactLoadError) as exc_info:
         load_json(tmp_path / "nope.json", "run_results.json")
+    assert exc_info.value.kind == "not_found"
     assert "file not found" in str(exc_info.value)
 
 
@@ -126,3 +156,49 @@ def test_diagnose_all_never_raises_on_pure_garbage(manifest_minimal, tmp_path):
     for junk in (None, [], "string", 0, {"results": {"nested": "dict"}}):
         out = _diagnose_all(junk, manifest_minimal, _paths(tmp_path))
         assert len(out) == 6
+
+
+# --------------------------------------------------------------------------
+# detect_artifact_version: every threat case degrades, never raises
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "artifact, expected_kind",
+    [
+        (None, "manifest"),                       # not a JSON object at all
+        ([], "manifest"),                         # list where dict expected
+        ("a string", "run-results"),              # scalar where dict expected
+        ({}, "manifest"),                         # empty dict, no shape clues
+        ({"nodes": None}, "manifest"),            # nodes present but null
+        ({"results": None}, "run-results"),       # results present but null
+        ({"metadata": "not-a-dict"}, "manifest"),  # metadata wrong type
+        ({"metadata": {"dbt_schema_version": 123}}, "manifest"),  # url not a string
+        ({"metadata": {"dbt_schema_version": "file:///nope"}}, "run-results"),  # non-getdbt URL
+        ({"metadata": {}}, "manifest"),           # metadata present, url missing
+    ],
+    ids=[
+        "none",
+        "list-not-dict",
+        "scalar-not-dict",
+        "empty-dict",
+        "nodes-null",
+        "results-null",
+        "metadata-wrong-type",
+        "schema-url-not-string",
+        "schema-url-not-getdbt",
+        "schema-url-missing",
+    ],
+)
+def test_detect_artifact_version_degrades_never_raises(artifact, expected_kind):
+    av = detect_artifact_version(artifact, expected_kind)
+    # Contract: never raises, never claims "supported", always carries a note.
+    assert av.supported is False
+    assert av.note is not None and av.note != ""
+
+
+def test_detect_artifact_version_no_kwarg_still_degrades():
+    """The never-raise contract holds even without the expected_kind hint."""
+    for artifact in (None, [], "x", 42, {}, {"metadata": []}):
+        av = detect_artifact_version(artifact)
+        assert av.supported is False
+        assert av.note
