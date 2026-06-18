@@ -8,6 +8,13 @@ and never blur the two.
 Sources and how to use them (read carefully -- this determines whether your
 findings are real):
 
+- PROJECT FILES (added as sources): OUTPUT_ONE.md (breadth review), OUTPUT_TWO.md
+  (architecture review), and OUTPUT_THREE.md (the 27-change, 4-wave implementation
+  plan). These are the material UNDER REVIEW, not trusted conclusions. OUTPUT_THREE
+  is the primary object of question 1: read it IN FULL and account for every one of
+  the 27 changes. Project sources are retrieved on demand and may be chunked, so if
+  you cannot enumerate all 27 changes, say so explicitly rather than silently
+  reviewing a partial set.
 - The PACKAGE SOURCE is pasted inline at the very end of this message, after the
   line "=== BEGIN PACKAGE SNAPSHOT ===". It was generated from the
   donkey-kong-sandbox branch and INCLUDES the code, .github/workflows/ci.yml, and
