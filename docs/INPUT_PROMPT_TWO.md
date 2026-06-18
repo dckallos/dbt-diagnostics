@@ -31,14 +31,27 @@ Produce a structured Markdown report covering:
    refactor where none is warranted, and do not let this question crowd out larger
    findings.
 
-3. Target design, shown in real code. For the 2-4 highest-leverage structural
+3. Database-platform coupling and portability. The package currently targets
+   Snowflake. Locate where platform-specific assumptions live -- SQL dialect and
+   syntax, error codes or message parsing, INFORMATION_SCHEMA / metadata access,
+   the connector and connection handling, identifier quoting/casing, type names,
+   and anything else adapter-specific -- citing file / function / lines. Judge how
+   isolated or diffuse those assumptions are: confined to a layer (e.g.
+   connection/enrichers) or scattered through classifiers, tracers, and rendering?
+   State what an abstraction boundary would need to cover to support a second
+   warehouse (e.g. BigQuery / Postgres / DuckDB), what would stay genuinely
+   shared, and give a realistic effort and risk estimate. Treat "portability is
+   not worth pursuing" as an acceptable conclusion if the evidence supports it; do
+   not assume going database-agnostic is desirable.
+
+4. Target design, shown in real code. For the 2-4 highest-leverage structural
    changes YOU identify from the evidence, show CONCRETE Python: a short "before"
    excerpt quoted verbatim from the snapshot, then an "after" sketch with real
    signatures, types, and control flow (not prose field lists). Keep each example
    minimal but faithful, and show how call sites change. Let the code choose the
    changes; do not fit a predetermined pattern or solution.
 
-4. Rewrite vs refactor -- decide independently and state it plainly. Re-derive the
+5. Rewrite vs refactor -- decide independently and state it plainly. Re-derive the
    verdict from the code itself. Choose among: (a) no structural change needed,
    (b) targeted refactors, (c) substantial refactor of specific subsystems, or
    (d) full/partial rewrite. Name exactly which modules/subsystems each option
