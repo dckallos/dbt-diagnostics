@@ -81,3 +81,19 @@ jobs:
               python scripts/compat/schema_diff.py "$base" "$new" --artifact run-results
             fi
           done
+      - name: Confirm single-version schema cache (catalog v1, sources v3)
+        if: steps.cache.outputs.present == 'true'
+        run: |
+          set -e
+          # catalog/sources have a single cached major (no adjacent pair to diff),
+          # so assert the cache is present and self-consistent against itself.
+          for spec in "catalog/v1" "sources/v3"; do
+            f="dbt_diagnostics/fixtures/schemas/${spec}.json"
+            artifact="${spec%%/*}"
+            if [ -f "$f" ]; then
+              python scripts/compat/schema_diff.py "$f" "$f" --artifact "$artifact"
+            else
+              echo "Missing cached schema $f (run scripts/compat/fetch_schemas.py); failing."
+              exit 1
+            fi
+          done

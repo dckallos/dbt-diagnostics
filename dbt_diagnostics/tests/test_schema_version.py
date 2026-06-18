@@ -139,3 +139,88 @@ class TestSupportedSet:
         # Guards against accidental widening without a captured fixture.
         assert SUPPORTED_SCHEMAS["manifest"] == {12}
         assert SUPPORTED_SCHEMAS["run-results"] == {6}
+
+
+def _artifact(kind_path, *, dbt_version=None, body_key="nodes"):
+    """Build a minimal artifact dict with a schema URL and optional dbt_version."""
+    metadata = {
+        "dbt_schema_version": f"https://schemas.getdbt.com/dbt/{kind_path}.json"
+    }
+    if dbt_version is not None:
+        metadata["dbt_version"] = dbt_version
+    return {"metadata": metadata, body_key: {} if body_key == "nodes" else []}
+
+
+class TestVersionSkew:
+    """Cross-artifact version skew detection (#39): the --defer/state case."""
+
+    def test_dbt_version_divergence_produces_note(self):
+        rr = _artifact("run-results/v6", dbt_version="1.11.11", body_key="results")
+        manifest = _artifact("manifest/v12", dbt_version="1.7.0")
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is True
+        assert compat.skew.source == "dbt_version"
+        assert compat.skew.manifest_signal == "1.7"
+        assert compat.skew.run_results_signal == "1.11"
+        assert compat.skew.note is not None
+        assert "--defer/state" in compat.skew.note
+        # The skew note rides the existing notes plumbing additively.
+        assert any("--defer/state" in n for n in compat.notes)
+
+    def test_dbt_version_match_no_skew_note(self):
+        rr = _artifact("run-results/v6", dbt_version="1.11.11", body_key="results")
+        manifest = _artifact("manifest/v12", dbt_version="1.11.3")
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is False
+        assert compat.skew.note is None
+        assert compat.notes == []
+
+    def test_patch_difference_is_not_divergence(self):
+        rr = _artifact("run-results/v6", dbt_version="1.11.11", body_key="results")
+        manifest = _artifact("manifest/v12", dbt_version="1.11.0")
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is False
+
+    def test_majors_fallback_divergence_when_dbt_version_absent(self):
+        # No dbt_version anywhere: fall back to coarse schema-major ranges.
+        rr = _artifact("run-results/v6", body_key="results")   # ~dbt 1.10+
+        manifest = _artifact("manifest/v11")                   # dbt 1.7
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is True
+        assert compat.skew.source == "schema_major"
+        assert compat.skew.manifest_signal == "v11"
+        assert compat.skew.run_results_signal == "v6"
+        assert any("different dbt release lines" in n for n in compat.notes)
+
+    def test_majors_fallback_overlap_no_divergence(self):
+        # manifest v12 (>=1.8) and run-results v6 (>=1.10) co-occur -> no note.
+        rr = _artifact("run-results/v6", body_key="results")
+        manifest = _artifact("manifest/v12")
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is False
+        assert compat.skew.note is None
+
+    def test_unknown_majors_stay_silent(self):
+        rr = _artifact("run-results/v99", body_key="results")
+        manifest = _artifact("manifest/v99")
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is False
+        assert compat.skew.source == "unknown"
+        assert compat.skew.note is None
+
+    def test_garbled_dbt_version_never_raises(self):
+        rr = _artifact("run-results/v6", dbt_version="not-a-version", body_key="results")
+        manifest = _artifact("manifest/v12", dbt_version=42)
+        # Must not raise; degrades to the majors fallback (v6 vs v12 overlap).
+        compat = check_compatibility(rr, manifest)
+        assert compat.skew.diverged is False
+
+    def test_json_is_additive(self):
+        rr = _artifact("run-results/v6", dbt_version="1.11.11", body_key="results")
+        manifest = _artifact("manifest/v12", dbt_version="1.7.0")
+        d = check_compatibility(rr, manifest).to_json_dict()
+        # Existing keys unchanged...
+        assert set(("run_results", "manifest", "all_supported")) <= set(d)
+        # ...plus the additive skew block.
+        assert d["skew"]["diverged"] is True
+        assert d["skew"]["source"] == "dbt_version"

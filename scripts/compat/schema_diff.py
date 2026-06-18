@@ -61,7 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Diff dbt artifact schemas by consumed path.")
     ap.add_argument("base", help="path to the older first-party schema JSON")
     ap.add_argument("new", help="path to the newer first-party schema JSON")
-    ap.add_argument("--artifact", required=True, choices=("manifest", "run-results"))
+    ap.add_argument("--artifact", required=True,
+                    choices=("manifest", "run-results", "catalog", "sources"))
     args = ap.parse_args(argv)
     return 1 if diff(args.base, args.new, args.artifact) else 0
 

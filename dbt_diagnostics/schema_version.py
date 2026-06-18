@@ -46,6 +46,30 @@ _SCHEMA_URL_RE = re.compile(
     r"/dbt/(?P<kind>[a-z_-]+)/v(?P<major>\d+)", re.IGNORECASE
 )
 
+# Parses the leading "major.minor" out of a metadata.dbt_version string.
+_DBT_VERSION_RE = re.compile(r"\s*(\d+)\.(\d+)")
+
+# Coarse, best-effort mapping of an artifact schema major to the dbt 1.x minor
+# RANGE it co-occurs with. Used ONLY for the cross-artifact skew note when
+# metadata.dbt_version is absent on one or both artifacts. Unknown majors map to
+# nothing (-> no note, never a false positive). Ranges (not points) because a
+# single run-results major spans several dbt minors; divergence is reported only
+# when the two ranges are disjoint, so co-occurring versions never flag.
+# This table is historical (dbt 1.0-1.7); from manifest v12 the major froze and
+# evolves additively, so it does not grow per future release.
+_OPEN_MINOR = 999
+_MAJOR_TO_DBT_MINOR_RANGE: dict[str, dict[int, tuple[int, int]]] = {
+    # manifest major -> (low, high) dbt 1.x minor
+    "manifest": {
+        4: (0, 0), 5: (1, 1), 6: (2, 2), 7: (3, 3), 8: (4, 4),
+        9: (5, 5), 10: (6, 6), 11: (7, 7), 12: (8, _OPEN_MINOR),
+    },
+    # run-results major -> (low, high) dbt 1.x minor
+    "run-results": {
+        4: (0, 7), 5: (8, 9), 6: (10, _OPEN_MINOR),
+    },
+}
+
 
 @dataclass
 class ArtifactVersion:
@@ -58,6 +82,19 @@ class ArtifactVersion:
     supported: bool = False
     note: Optional[str] = None
 
+    @property
+    def dbt_minor(self) -> Optional[tuple[int, int]]:
+        """Leading (major, minor) parsed from dbt_version, or None. Never raises."""
+        if not isinstance(self.dbt_version, str):
+            return None
+        m = _DBT_VERSION_RE.match(self.dbt_version)
+        if not m:
+            return None
+        try:
+            return (int(m.group(1)), int(m.group(2)))
+        except (TypeError, ValueError):
+            return None
+
     def to_json_dict(self) -> dict:
         return {
             "kind": self.kind,
@@ -67,6 +104,102 @@ class ArtifactVersion:
             "supported": self.supported,
             "note": self.note,
         }
+
+
+@dataclass
+class VersionSkew:
+    """
+    Cross-artifact version comparison for a run_results + manifest pair.
+
+    A diagnosis can mix artifacts from different dbt versions (real under
+    `dbt build --defer --state path/` or multi-invocation workflows): the
+    deferred manifest can originate from an older build than the live
+    run_results. Correlating fields across such a pair can silently misalign,
+    so we surface a note. Detection is best-effort and never fatal.
+    """
+
+    diverged: bool = False
+    source: str = "unknown"  # "dbt_version" | "schema_major" | "unknown"
+    run_results_signal: Optional[str] = None
+    manifest_signal: Optional[str] = None
+    note: Optional[str] = None
+
+    def to_json_dict(self) -> dict:
+        return {
+            "diverged": self.diverged,
+            "source": self.source,
+            "run_results_signal": self.run_results_signal,
+            "manifest_signal": self.manifest_signal,
+            "note": self.note,
+        }
+
+
+def _ranges_disjoint(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """True when two inclusive (low, high) minor ranges do not overlap."""
+    return a[1] < b[0] or b[1] < a[0]
+
+
+def _compute_skew(
+    run_results: ArtifactVersion, manifest: ArtifactVersion
+) -> VersionSkew:
+    """
+    Compare the two artifacts' dbt lines. Never raises.
+
+    Prefers metadata.dbt_version (the fine-grained signal); falls back to a
+    coarse schema-major -> dbt-minor-range table only when dbt_version is
+    absent. Unknown majors yield no note (never a false positive).
+    """
+    rr_minor = run_results.dbt_minor
+    man_minor = manifest.dbt_minor
+
+    # Primary: both artifacts carry a parseable dbt_version.
+    if rr_minor is not None and man_minor is not None:
+        diverged = rr_minor != man_minor
+        rr_sig = f"{rr_minor[0]}.{rr_minor[1]}"
+        man_sig = f"{man_minor[0]}.{man_minor[1]}"
+        note = None
+        if diverged:
+            note = (
+                f"manifest from dbt {man_sig} but run_results from dbt {rr_sig} "
+                "-- likely a --defer/state run; cross-artifact correlation may "
+                "be approximate"
+            )
+        return VersionSkew(
+            diverged=diverged,
+            source="dbt_version",
+            run_results_signal=rr_sig,
+            manifest_signal=man_sig,
+            note=note,
+        )
+
+    # Fallback: coarse schema-major ranges, only when both majors are mapped.
+    rr_range = _MAJOR_TO_DBT_MINOR_RANGE.get("run-results", {}).get(
+        run_results.schema_major
+    )
+    man_range = _MAJOR_TO_DBT_MINOR_RANGE.get("manifest", {}).get(
+        manifest.schema_major
+    )
+    if rr_range is not None and man_range is not None:
+        diverged = _ranges_disjoint(rr_range, man_range)
+        rr_sig = f"v{run_results.schema_major}"
+        man_sig = f"v{manifest.schema_major}"
+        note = None
+        if diverged:
+            note = (
+                f"manifest schema {man_sig} and run_results schema {rr_sig} come "
+                "from different dbt release lines -- likely a --defer/state run; "
+                "cross-artifact correlation may be approximate"
+            )
+        return VersionSkew(
+            diverged=diverged,
+            source="schema_major",
+            run_results_signal=rr_sig,
+            manifest_signal=man_sig,
+            note=note,
+        )
+
+    # Not enough information to compare: stay silent.
+    return VersionSkew(diverged=False, source="unknown")
 
 
 @dataclass
@@ -81,12 +214,20 @@ class CompatibilityReport:
         return self.run_results.supported and self.manifest.supported
 
     @property
+    def skew(self) -> VersionSkew:
+        """Cross-artifact version comparison (computed; never raises)."""
+        return _compute_skew(self.run_results, self.manifest)
+
+    @property
     def notes(self) -> list[str]:
         """Human-readable notes for any artifact that is not validated."""
         out = []
         for art in (self.run_results, self.manifest):
             if art.note:
                 out.append(art.note)
+        skew_note = self.skew.note
+        if skew_note:
+            out.append(skew_note)
         return out
 
     def to_json_dict(self) -> dict:
@@ -94,6 +235,7 @@ class CompatibilityReport:
             "run_results": self.run_results.to_json_dict(),
             "manifest": self.manifest.to_json_dict(),
             "all_supported": self.all_supported,
+            "skew": self.skew.to_json_dict(),
         }
 
 

@@ -81,3 +81,48 @@ def result_rows_affected(result: Any) -> Optional[int]:
     if isinstance(value, bool):
         return None
     return value if isinstance(value, int) else None
+
+
+# ---- catalog.json (from `dbt docs generate`) -----------------------------
+# catalog.json is a stale-tolerant HINT (the live warehouse is truth), so every
+# accessor degrades to None on a missing/absent/garbled catalog and never raises.
+
+def catalog_node(catalog: Any, unique_id: str) -> Optional[dict]:
+    """The catalog entry for a unique_id (nodes first, then sources), or None."""
+    if not isinstance(catalog, dict):
+        return None
+    node = dig(catalog, "nodes", unique_id)
+    if not isinstance(node, dict):
+        node = dig(catalog, "sources", unique_id)
+    return node if isinstance(node, dict) else None
+
+
+def catalog_column_type(
+    catalog: Any, unique_id: str, column_name: str
+) -> Optional[str]:
+    """
+    Last-known column type from catalog.json for a node/source column.
+
+    Matches case-insensitively on the columns-dict key and on each entry's own
+    "name" field (Snowflake commonly upper-cases identifiers). Returns None when
+    the catalog, node, column, or type is missing -- the caller then falls back
+    to the live INFORMATION_SCHEMA recovery.
+    """
+    node = catalog_node(catalog, unique_id)
+    if node is None:
+        return None
+    columns = node.get("columns")
+    if not isinstance(columns, dict):
+        return None
+    target = column_name.lower() if isinstance(column_name, str) else None
+    if target is None:
+        return None
+    for key, entry in columns.items():
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if (isinstance(key, str) and key.lower() == target) or (
+            isinstance(name, str) and name.lower() == target
+        ):
+            return _string_or_none(entry.get("type"))
+    return None

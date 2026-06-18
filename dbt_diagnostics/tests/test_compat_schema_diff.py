@@ -69,5 +69,7 @@ def test_safe_fallbacks_match_registry():
 
 def test_registry_partitions_by_artifact():
     arts = {cp.artifact for cp in REGISTRY}
-    assert arts == {"manifest", "run-results"}
+    assert arts == {"manifest", "run-results", "catalog"}
     assert for_artifact("manifest") and for_artifact("run-results")
+    assert for_artifact("catalog")
+    assert for_artifact("catalog")

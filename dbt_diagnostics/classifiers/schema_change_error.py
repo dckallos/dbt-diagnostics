@@ -11,6 +11,7 @@ richer diagnosis when live enrichment data reveals a schema drift.
 import re
 
 from dbt_diagnostics.classifiers.base import BaseClassifier
+from dbt_diagnostics.compat import safe
 from dbt_diagnostics.models import (
     DiagnosticReport,
     DiagnosticFinding,
@@ -102,11 +103,29 @@ class SchemaChangeErrorClassifier(BaseClassifier):
         report.findings.append(finding)
         return report
 
+    def _cataloged_type(self, model_id: str, column_name: str):
+        """Last-known column type from catalog.json, or None (best-effort hint)."""
+        return safe.catalog_column_type(
+            self.context.catalog, model_id, column_name
+        )
+
     def _diagnose_drift(
         self, column_name: str, location: TraceLocation, origin: dict
     ) -> DiagnosticFinding:
         upstream_model = origin["model"]
         upstream_file = origin.get("file", "")
+
+        # If `dbt docs generate` left a catalog.json, surface the last-known type
+        # for this column as a hint. It is stale-tolerant: the live warehouse
+        # remains the source of truth, so a missing/stale catalog changes nothing.
+        cataloged_type = self._cataloged_type(upstream_model, column_name)
+        type_hint = ""
+        if cataloged_type:
+            type_hint = (
+                f" The catalog (from `dbt docs generate`) last recorded "
+                f"'{column_name}' as type {cataloged_type} on "
+                f"{upstream_model.split('.')[-1]}; confirm against the live table."
+            )
 
         return DiagnosticFinding(
             summary=(
@@ -122,6 +141,7 @@ class SchemaChangeErrorClassifier(BaseClassifier):
                 f"for upstream model {upstream_model}, but Snowflake reports it as invalid. "
                 "This means the upstream table's schema was altered outside dbt "
                 "(e.g., a column was dropped or renamed in the source system)."
+                + type_hint
             ),
             fix_suggestion=(
                 f"1. Check the upstream model/source: has '{column_name}' been renamed or removed?\n"

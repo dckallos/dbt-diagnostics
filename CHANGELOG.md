@@ -2,6 +2,100 @@
 
 ## [Unreleased]
 
+<!-- BEGIN #39 -->
+### Detect mixed-version manifest/run_results pairs (feat, issue #39)
+
+A single diagnosis can consume a `manifest.json` and `run_results.json` that
+came from different dbt versions -- a real case under `dbt build --defer
+--state path/` and multi-invocation workflows, where the deferred manifest can
+predate the live run_results. Correlating fields across such a pair (e.g.
+mapping a result to a node) can silently misalign. The compatibility check now
+compares the two artifacts and surfaces a note when they diverge.
+
+- `CompatibilityReport` gained a computed `skew` (a `VersionSkew`) that compares
+  the pair's dbt line. It prefers `metadata.dbt_version` (the fine-grained
+  signal: patch differences like 1.11.0 vs 1.11.11 do not count as skew) and
+  falls back to a coarse, historical schema-major -> dbt-minor-range table only
+  when `dbt_version` is absent. The fallback uses ranges, not points, so
+  co-occurring versions never flag; unknown majors yield no note (no false
+  positive).
+- On divergence the report emits an additive note (e.g. "manifest from dbt 1.7
+  but run_results from dbt 1.11 -- likely a --defer/state run; cross-artifact
+  correlation may be approximate"). A matching pair emits none. The note rides
+  the existing `CompatibilityReport.notes` plumbing, so it prints with no change
+  to `main.py`.
+- `--json` `artifact_schema` gains an additive `skew` block
+  (`diverged`/`source`/`run_results_signal`/`manifest_signal`/`note`); existing
+  keys and the meaning of `supported`/`all_supported` are unchanged.
+- Detection is best-effort and never raises on missing or garbled
+  `dbt_version` (degrades to the majors fallback, then to silence).
+- Added `unit` tests for divergence/match/patch-insensitivity, the majors
+  fallback (divergence and overlap), unknown majors, never-raise on garbled
+  input, and the additive `--json` shape.
+<!-- END #39 -->
+
+<!-- BEGIN #42 -->
+### Consume catalog.json for schema-drift diagnosis (feat, issue #42)
+
+`target/catalog.json` (from `dbt docs generate`) carries dbt's last-known column
+types. The schema-drift classifier now uses them as a hint, strictly
+best-effort: present -> enrich; absent or stale -> degrade silently and let the
+live `INFORMATION_SCHEMA` recovery remain authoritative.
+
+- `discover.resolve_project_paths` now resolves `target/catalog.json` (optional,
+  non-fatal). `cmd_diagnose` loads it best-effort -- an absent or unparseable
+  catalog yields `None` (reusing the never-raise `load_json` from #38) and
+  threads through `_diagnose_all` into `DiagnosticContext.catalog`.
+- `consumed_paths.REGISTRY` gains catalog entries (`nodes[].columns[].type`,
+  `nodes[].columns[].name`, `sources[].columns[].type`), each with a
+  `live_recovery` pointing at `INFORMATION_SCHEMA.COLUMNS`, so the catalog's
+  consumed paths share the same declarative contract as manifest/run-results.
+- New never-raising `compat.safe` catalog accessors (`catalog_node`,
+  `catalog_column_type`) return `None`/degrade on any missing or garbled input.
+- `schema_change_error` surfaces the last-known cataloged type for the drifted
+  column as an additive hint in its explanation when a catalog is present; with
+  no catalog (or a stale one missing the node) the output is unchanged and the
+  diagnosis falls back to the live warehouse. `--json` is additive only.
+- Tests follow the project's real-artifact policy (no synthetic fixture files):
+  the pure `compat.safe` catalog accessors are unit-tested with inline dict
+  inputs, degradation is `robustness`-tested against real artifacts plus an
+  absent/empty catalog, and the end-to-end "consumes real cataloged types"
+  guarantee is a `contract` test against a real catalog captured from
+  dckallos/artwork-db (scenario 12), skipped until that fixture is committed.
+  The capture procedure is documented in `docs/FIXTURE_CAPTURE.md`.
+  `contract_violation` is intentionally untouched this session (potential follow-up).
+
+  Note: gating the catalog's consumed paths in `schema_diff`/CI (catalog v1) is
+  handled in #40, which owns the schema cache and CI matrix.
+<!-- END #42 -->
+
+<!-- BEGIN #40 -->
+### Run the schema-diff gate in CI against a first-party schema cache (chore/ci, issue #40)
+
+`scripts/compat/schema_diff.py` now actually runs in CI, so a future dbt schema
+that drops a field we consume (with no declared fallback) fails the build loudly
+instead of silently breaking the offline read path.
+
+- `.github/workflows/ci.yml` gains a cache-aware `compat-schema-gate` job: it
+  diffs consumed paths across adjacent manifest majors (v4->v12) and run-results
+  majors (v4->v6), plus a catalog v1 / sources v3 presence check. Until the
+  committed cache exists it skips, so it cannot block before the cache lands.
+- Proved the gate offline with `tests/test_compat_schema_gate.py` (`-m contract`):
+  a synthetic schema that drops `relation_name` with no fallback makes
+  `schema_diff` exit nonzero; a stable schema exits 0.
+- `schema_diff.py --artifact` now also accepts `catalog` and `sources`, matching
+  the artifacts now present in `consumed_paths.REGISTRY`.
+- `pyproject.toml` package-data now ships `fixtures/schemas/**/*.json` so the
+  committed cache travels with the package.
+- The first-party schema cache itself (`fixtures/schemas/**` + `PROVENANCE.json`)
+  is NOT committed here: the build sandbox has no network, so `fetch_schemas.py`
+  (the only networked component) cannot run. The five first-party confirmation
+  tasks (relation_name v1-v12, compiled_sql->compiled_code at v7, run-results
+  majors 1.3-1.6, catalog v1 / sources v3, dbt-common/dbt-adapters split tags)
+  remain PROVISIONAL with the exact maintainer commands recorded in
+  `docs/RESEARCH_VERSION_COMPAT_FINDINGS.md` rather than being promoted falsely.
+<!-- END #40 -->
+
 ### Harden the artifact read path against interrupted-run corruption (fix, issue #38)
 
 An interrupted `dbt build` can leave a half-written, empty, or non-UTF8
