@@ -1,3 +1,4 @@
+# dbt_diagnostics/enrichers/run_identity.py
 """
 dbt_diagnostics/enrichers/run_identity.py
 
@@ -19,6 +20,8 @@ never raise: callers get a role plus its provenance and the queries used.
 import time
 from typing import Optional
 
+from dbt_diagnostics.compat import safe
+
 # Provenance strings mirror dbt_diagnostics.root_cause (kept local to avoid an
 # import cycle; values must stay in sync).
 PROV_RECOVERED = "recovered"
@@ -38,8 +41,7 @@ def _end_time_for(run_results: Optional[dict], query_id: Optional[str]) -> Optio
     if not run_results or not query_id:
         return None
     for result in run_results.get("results", []):
-        adapter = result.get("adapter_response") or {}
-        if adapter.get("query_id") == query_id:
+        if safe.result_query_id(result) == query_id:
             for t in result.get("timing", []):
                 if t.get("name") == "execute" and t.get("completed_at"):
                     return t["completed_at"]

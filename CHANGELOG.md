@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Safe artifact access wiring for classifiers and enrichers (feat, issue #37)
+
+I wired classifier and enricher artifact reads for compiled/raw SQL, relation
+names, and Snowflake adapter response fields through `dbt_diagnostics.compat.safe`,
+so old manifest keys (`compiled_sql`/`raw_sql`) and current keys
+(`compiled_code`/`raw_code`) resolve the same way without changing current-version
+output.
+
+- Direct reads of `compiled_code`/`compiled_sql`, `raw_code`/`raw_sql`,
+  `relation_name`, and Snowflake `adapter_response.query_id`/`rows_affected` now
+  go through never-raising safe accessors. Missing or malformed artifact input
+  returns `None`, so callers omit optional snippets/enrichment or fall through to
+  live recovery instead of inventing defaults.
+- Added safe accessor coverage for old-style and new-style manifest nodes,
+  non-dict/missing inputs, and adapter response access.
+- Added a guard test that scans `classifiers/` and `enrichers/` for reintroduced
+  direct raw artifact reads.
+- No change to the diagnose `--json` output shape or existing golden outputs.
+
 ### Cross-version compatibility layer for consumed artifact fields (feat, issue #35)
 
 I added `dbt_diagnostics/compat/`, a small offline layer that hardens the ~12
