@@ -21,3 +21,5 @@ coverage.xml
 
 **/.folder
 format_files.sh
+output/code-snapshot.md
+output/extension-map.md
