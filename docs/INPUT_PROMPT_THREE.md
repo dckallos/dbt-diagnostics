@@ -1,42 +1,54 @@
-Pass 3 of the multi-pass review -- the most detailed pass. Assumes the project
-instructions are set. The strategy and architecture are already settled in the
-project files `OUTPUT_ONE.md` (landscape) and `OUTPUT_TWO.md` (architecture,
-design, and the rewrite/refactor verdict). Do NOT re-argue what or why; this pass
-delivers the HOW at the lowest practical granularity. The package source is the
-project file `code-snapshot.md` -- read it in full (paste inline below the marker
-for fidelity) and treat it as authoritative.
+Pass 3 -- the granular, execution-level pass. The strategy and architecture are
+already settled in the two project files OUTPUT_ONE.md (breadth: correctness
+triage, portability, testing/perf/security/CLI) and OUTPUT_TWO.md (architecture,
+design, concrete refactors, and the rewrite verdict). The package source is pasted
+inline after the marker -- read it in full and treat it as authoritative. The two
+prior reports are the agreed agenda, not the source of truth: where a prior claim
+conflicts with the code, the code wins -- say so and correct it.
 
-Produce a granular, prioritized enhancement specification. Work through the
-package subsystem by subsystem (and file by file within each). For every concrete
-change, give:
+Your job is to turn the agreed findings into a concrete, ordered, file- and
+function-level change plan. Do not re-argue strategy or re-summarize the reports.
 
-- Location: file (basename + the module you infer it lives in), class/function,
-  and the specific construct or lines.
-- Problem: one or two sentences, tied to a specific Pass 1 or Pass 2 finding where
-  applicable (cite it by name).
-- Before: a short verbatim excerpt from the snapshot (only the relevant region).
-- After: a concrete Python patch -- real signatures, types, and control flow --
-  minimal and self-contained. Show only the changed region; do not reprint whole
-  files. If you introduce an API not in the snapshot, label it [NEW].
-- Why it's safe: what behavior is preserved or intentionally changed, and which
-  edge cases the change covers.
-- Test: the specific test to add and its tier (unit / contract / robustness /
-  e2e), including the case that would fail against today's code.
-- Effort/risk: small | medium | large, plus any ordering dependency on another
-  listed change.
+First, a brief reconciliation (keep it short):
+- The findings BOTH reports raised independently (e.g. lineage flat-list treated
+  as an edge path; live-probe None treated as "absent"; overloaded
+  DiagnosticFinding; grouping/render duplication) -- treat these as highest
+  confidence.
+- Findings only one report raised -- confirm or reject each against the code in
+  one line.
+- The one place the reports DISAGREE: the rewrite-vs-refactor verdict
+  (OUTPUT_ONE: no rewrite; OUTPUT_TWO: substantial subsystem refactor). Decide
+  which the code supports and state it in one sentence. Do not split the
+  difference for diplomacy.
 
-Organize the changes into prioritized waves (for example: correctness-critical
-first, then the portability seam, then performance and maintainability), and
-order changes within each wave so earlier ones unblock later ones. Prefer many
-small, independently reviewable changes over a few large ones; if Pass 2 called
-for a substantial refactor or rewrite of a subsystem, decompose it here into an
-ordered sequence of safe, individually shippable steps.
+Then the change plan. Group changes into prioritized waves (correctness-critical
+first; then the structural refactors the reports call for; then the
+database-portability seam; then maintainability/cleanup). Order changes within
+each wave so earlier ones unblock later ones, and prefer many small,
+independently shippable changes over a few large ones. For each change:
 
-Flag any change that cannot be made safely without a test fixture or information
-absent from the snapshot, and state exactly what is needed. If a proposed change
-conflicts with a Pass 2 decision, surface the conflict rather than silently
-diverging.
+- Location: file (basename + inferred module), class/function, the specific lines
+  or construct.
+- Source: which prior finding it implements (OUTPUT_ONE / OUTPUT_TWO / both), or
+  [NEW] if you are adding it.
+- Before: a short verbatim excerpt from the snapshot.
+- After: a concrete Python patch -- real signatures, types, control flow --
+  minimal and self-contained; show only the changed region; label any new API
+  [NEW]. Where OUTPUT_TWO already sketched a target shape, refine it into a patch
+  against the real code rather than repeating the sketch.
+- Why it's safe: behavior preserved or intentionally changed, and the edge cases.
+- Test: the specific test to add and its tier (unit/contract/robustness/e2e),
+  including the case that fails against today's code.
+- Effort/risk: small | medium | large, plus any ordering dependency.
 
-Output: a Markdown enhancement spec organized by wave, then by file.
+Decompose the larger subsystem refactors the reports recommend (lineage graph,
+typed live-probe gateway, evidence/verdict separation, centralized artifact
+views) into ordered sequences of individually safe, reviewable steps -- not a
+single big-bang change. Flag any change that cannot be made safely without a test
+fixture or information absent from the snapshot, and say exactly what is needed.
+If two recommended changes conflict, surface it rather than silently choosing.
+
+Output: a Markdown change plan -- the brief reconciliation first, then waves, then
+files within each wave.
 
 === BEGIN PACKAGE SNAPSHOT ===
