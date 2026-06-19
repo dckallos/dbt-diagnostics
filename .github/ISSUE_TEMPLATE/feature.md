@@ -1,37 +1,93 @@
 ---
-name: Feature
-about: A diagnostic capability for dbt-diagnostics
-title: "[Feature] "
+name: Feature / diagnostic capability
+about: A new diagnostic capability or user-facing enhancement (conventional commit -- feat:)
+title: "feat: "
 labels: enhancement
 ---
 
-Part of #<epic>.
+<!--
+ASCII only. No AI-authorship markers. Read AGENTS.md scope guard: the tool's
+purpose is live, database-grounded root-cause analysis. No static linting;
+Tier-B (warehouse-scanning) probes must be gated by a cost ceiling and opt-in.
+Every state assertion must be confirmable by a live query; offline degrades to
+"unverified" + the query to run. Delete guidance comments before submitting.
+-->
 
-**Cost tier:** A ($0 metadata) | B (warehouse-scanning, gated)
-**Effort:** Low | Low-Med | Medium | Med-High | High
-**Usefulness:** <frequency + value, one line>
+## Summary
 
-### Trigger
+The capability in one or two sentences and the user value.
 
-<!-- What condition fires this diagnostic. -->
+- **Cost tier:** A ($0 metadata) | B (warehouse-scanning, gated + opt-in)
+- **Effort:** Low | Low-Med | Medium | Med-High | High
+- **Usefulness:** <frequency + value, one line>
 
-### Behavior
+## Trigger
 
-<!-- Numbered steps. Name the probes used and their cost tier. -->
+The exact condition that fires this diagnostic (error class, signature,
+artifact state). Be precise -- a too-broad trigger is how false diagnoses happen.
 
-### Reuse (v0.5.0)
+## Behavior
 
-<!-- Existing modules/functions this builds on (dag_walker, enrich,
-schema_inspector, grouping, etc.). Net-new vs. reused. -->
+Numbered steps. Name each probe and its cost tier. State what is confirmed
+live vs inferred from artifacts, and the confidence attached to each.
 
-### Output
+```text
+1. ...
+2. live probe: ...   (Tier A)
+3. verdict: ...       (confidence: high/医medium/unverified)
+```
 
-<!-- Terminal + JSON keys. -->
+## Evidence model
 
-### Blocked on / dependencies
+What evidence backs the verdict, the IDENTITY under which it was gathered,
+and when the verdict must downgrade to `unverified`. Never emit a
+high-confidence cause the evidence does not prove.
 
-<!-- Cross-cutting decisions or other issues. -->
+## Output
 
-### Done when
+- Terminal: ...
+- `--json`: new additive keys only (state them); `schema_version` bump.
 
-<!-- Concrete, verifiable acceptance criteria. Offline behavior included. -->
+```json
+{
+  "...": "..."
+}
+```
+
+## Reuse vs net-new
+
+Existing modules this builds on (`dag_walker`, `enrich`, `schema_inspector`,
+`grouping`, `compat.safe`, ...) and what is genuinely new.
+
+## Acceptance criteria
+
+- [ ] The target case produces the correct, evidence-backed diagnosis.
+- [ ] Offline renders `unverified` + the exact query to run; never crashes.
+- [ ] Tier-B work respects the cost gate and is opt-in.
+- [ ] `--json` additive-only.
+- [ ] CHANGELOG `[Unreleased]` updated.
+
+## Test plan
+
+- Tier(s): `unit` | `contract` | `e2e` | `live`
+- A positive test on the target case + a negative test that it does NOT
+  fire on the look-alike-but-healthy case.
+
+## Scope and files touched
+
+- `dbt_diagnostics/...`
+
+## Snowflake / portability impact
+
+Note any hard-coded Snowflake semantics for the adapter seam.
+
+## Traceability
+
+- OUTPUT_THREE change(s): #
+- OUTPUT_FOUR finding(s):
+- Parent epic: #4 | #48
+- Blocked on / depends on: #
+
+## Suggested labels
+
+`enhancement`, `live` / `compat`, `tier-a` / `tier-b`

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project conventions and scope guard (AGENTS.md)
+    url: https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/AGENTS.md
+    about: Read the conventions, the source-of-truth hierarchy, and the scope guard (no static linting; no ungated warehouse-scanning probes) BEFORE filing.
+  - name: Contributing and Definition of Done (CONTRIBUTING.md)
+    url: https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/CONTRIBUTING.md
+    about: One PR per issue, conventional commits, additive --json schema_version, the full Definition of Done.
