@@ -1,80 +1,62 @@
 ---
-name: Test / CI
-about: New test coverage, fixtures, or CI/shift-left work (conventional commit -- test: or chore(ci):)
+name: Test / CI / fixtures
+about: Add or harden tests, fixtures, or CI -- including real-artifact contracts and gated live jobs. Shift-left coverage.
 title: "test: "
 labels: test
 ---
 
-<!--
-ASCII only. No AI-authorship markers. Tests must assert CORRECTNESS, not
-branch selection or wording. "Asserts a graph has edges" or "asserts a
-param was collected" without checking the user-visible, correct outcome is
-test theater -- the exact failure mode the OUTPUT_FOUR red-team called out.
-NOTE: the agent token cannot edit .github/workflows/*; any ci.yml change is
-handed to the maintainer to commit by hand. Delete guidance before submitting.
--->
-
 ## Summary
 
-What behavior or contract this locks down, and the gap it closes.
+<!-- What coverage gap or CI gap this closes, and the class of defect it would
+have caught (e.g. a missing-import would be caught by compileall). -->
 
-## What is under-tested today
+## Evidence and confidence
 
-The specific code path, version, or input class with no coverage. Cite
-`file:line` or the missing tier.
+- Status: **PROVEN** (what CI does today vs misses) | **SPECULATIVE** (fixture not yet captured).
+- Today: <what runs now -- jobs, Python versions, tiers, gates>.
+- Missing: <the gap>.
 
-## Test design
+## What runs with NO warehouse (offline, every PR)
 
-- Tier(s): `unit` | `contract` | `property` | `robustness` | `e2e` | `chaos` | `live`
-- Offline vs live: which assertions need a real Snowflake account?
-- Fixtures: real `real_*` golden artifact, recorded connector rows, or
-  synthetic? (Prefer real; justify any synthetic fixture.)
+- [ ] `real_*` artifact contracts (exact classification, structured fields, `--json`, degradation).
+- [ ] First-party schema validation of consumed paths.
+- [ ] Property/robustness (malformed shapes, unknown versions, Hypothesis invariants).
+- [ ] `--no-live` CLI e2e (text, JSON, exit status, redaction, template fallback).
+- [ ] Build/import gate:
 
-```python
-# the key assertions -- show that a CORRECT positive result is asserted,
-# not just the absence of a previous false one
+```bash
+python -m compileall dbt_diagnostics
+python -m build
+python -m venv smoke-venv && smoke-venv/bin/pip install dist/*.whl
+smoke-venv/bin/dbt-diagnostics --help
 ```
 
-## Fixtures / data needed
+## What requires a real Snowflake account (gated)
 
-- [ ] `dbt_diagnostics/fixtures/real_*` ... (provenance: dbt-core/adapter
-      version, capture command, date)
-- [ ] recorded tuple shapes (cite the Snowflake doc for column order)
-
-## CI / shift-left (if applicable)
-
-What should run on every PR with NO warehouse, and what needs a gated live
-job. Examples that need no warehouse: real-artifact contracts, first-party
-schema validation, property/robustness, `--no-live` CLI e2e, recorded-row
-adapter contracts, `python -m compileall`, a build + installed-wheel smoke
-test, a 3.11/3.12 matrix.
-
-```yaml
-# proposed ci.yml job/step (for the maintainer to commit -- token cannot
-# modify .github/workflows/*)
-```
+<!-- Visibility differences, effective grants, relation kinds, query-history
+correlation, session params, real connector tuple shapes, real_* capture.
+Gate by credentials + approved environment; never expose secrets to forked PRs. -->
 
 ## Acceptance criteria
 
-- [ ] New tests fail before the fix/feature and pass after (or guard a
-      known-good contract).
-- [ ] Assertions check correctness, not wording/branch selection.
-- [ ] Live-only assertions are gated by credentials and never exposed to
-      forked PRs.
-- [ ] Required status checks updated if a new gate is added (maintainer).
+- [ ] New tests fail on the defect they target and pass on the fix.
+- [ ] Offline tiers run on every PR (3.11 and 3.12).
+- [ ] Fixtures are real (`real_*`) or explicitly justified as synthetic, with provenance.
+- [ ] CHANGELOG `[Unreleased]` if behavior/contract changes.
 
 ## Scope and files touched
 
-- `dbt_diagnostics/tests/...`, `dbt_diagnostics/fixtures/...`
-- `.github/workflows/ci.yml` (maintainer-applied)
+- `dbt_diagnostics/tests/**`, `dbt_diagnostics/fixtures/real_*`
+- `.pre-commit-config.yaml` (new) -- pushable
+- `.github/workflows/*.yml`, branch-protection JSON -- **maintainer-applied** (the agent token cannot modify `.github/workflows/*`; deliver content for hand-commit).
 
 ## Traceability
 
-- OUTPUT_THREE change(s): #
-- OUTPUT_FOUR finding(s): (e.g. Section 5 CI gaps; "test theater")
+- OUTPUT_THREE changes: <n, ...>
+- OUTPUT_FOUR findings: Section 5 (CI / shift-left) | <...>
 - Parent epic: #4 | #48
-- Depends on: #12, #44, #52 (real fixtures) as applicable
+- Depends on: #12, #44, #52 (real fixtures) and the corrected probe APIs.
 
 ## Suggested labels
 
-`test`, `ci`, `compat` / `live`, `robustness`
+`test` (+ `ci`, `live`, `compat`)

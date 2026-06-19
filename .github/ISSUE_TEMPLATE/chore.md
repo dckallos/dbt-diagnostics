@@ -1,59 +1,54 @@
 ---
 name: Chore / maintenance
-about: Build, release, governance, dependency, or repo-hygiene work with no diagnostic behavior change (conventional commit -- chore:)
+about: Build, release, dependency, or repo-hygiene work with no change to diagnostic behavior.
 title: "chore: "
 labels: chore
 ---
 
-<!--
-ASCII only. No AI-authorship markers. NOTE: the agent token cannot modify
-.github/workflows/*; workflow changes are handed to the maintainer to commit.
-Delete guidance comments before submitting.
--->
-
 ## Summary
 
-What maintenance work this is and why it is needed now.
+<!-- The maintenance task and why it is worth doing now. -->
 
-## Motivation
+## Evidence and confidence
 
-The concrete pain or risk (manual release step, missing gate, dependency
-drift, governance not version-controlled, etc.).
+- Status: **PROVEN** (the current state being changed).
+- Today: <current mechanism -- e.g. hand-driven release, missing pin>.
 
-## Scope / tasks
+## Scope / deliverables
 
-- [ ] ...
-- [ ] ...
+- [ ] <coupled deliverables; keep them in one PR if they must land together>
 
-```text
-# commands / config / policy JSON involved
-```
+## Config / command (code)
 
 ```yaml
-# proposed workflow or config (maintainer-applied if under .github/workflows/)
+# the workflow/config/manifest change (if a workflow file, see the note below)
 ```
 
-## Out of scope
+```bash
+# any one-time maintainer setup that CI cannot perform
+```
 
-What this deliberately does NOT touch (so it stays one coherent PR).
+## Acceptance criteria
 
-## Acceptance criteria / Definition of Done
+- [ ] The task is done and verifiable.
+- [ ] No tool behavior or `--json` `schema_version` change.
+- [ ] CHANGELOG `[Unreleased]` if anything user-facing shifts.
 
-- [ ] ...
-- [ ] No tool behavior or `--json` `schema_version` change (or state the
-      additive change explicitly).
-- [ ] CHANGELOG `[Unreleased]` entry if anything observable changes.
+## Constraints / process note
 
-## Dependencies / manual setup
+<!-- The agent token CANNOT modify `.github/workflows/*`. For workflow changes,
+this issue delivers the file content; the maintainer commits it by hand. -->
 
-Anything that must be done by hand (admin token, PyPI trusted publisher,
-branch protection, a workflow file the agent cannot push).
+## Scope and files touched
+
+- `<paths>`
 
 ## Traceability
 
-- Parent epic (if any): #
-- Relates to: #
+- OUTPUT_FOUR findings: <if applicable>
+- Parent epic: <#4 | #48 | standalone>
+- Depends on: #<n>
 
 ## Suggested labels
 
-`chore`, `ci`, `cleanup`, `dependencies`
+`chore` (+ `ci`, `release`, `docs`)

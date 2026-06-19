@@ -1,63 +1,43 @@
 ---
 name: Epic
-about: An umbrella tracking a body of work across many issues
+about: An umbrella tracking a body of work. The live status board reconciled against open/closed child issues.
 title: "[Epic] "
 labels: epic
 ---
 
-<!--
-ASCII only. No AI-authorship markers. An epic body is a LIVE status board:
-keep it reconciled with actual issue/PR state. Stale checkboxes (showing
-closed issues as open, or removed code as present) are a known failure mode
--- update this body whenever a child issue closes. Delete guidance before submitting.
--->
-
 ## Epic: <name>
 
-Design doc: `docs/<DESIGN>.md`. Research: `docs/<RESEARCH>.md` (if any).
+Design doc: [`docs/<DOC>.md`](https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/<DOC>.md)
 
-## Thesis
+### Thesis
 
-The one-paragraph charter. For correctness epics, state the epistemic
-principles this epic enforces (e.g. evidence identity, status, provenance,
-and confidence are first-class; not-visible != nonexistent; failed probe !=
-negative fact).
+<!-- The one-paragraph charter this epic defends. -->
 
-## Status (YYYY-MM-DD)
+### Status (`<date>`)
 
-Reconcile against the tracker every time this is edited.
+<!-- Reconcile against REALITY, not intent. List merged/closed children as
+closed; do not present completed work as an unchecked build step (an
+OUTPUT_FOUR Section 6.4 drift failure). -->
 
-- Built/merged: #... (PR #...)
-- In progress: #...
-- Stale-body check done: yes/no
+### Build order / children
 
-## Scope
+<!-- Checkboxes mirror real issue state. -->
 
-What is in, what is explicitly out (scope guard).
+- [ ] #<n> -- `type:` <one-line scope> [deps]
+- [x] #<n> -- <closed child> (CLOSED, PR #<m>)
 
-## Build order / child issues
+### Review-driven additions (gated)
 
-List children as checkboxes; check them as they CLOSE.
+<!-- Only changes the red-team stood behind become children; rejected items are
+verification tasks at most. Reference OUTPUT_THREE change numbers + OUTPUT_FOUR
+findings. -->
 
-- [ ] #... -- <one line>
-- [ ] #... -- <one line>
+### Cross-cutting / open decisions
 
-## Waves / sequencing
+- **OPEN** -- <decision that blocks children>
+- **RESOLVED** -- <decision + where recorded>
 
-Group children into waves that respect dependencies and keep concurrent
-issues file-disjoint (one PR per issue).
-
-```text
-Wave A (parallel, file-disjoint): #..., #...
-Wave B (after A):                 #...
-```
-
-## Cross-cutting decisions
-
-- **OPEN** -- ...
-- **RESOLVED** -- ...
-
-## Workflow (per AGENTS.md)
+### Workflow (per AGENTS.md)
 
 ASCII-only; one PR per issue; branch off `donkey-kong-sandbox`; conventional
-commits; CHANGELOG on behavior change; additive `--json`; docs follow code.
+commits; CHANGELOG on behavior change; docs follow code.

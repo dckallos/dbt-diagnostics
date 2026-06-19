@@ -1,51 +1,46 @@
 ---
 name: Docs
-about: Documentation-only change -- design docs, READMEs, watch lists, decision records (conventional commit -- docs:)
+about: Documentation that follows code (design docs, watch lists, progress log, contributor guidance). Docs never lead code.
 title: "docs: "
-labels: documentation
+labels: docs
 ---
-
-<!--
-ASCII only. No AI-authorship markers. Per AGENTS.md: docs follow code, never
-lead it. Do not describe unshipped work in the past tense; annotate target
-state as such until the code lands. Delete guidance comments before submitting.
--->
 
 ## Summary
 
-What documentation changes and why.
+<!-- What doc is added/changed and why. Per AGENTS.md, docs FOLLOW code: do not
+describe unlanded work in past tense. -->
 
-## Motivation
+## Evidence and confidence
 
-The gap or drift this closes (an undocumented decision, a watch item with
-no home, a stale section, a missing capture procedure).
+- Status: **PROVEN** (the code/state being documented already exists) or clearly
+  marked as target-state ("to be removed, tracked by #N").
 
-## Scope / tasks
+## Content to record
 
-- [ ] ...
-- [ ] Link the new doc from where a reader would look (AGENTS.md reading
-      order, DESIGN.md, etc.).
+- [ ] <item / why it matters / trigger to act / source link>
 
-```text
-# outline or the exact text/section to add
+## Example entry (code/markup)
+
+```markdown
+<!-- the shape of the doc entry, e.g. a WATCH.md row or a PROGRESS_LOG entry -->
 ```
 
 ## Acceptance criteria
 
-- [ ] Doc exists and is linked from the right place.
+- [ ] The doc exists and is linked from the right place (DESIGN.md / AGENTS.md / CONTRIBUTING.md).
 - [ ] No runtime/code behavior change.
-- [ ] No past-tense claims about work that has not merged.
-- [ ] ASCII-only; no authorship markers.
+- [ ] No claim describes unlanded work as done.
 
-## Out of scope
+## Scope and files touched
 
-Acting on any item the doc merely records (each gets its own issue).
+- `docs/...` | `dbt_diagnostics/compat/...`
 
 ## Traceability
 
-- Relates to: #
-- Parent epic (if any): #
+- OUTPUT_FOUR findings: <if applicable, e.g. Section 6.4 tracker drift>
+- Parent epic: <#4 | #48 | standalone>
+- Relates to: #<n>
 
 ## Suggested labels
 
-`documentation`, `compat` / `process`
+`docs` (+ `compat`, `tier-4`)

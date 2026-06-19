@@ -1,110 +1,77 @@
 ---
-name: Bug / fix
-about: A defect with reproducible wrong behavior (conventional commit -- fix:)
+name: Bug / correctness fix
+about: A defect where the tool produces a wrong, unsafe, or misleading result (e.g. a confident cause the evidence does not prove).
 title: "fix: "
 labels: bug
 ---
 
-<!--
-ASCII only. No AI-authorship markers anywhere (the environment auto-injects
-one; strip it). First person, plain voice. Read AGENTS.md scope guard first.
-Delete the guidance comments before submitting; keep the headings.
--->
-
 ## Summary
 
-One or two sentences: what is wrong and the user-visible impact (e.g. a
-false high-confidence verdict, a crash, a silently dropped result).
+<!-- One paragraph: what is wrong and the user-visible consequence. State the
+false conclusion the tool can reach, not just the code smell. -->
 
 ## Evidence and confidence
 
-- Status: **PROVEN** | **SPECULATIVE** (pick one; delete the other)
-- If PROVEN: cite the proof -- `file:line`, a failing test, or a first-party
-  doc/schema URL. A claim about current behavior is not PROVEN until it is
-  confirmed against the actual source on the branch, not against a snapshot.
-- If SPECULATIVE: state exactly what evidence would confirm it (a real
-  `real_*` fixture, a live Snowflake run, a doc citation) and open that as a
-  verification task FIRST. Do not implement on speculation.
+<!-- Tag the claim. PROVEN = confirmed against source/docs/a real artifact;
+SPECULATIVE = plausible but unverified. SPECULATIVE bugs need a verification
+step BEFORE they are fixed. -->
+
+- Status: **PROVEN** | **SPECULATIVE** (confirmed against source on `<branch>`, `<date>`).
+- File/line evidence: `path/to/file.py:LINE` -- <what it does wrong>.
+- If SPECULATIVE, what would confirm it: <real fixture / live probe / doc cite>.
 
 ## Current (wrong) behavior
 
-What happens today. Paste the offending code with a path:line reference.
-
 ```python
-# dbt_diagnostics/<module>.py:<line>  (current)
-# paste the real lines that are wrong
-```
-
-If it is a SQL/identifier/portability defect, show the exact statement:
-
-```sql
--- current statement that is wrong
+# path/to/file.py:LINE (current) -- annotate the exact wrong line
 ```
 
 ## Root cause
 
-The actual mechanism, not the symptom. Name the epistemic error if there is
-one (e.g. "treats a role-visibility-filtered empty SHOW as physical
-nonexistence"; "failed probe rendered as a negative fact").
+<!-- The underlying reason, not the symptom. Name the epistemic error if any:
+not-visible vs nonexistent, no-grant-row vs no-access, failed-probe vs fact. -->
 
 ## Expected behavior
 
-What it should do instead and the principle behind it.
+<!-- What a correct, evidence-safe result looks like. -->
 
-## Proposed fix
+## Proposed fix (sketch)
 
 ```python
-# dbt_diagnostics/<module>.py  (proposed)
-# minimal, targeted diff -- no opportunistic refactor
-```
-
-## Reproduction
-
-Exact steps, command, and the artifact/fixture that triggers it.
-
-```text
-$ dbt-diagnostics diagnose --project-dir ... [--no-live]
-# observed vs expected output
+# minimal sketch of the corrected code or query
 ```
 
 ## Acceptance criteria
 
-- [ ] The defect no longer reproduces under the steps above.
-- [ ] A regression test proves the CORRECT behavior (a positive assertion),
-      not merely the absence of the previous false output.
-- [ ] No new Snowflake assumption leaks outside the intended module.
-- [ ] `--json` `schema_version` change, if any, is additive-only.
-- [ ] CHANGELOG `[Unreleased]` updated (behavior change).
+- [ ] The wrong result no longer occurs.
+- [ ] A regression test asserts the CORRECT positive outcome AND the
+      unknown/failed degradation -- not merely the absence of the old bug.
+- [ ] `--json` additive-only; CHANGELOG `[Unreleased]` updated.
 
 ## Test plan
 
-- Tier(s): `unit` | `contract` | `property` | `robustness` | `e2e` | `chaos` | `live`
-- Runs offline, or needs a real Snowflake account? (state which assertions
-  need live; gate those behind credentials, never on forked PRs.)
-
-```python
-# sketch the key test assertion(s)
-```
+- Tiers: `unit` | `contract` | `robustness` | `e2e` (`--no-live`) | `live` (gated).
+- Cases: <happy path, failure path, degradation path>.
 
 ## Scope and files touched
 
-List files so file-disjoint issues can run as parallel PRs and colliding
-ones are sequenced.
+- `path/to/file.py`
 
-- `dbt_diagnostics/...`
+<!-- List every file so colliding issues can be sequenced and disjoint ones
+run as parallel PRs. -->
 
 ## Snowflake / portability impact
 
-Does the fix hard-code Snowflake codes, SQL, identifier folding, or type
-semantics? If so, note what the future `WarehouseAdapter` seam must own.
+<!-- Does this encode Snowflake-specific SQL/identifiers/error codes? Note it
+for the N7 metadata gateway / N8 adapter seam. -->
 
 ## Traceability
 
-- OUTPUT_THREE change(s): #
-- OUTPUT_FOUR finding(s):
-- Parent epic: #4 (Live Verification Engine) | #48 (Cross-Version Compat)
-- Depends on / blocks: #
+- OUTPUT_THREE changes: <n, ...>
+- OUTPUT_FOUR findings: <Executive #/Wave-n change #/Section #>
+- Parent epic: #4 | #48
+- Depends on / blocks: #<n>
 
 ## Suggested labels
 
-`bug`, `live` / `compat`, `correctness`, `snowflake`, `security` (as apt)
+`bug` (+ `live`, `correctness`, `security`, `snowflake`, `cli`, `config` as apt)

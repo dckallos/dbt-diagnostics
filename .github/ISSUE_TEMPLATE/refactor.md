@@ -1,107 +1,71 @@
 ---
-name: Refactor / architecture
-about: A structural change that preserves behavior or replaces a representation (conventional commit -- refactor:)
+name: Refactor
+about: A structural change (no new user-facing capability) that improves correctness, separation, or maintainability behind compatibility.
 title: "refactor: "
-labels: refactor
+labels: architecture
 ---
-
-<!--
-ASCII only. No AI-authorship markers. Read AGENTS.md scope guard first:
-no static linting; no ungated warehouse-scanning probes. A refactor that
-adds a compatibility shim immediately superseded by a later change is a
-red flag -- prefer switching one capability at a time and removing the
-legacy path in the SAME change. Delete guidance comments before submitting.
--->
 
 ## Summary
 
-What structure changes and why. State the behavior contract: is this a
-pure refactor (no behavior change) or a representation change with a
-defined, tested behavior delta?
-
-## Motivation
-
-The concrete problem with the current structure (overloaded type, lost
-evidence on mutation, linear rescans, leaked Snowflake assumptions, flat
-list used as an edge path, etc.). Cite `file:line`.
+<!-- What is being restructured and WHY now. A refactor must buy a concrete
+correctness or extensibility win -- not motion for its own sake. -->
 
 ## Evidence and confidence
 
-- Status: **PROVEN** | **SPECULATIVE**
-- Proof of the current structural defect (`file:line`, import graph, a test
-  that is order-dependent, a measured rescan).
-- If a claimed import cycle or breakage is speculative, say what would
-  confirm it (e.g. `python -m compileall`, an actual injection attempt).
+- Status: **PROVEN** | **SPECULATIVE** (basis: <source read / import graph / metrics>).
+- Current structural problem: `path/to/file.py:LINE` -- <overload, duplication, leak, cycle>.
+- If SPECULATIVE (e.g. "this will become an import cycle"): what would confirm it.
 
-## Current design
+## Current structure
 
 ```python
-# dbt_diagnostics/<module>.py:<line>  (current shape)
+# the shape today (the coupling/duplication/overload being removed)
 ```
 
-## Proposed design
-
-Describe the target representation. Show the new types/interfaces.
+## Target structure
 
 ```python
-# proposed dataclasses / protocol / function signatures
+# the shape after -- typed seams, single source of truth, injection points
 ```
 
-If this introduces a seam (adapter, gateway, index), state explicitly:
-- who CONSTRUCTS it,
-- who is INJECTED with it,
-- who CALLS it.
-A seam that nothing constructs, injects, or calls changes nothing -- do not
-file that as a refactor; file it as a spike.
+## Compatibility / migration
 
-## Migration / compatibility plan
+<!-- One-PR-per-issue. Keep a shim ONLY if it is removed in the SAME change or
+a named follow-up; do not ship a temporary layer that is immediately
+superseded (an OUTPUT_FOUR anti-pattern). State what stays and what is
+switched, one capability at a time. -->
 
-- What stays as a wrapper, for how long, and the issue that removes it.
-- Parity matrix: every capability the legacy path has that the new path
-  must match before the legacy path is deleted.
-
-```text
-capability            | legacy path | new path | switched in
---------------------- | ----------- | -------- | -----------
-```
+- [ ] Old call sites enumerated (no "and others"): <list>
+- [ ] Behavior preserved or the user-visible delta is documented (golden updates).
 
 ## Acceptance criteria
 
-- [ ] Behavior delta is exactly as stated (golden output updated if user-visible).
-- [ ] No capability regressions vs the parity matrix.
-- [ ] No probe/query is executed twice for the same finding.
-- [ ] No new import cycle (`python -m compileall dbt_diagnostics` clean).
-- [ ] `--json` additive-only.
-- [ ] CHANGELOG `[Unreleased]` updated if anything is user-visible.
+- [ ] No behavior regression (or documented + golden-updated).
+- [ ] The seam is actually USED (injected/called), not merely defined.
+- [ ] No duplicated work introduced (e.g. double probes, rebuilt indexes).
+- [ ] Tests prove the new path is exercised, not the legacy fallback.
+- [ ] CHANGELOG `[Unreleased]`; `--json` additive-only.
 
 ## Test plan
 
-- Tier(s): `unit` | `contract` | `property` | `robustness` | `e2e`
-- Tests must prove a correct positive outcome on a real edge/case, not just
-  that a structure exists (e.g. a real disconnect is found AND siblings are
-  not falsely connected).
-
-```python
-# key invariant / parity assertion(s)
-```
+- Tiers: `unit`, `contract`; import/compile check (`python -m compileall`).
 
 ## Scope and files touched
 
-- `dbt_diagnostics/...`
+- `path/to/file.py`
 
 ## Snowflake / portability impact
 
-Does this advance or merely appear to advance warehouse-neutrality? Be
-honest about what still leaks (dialect, identifier folding, error codes,
-type semantics, query-history shape).
+<!-- Does the refactor move Snowflake assumptions behind a seam, or just
+relocate them? Be honest about what still leaks. -->
 
 ## Traceability
 
-- OUTPUT_THREE change(s): #
-- OUTPUT_FOUR finding(s):
+- OUTPUT_THREE changes: <n, ...>
+- OUTPUT_FOUR findings: <...>
 - Parent epic: #4 | #48
-- Depends on / blocks: #
+- Depends on / blocks: #<n>
 
 ## Suggested labels
 
-`refactor`, `architecture`, `lineage` / `live` / `compat`, `correctness`
+`architecture` (+ `live`, `correctness`, `lineage`, `snowflake`)

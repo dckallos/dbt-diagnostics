@@ -1,78 +1,63 @@
 ---
-name: Spike / research
-about: A time-boxed investigation that ends in a written go/no-go, not shipped runtime code (conventional commit -- spike: or docs:)
+name: Spike / investigation
+about: Time-boxed research to produce a go/no-go decision and a scoped follow-up. No production code ships from a spike.
 title: "spike: "
 labels: spike
 ---
 
-<!--
-ASCII only. No AI-authorship markers. A spike produces a DECISION and a
-scoped follow-up, not runtime behavior. If you find yourself shipping a
-class nothing uses, stop -- that is a spike result ("defer"), not a feature.
-Delete guidance comments before submitting.
--->
+## Question to answer
 
-## Question
+<!-- One sentence. A spike resolves a decision; it does not implement. -->
 
-The single decision this spike must answer (e.g. "What must a real
-warehouse-neutral adapter contract cover, and is it worth building before
-the Snowflake contract is fully exposed?").
+## Why this is a spike (not an implementation)
 
-## Why now
+<!-- What is unknown/risky enough that coding first would be premature
+(e.g. a protocol version boundary, a portability contract, a reliability
+cliff). -->
 
-What is blocked or at risk until this is answered. Cite the review trail.
+## Evidence and confidence
 
-## Background
+- Status: **SPECULATIVE** until the investigation closes.
+- Prior signal: <OUTPUT_FOUR finding / research doc / external source>.
 
-What we already know, with citations (first-party docs, schemas, prior
-issues/PRs). Distinguish PROVEN facts from assumptions.
+## Investigation tasks
 
-## Investigation plan
+- [ ] <enumerate the concrete things to read, run, or measure>
+- [ ] Reproduce the concern with a minimal probe (cite the command/code).
 
-- [ ] ...
-- [ ] Enumerate the concrete unknowns (versions, boundaries, capabilities).
-- [ ] Run isolated checks where possible (compile/import probes, doc reads,
-      recorded-row contract tests) -- state what each does and does NOT prove.
+## Probe / reproduction (code)
 
-```text
-# commands / probes to run, and what a pass/fail of each would mean
+```bash
+# the exact command(s) or minimal script that produce the evidence
 ```
 
-## Options under consideration
-
-For each option: what it buys, what it costs, what breaks.
-
-```text
-option A: ...
-option B: ...
+```python
+# or a minimal isolated check
 ```
 
 ## Deliverable
 
-- A written go/no-go recorded in `docs/...` (and/or `compat/WATCH.md`) with
-  citations.
-- If "go": a scoped implementation issue with the gates spelled out.
-- If "defer": the trigger that should reopen it.
+<!-- A written go/no-go with citations, and if "go", a scoped follow-up issue.
+The decision must be recorded in the repo (doc/issue), not just in chat. -->
 
 ## Acceptance criteria
 
-- [ ] The question is answered with an explicit, justified decision (not
-      left implicit).
-- [ ] First-party citations for every load-bearing claim.
-- [ ] No runtime/code behavior change in this issue.
-- [ ] Follow-up issue filed (if "go") or trigger recorded (if "defer").
+- [ ] The question is answered with first-party citations or reproduced evidence.
+- [ ] An explicit, justified consume/defer (or design) decision is recorded.
+- [ ] If "go", a follow-up implementation issue is filed referencing this one.
+- [ ] No production runtime code added in this issue.
 
 ## Scope and files touched
 
-- `docs/...` (decision record only)
+- `docs/...` (findings), test/throwaway probe only.
 
 ## Traceability
 
-- OUTPUT_THREE change(s): #
-- OUTPUT_FOUR finding(s):
+- OUTPUT_THREE changes: <n, ...>
+- OUTPUT_FOUR findings: <...>
 - Parent epic: #4 | #48
-- Relates to: #
+- Relates to: #<n>
 
 ## Suggested labels
 
-`spike`, `research` / `architecture` / `portability` / `compat`
+`spike` (+ `architecture`, `portability`, `compat`, `research`)
