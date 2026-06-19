@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Project conventions (read first)
+    url: https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/AGENTS.md
+    about: Source-of-truth hierarchy, voice/authorship rules, and the scope guard. Read before filing.
+  - name: Definition of Done / release process
+    url: https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/CONTRIBUTING.md
+    about: One PR per issue, conventional commits, CHANGELOG, additive --json schema_version.

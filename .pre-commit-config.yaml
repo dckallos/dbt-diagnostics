@@ -1,0 +1,48 @@
+# Offline-only, fast hooks. Heavier checks (build, wheel smoke, live) run in CI.
+# Install: pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: local
+    hooks:
+      # Catches the change-13 class of defect (missing import / bad annotation)
+      # before it ever reaches review.
+      - id: compileall
+        name: python -m compileall (byte-compile check)
+        entry: python -m compileall -q dbt_diagnostics
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      # ASCII-only guard (AGENTS.md): reject non-ASCII bytes in source/docs.
+      - id: ascii-only
+        name: ASCII-only source and docs
+        entry: python -c "import sys;[sys.exit('non-ASCII in '+f) for f in sys.argv[1:] if any(ord(c)>127 for c in open(f,encoding='utf-8',errors='surrogatepass').read())]"
+        language: system
+        files: '\.(py|sql|md|yml|yaml|json|j2)$'
+
+      # Fast unit subset; keep it quick so commits stay snappy.
+      - id: pytest-unit
+        name: pytest -m unit (fast subset)
+        entry: pytest -q -m unit
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+# NOTE (maintainer): if the attribution guard lives at scripts/check_no_attribution.sh,
+# add it as a local hook here too, e.g.:
+#   - id: no-attribution
+#     name: reject AI-authorship markers
+#     entry: scripts/check_no_attribution.sh
+#     language: script
+#     files: '\.(py|sql|ipynb)$'

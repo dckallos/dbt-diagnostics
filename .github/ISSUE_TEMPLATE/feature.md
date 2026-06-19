@@ -1,37 +1,75 @@
 ---
-name: Feature
-about: A diagnostic capability for dbt-diagnostics
-title: "[Feature] "
+name: Feature / capability
+about: A new diagnostic capability or probe. Must be live, database-grounded root-cause analysis -- not static linting.
+title: "feat: "
 labels: enhancement
 ---
 
-Part of #<epic>.
+## Summary
 
-**Cost tier:** A ($0 metadata) | B (warehouse-scanning, gated)
-**Effort:** Low | Low-Med | Medium | Med-High | High
-**Usefulness:** <frequency + value, one line>
+<!-- The capability and the user problem it solves. Tie it to the project
+thesis: live, DB-grounded root cause. Reject static-lint re-entry (scope guard). -->
 
-### Trigger
+## Cost tier
 
-<!-- What condition fires this diagnostic. -->
+<!-- Tier A ($0 metadata, may run freely) or Tier B (warehouse-scanning:
+COUNT DISTINCT, anti-joins -- MUST be cost-gated and opt-in). State which and
+the guard if Tier B. -->
 
-### Behavior
+- Tier: **A** | **B (gated)**.
 
-<!-- Numbered steps. Name the probes used and their cost tier. -->
+## Trigger
 
-### Reuse (v0.5.0)
+<!-- The exact failure/condition that activates this. Proactive checks are the
+exception, allowed only as self-consistency cross-checks. -->
 
-<!-- Existing modules/functions this builds on (dag_walker, enrich,
-schema_inspector, grouping, etc.). Net-new vs. reused. -->
+## Behavior
 
-### Output
+<!-- Step-by-step what it reads, probes, and concludes. Offline must degrade to
+`unverified` + the query to run. -->
 
-<!-- Terminal + JSON keys. -->
+## Evidence and confidence
 
-### Blocked on / dependencies
+- Status: **PROVEN** | **SPECULATIVE** (basis).
+- Inference risk: <if the feature infers grain/lineage, what happens when the
+  inference is wrong -- confidently-wrong is worse than silent>.
 
-<!-- Cross-cutting decisions or other issues. -->
+## Example (input -> output, code)
 
-### Done when
+```text
+# trigger artifact/error in, diagnosis out -- the concrete target case
+```
 
-<!-- Concrete, verifiable acceptance criteria. Offline behavior included. -->
+```python
+# key probe or query the feature issues (the live confirmation step)
+```
+
+## Acceptance criteria
+
+- [ ] The named target case produces the correct, evidence-backed diagnosis.
+- [ ] Tier-B probes never run without the cost gate; offline -> `unverified` + query.
+- [ ] A wrong/absent signal degrades safely (no false high-confidence cause).
+- [ ] `--json` additive-only; CHANGELOG `[Unreleased]`.
+
+## Test plan
+
+- Tiers: `unit`, `e2e` (`--no-live`); `live` (gated) for the confirmation step.
+
+## Scope and files touched
+
+- `path/to/file.py`
+
+## Snowflake / portability impact
+
+<!-- Snowflake-specific SQL/types/identifiers introduced? Note for N7/N8. -->
+
+## Traceability
+
+- OUTPUT_THREE changes: <n, ...>
+- OUTPUT_FOUR findings: <...>
+- Parent epic: #4 | #48
+- Depends on / blocked by: #<n>
+
+## Suggested labels
+
+`enhancement` (+ `tier-a`/`tier-b`, `live`, `json`, `api`, `decision`)
