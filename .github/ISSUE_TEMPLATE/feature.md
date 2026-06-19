@@ -34,7 +34,7 @@ live vs inferred from artifacts, and the confidence attached to each.
 ```text
 1. ...
 2. live probe: ...   (Tier A)
-3. verdict: ...       (confidence: high/医medium/unverified)
+3. verdict: ...       (confidence: high | medium | unverified)
 ```
 
 ## Evidence model
