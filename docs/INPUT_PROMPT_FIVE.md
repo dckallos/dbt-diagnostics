@@ -1,119 +1,118 @@
-# Pass 5 -- convert the OUTPUT_FOUR-gated review into GitHub issues
+Pass 5 -- convert the OUTPUT_FOUR red-team into shippable GitHub work, then
+refine the deferred specs. This is the step that turns analysis into merged
+code, so be disciplined: do not duplicate existing issues, do not file work the
+red-team did not stand behind, and reconcile against the tracker as it actually
+is -- not as the chat history imagines it.
 
-This is the step that turns analysis into shippable work. Be disciplined: do
-not duplicate existing issues, and do not file work the red-team did not stand
-behind. OUTPUT_FOUR is the gate, not OUTPUT_THREE.
+Sources (read via bash from the workspace; do NOT use GitHub MCP to read docs):
+- docs/OUTPUT_ONE.md, OUTPUT_TWO.md, OUTPUT_THREE.md (the 27-change plan), and
+  OUTPUT_FOUR.md (the adversarial red-team). OUTPUT_FOUR is the GATE: only
+  changes it judged sound -- [PROVEN], or [SPECULATIVE] but worth doing -- become
+  implementation issues. Changes it flagged as wrong, unverified, or theater do
+  NOT become implementation issues; at most they become a verification task.
+- AGENTS.md / CONTRIBUTING.md / .github/ISSUE_TEMPLATE/ for repo conventions
+  (one PR per issue, conventional commits, ASCII only, additive --json, and NO
+  AI-authorship markers anywhere).
 
-## Sources (read first, with bash, not the GitHub MCP)
+What already exists on the tracker (DO NOT recreate -- reconcile and extend):
+- Implementation issues already filed from this review:
+  - #54 N1 fix: evidence-safe existence/grant verdicts (OUTPUT_THREE 1,2,3,5)
+  - #55 N2 fix: query-history matching + cursor lifecycle (change 4 + the
+    EXECUTION_STATUS='FAIL' bug; absorbs change 23)
+  - #56 N4 fix: normalized root-cause grouping, render once (changes 9,18)
+  - #57 N10 fix: validate config/profile shapes, no silent fallback (10,25)
+  - #58 N9 fix: consumed-path registry + schema gate (11,12,22) [epic #48]
+  - #59 N12 test: real-artifact contracts + gated live CI [epic #48]
+- Epics #4 (Live Verification Engine) and #48 (Cross-Version Artifact
+  Compatibility) already carry the evidence-safety charter, the #54-#59 list,
+  and the deferred specs. Reconcile their checkboxes against real open/closed
+  state every pass.
 
-- `docs/OUTPUT_ONE.md`, `OUTPUT_TWO.md`, `OUTPUT_THREE.md` (the 27-change plan),
-  and `docs/OUTPUT_FOUR.md` (the adversarial red-team). OUTPUT_FOUR decides what
-  ships:
-  - A change OUTPUT_FOUR judged sound (accept / accept-as-narrow-fix) becomes an
-    implementation issue.
-  - A change it judged `rewrite` becomes an implementation issue scoped to the
-    REQUIRED CORRECTION it names -- not OUTPUT_THREE's original patch.
-  - A change it `reject`ed or called a facade/theater does NOT become an
-    implementation issue; at most a verification task.
-- The new issue templates under `.github/ISSUE_TEMPLATE/` (bug, refactor, spike,
-  test, feature, chore, epic, docs). File every issue through the matching
-  template; fill the evidence, code-example, files-touched, test-tier, and
-  traceability sections.
+Non-negotiable framing carried from OUTPUT_FOUR:
+1. The deepest defect is epistemic, not structural. Every verdict must carry
+   evidence IDENTITY (the role/session it was gathered under), STATUS
+   (ok/unknown/failed), PROVENANCE, and CONFIDENCE as first-class fields, and
+   must never assert a high-confidence cause the evidence does not prove. A
+   graph class or adapter protocol does not fix this on its own.
+2. Verify before you file. Prior passes read an inline snapshot and could not
+   execute the code; treat every [PROVEN] code claim as a hypothesis until
+   confirmed against real source on the working branch (cite file:line and the
+   date). [SPECULATIVE] claims map to the fixture issues (#12, #44, #52),
+   never to an implementation PR.
+3. Ship the small slice first, in this order, before any big refactor:
+   (a) fix query-history failure statuses; (b) make live probes typed and
+   identity-aware; (c) prohibit high-confidence absence/denial from
+   inconclusive evidence; (d) add real regression fixtures for those cases;
+   (e) only then replace lineage adjacency with real edges.
+4. Do NOT implement OUTPUT_THREE wave-by-wave as written. Keep changes 4, 6, 9,
+   23, 24 as small candidates; keep 7 as wording calibration; rewrite the rest
+   around typed, identity-aware evidence; redesign 13-21 before coding them.
+5. Reject temporary compatibility layers that are immediately superseded
+   (change 8 vs the later JSON contract; change 17's double probes). Switch one
+   capability at a time and remove the legacy path in the same change.
 
-## The gate, in one rule
+Do the following, in order:
 
-Only file an implementation issue for a defect that is PROVEN against the actual
-source on `review/package-health-status` (or a first-party doc/schema). A claim
-that reads convincingly in OUTPUT_THREE is not proof: the four passes are from
-one model family, share blind spots, and none executed the package. Confirm
-before filing.
+1. Reconcile the tracker. Re-pull open/closed issues and the #4/#48 epic bodies
+   via MCP. Confirm #54-#59 cover what you intend; flag any drift between epic
+   checkboxes and real issue state and correct it. Nothing new may duplicate an
+   existing issue.
 
-## Wave 0 -- verification already done (2026-06-18)
+2. Refine the deferred specs into file-disjoint, sequenced issues, gated by
+   OUTPUT_FOUR and by the typed-probe behavior that #54/#55 establish:
+   - N3 refactor: edge-preserving lineage + real-path disconnects (6,13,14,15)
+     -- HELD until #54 lands; must fix the change-14 "downstream must be
+     passing" impossibility and the change-13 missing-import/annotation defect,
+     migrate OBJECT lineage too, and assert a correct positive disconnect, not
+     just sibling-order.
+   - N5 feat: additive JSON contract for evidence, graph edges, diffs (8)
+     -- supersedes the change-8 stopgap; validate the full --json contract +
+     schema_version, including null/unknown probe states and a redaction policy.
+   - N6 refactor: requests/evidence/resolution, drop prose mutation (16,17)
+     -- one class-agnostic collector with a probe-count/parity matrix; no
+     doubled probes; render and serialize structured evidence/resolution.
+   - N7 refactor: centralize Snowflake metadata + identifiers (19,20,24)
+     -- one long-lived gateway per connection; exact table/view/object probes;
+     relation kinds; identity-aware caches; quoted-identifier parser (the
+     fail-safe-with-message stopgap in #54 graduates here).
+   - N8 spike: real warehouse-neutral adapter contract (21) -- NOT an
+     implementation PR. Specify the 10 capabilities (connection/profile,
+     identifier parse/quote, dialect, error normalization incl. structured
+     responses, relation kinds/existence/describe, session params, identity +
+     query-history correlation, effective read/write access, type semantics,
+     remediation SQL) and require injection into DiagnosticContext, classifiers,
+     ColumnTracer, enrichment, and root-cause. Confirm against BigQuery,
+     Postgres, DuckDB what the seam must cover.
+   - N11 feat: standalone artifacts + explicit live policy (26,27) -- product
+     decision under #4: artifact-only paths, unavailable source context, no
+     accidental CWD/profile connection, a mutually exclusive --live/--no-live
+     group, and a documented default.
 
-Confirmed against source on this branch (do not re-litigate; cite these):
+3. For each refined issue, use the matching .github/ISSUE_TEMPLATE/ form:
+   title; one-paragraph scope; evidence/confidence (PROVEN/SPECULATIVE + what
+   confirms it); current-behavior and proposed-fix CODE blocks; acceptance
+   criteria; test tiers; files touched (so disjoint issues become parallel PRs
+   and colliding ones are sequenced); Snowflake/portability note; and a
+   traceability block (OUTPUT_THREE change numbers, OUTPUT_FOUR findings, parent
+   epic, dependencies).
 
-- `enrichers/query_history.py` queries `TABLE(INFORMATION_SCHEMA.QUERY_HISTORY(...))`
-  with `WHERE EXECUTION_STATUS = 'FAIL'`. That table function's failure statuses
-  are `FAILED_WITH_ERROR` / `FAILED_WITH_INCIDENT`; `'FAIL'` matches nothing, so
-  genuine failures return zero rows. CONFIRMED real (N2).
-- `enrichers/grants.py`: `check_role_grants`, `check_write_access`, and
-  `get_current_role` each open a cursor and none call `.close()` (leak);
-  `f"SHOW GRANTS TO ROLE {role_name}"` is interpolated unvalidated;
-  `except Exception: pass` makes a failed probe indistinguishable from a negative
-  fact; one `has_usage` conflates database- and schema-level USAGE;
-  `target_upper in name.upper()` is a substring match. CONFIRMED (N1).
-- `tracers/dag_walker.py` has no `from __future__ import annotations` and no
-  `LineageGraph`/`LineageEdge`; OUTPUT_THREE change 13 would `NameError`.
-  CONFIRMED (N3 must add the import and enumerate call sites).
-- `grouping.py` groups on `f"{report.error_class}:{schema_prefix}"` and labels
-  the group "models not yet materialized"; unrelated same-class errors in a
-  schema are mislabeled. CONFIRMED (N4).
+4. Sequence into waves that respect dependencies and keep concurrent issues
+   file-disjoint: Wave A #54 -> #55 (both touch grants.py/enrich.py), #57 and
+   #59 in parallel; Wave B N3 then #56; Wave C N6 then N5; Wave D N7 then N8;
+   N11 on the product-decision track; #58 under #48 alongside #12/#44.
 
-## Epistemic charter (the deepest finding -- encode it in #4)
+5. Decide creation timing by token budget. Anything dependency-free and
+   already verified, file now (after re-checking step 1 for duplicates). For
+   the rest, output ready-to-file specs. A half-created, low-quality issue set
+   is worse than a clean spec; state plainly what was created (numbers/links)
+   vs deferred.
 
-The package repeatedly confuses: not-visible with nonexistent; no-direct-grant-row
-with no-effective-access; manifest-declaration with physical-truth; a same-named
-ancestor column with proven lineage; a failed probe with a negative fact. A graph
-class or adapter protocol does not fix this. Make evidence IDENTITY, STATUS,
-PROVENANCE, and CONFIDENCE first-class, and never emit a high-confidence cause the
-evidence does not prove.
+Workflow constraints: ASCII-only; first-person plain voice; NO AI-authorship
+markers in any issue, commit, or file (the environment auto-injects one --
+strip it). The agent token CANNOT modify .github/workflows/*; deliver any
+ci.yml / nightly.yml / pre-commit / branch-protection content as text for the
+maintainer to commit by hand.
 
-## SPECULATIVE findings are not implementation issues
-
-Everything OUTPUT_FOUR tagged `[SPECULATIVE]` (effective-access vs direct grants,
-`query_id`/`rows_affected` guarantees, `compiled_code` on failed runs, classifier
-regex coverage, SQLGlot version matrix, schema-title stability, the adapter import
-cycle) is a VERIFICATION task. Route it to the real-fixture issues (#12, #44, #52)
-or a spike, never to a fix.
-
-## The small shipping slice (ship this first, in order)
-
-1. Repair query-history failure statuses + cursor lifecycle (N2).
-2. Make live probes typed and identity-aware; forbid high-confidence
-   absence/denial from inconclusive evidence (N1).
-3. Group by normalized root cause; render each report once (N4).
-4. Add real regression fixtures for the above (N9 / #12 / #44 / #52).
-5. Only then replace lineage adjacency with real edges (N3).
-
-Do NOT block this slice on a full warehouse abstraction, an evidence ontology, a
-JSON rewrite, or a CI redesign. Quoted-identifier handling: fail SAFE with a clear
-message now; defer a full quoted-identifier parser.
-
-## Reconcile the tracker before creating anything
-
-Epic bodies have drifted from reality and must be corrected as part of this pass:
-
-- #4 still says the `lint`/`linters/` package is present and the scope-guard
-  contradiction stands -- but #25 (linter removal) is CLOSED. Rewrite.
-- #48 lists #37/#38/#39/#40/#42 as unchecked -- all are CLOSED (PR #53). Rewrite.
-
-## The issue backbone (N1-N12)
-
-Map OUTPUT_THREE's 27 changes onto these; none duplicates an open issue.
-
-- N1 fix: evidence-safe existence/grant verdicts (changes 1,2,3,5) -- epic #4
-- N2 fix: query-history matching + cursor lifecycle (change 4 + the FAIL bug) -- #4
-- N3 refactor: edge-preserving lineage + real-path disconnects (6,13,14,15) -- #4
-- N4 fix: normalized root-cause grouping, render once (9,18 + grouping) -- #4
-- N5 feat: additive JSON contract -- evidence, graph, diff (8) -- #4
-- N6 refactor: requests/evidence/resolution, drop prose mutation (16,17) -- #4
-- N7 refactor: centralize Snowflake metadata + identifiers (19,20,24) -- #4
-- N8 spike: real warehouse-neutral adapter contract (21) -- #4
-- N9 fix: complete consumed-path registry + schema gate (11,12,22) -- #48
-- N10 fix: validate config/profile shapes, no silent fallback (10,25) -- #4
-- N11 feat: standalone artifacts + explicit live policy (26,27) -- #4
-- N12 test: real-artifact contracts + gated live CI (Section 5) -- #48
-
-Change 23 (`_is_lagging` dead code) overlaps closed #50 -- fold into N2 as residual
-cleanup, do not file standalone. Change 27 is a product DECISION, not code.
-
-Create now (PROVEN, dependency-light): N1, N2, N4, N9, N10, N12 + the two epic
-body updates. Defer (refine after the slice lands typed probes and the
-live-default/portability decisions): N3, N5, N6, N7, N8, N11.
-
-## Workflow (per AGENTS.md)
-
-ASCII-only; no AI-authorship markers anywhere; one PR per issue; branch off
-`donkey-kong-sandbox`; conventional commits; CHANGELOG on behavior change;
-additive `--json`. The agent token cannot modify `.github/workflows/*`; hand CI
-changes to the maintainer.
+Output: the reconciled inventory, the triage table (OUTPUT_THREE change ->
+endorsed/verify-first/drop), the refined deferred-issue specs, the wave plan,
+and a clear list of what you created vs deferred.
