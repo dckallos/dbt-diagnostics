@@ -1,0 +1,34 @@
+$ python -m compileall -q dbt_diagnostics
+exit=0
+
+$ pytest -q -m "not live and not chaos"
+.....................................ss................................. [ 15%]
+........................................................................ [ 31%]
+........................................................................ [ 47%]
+........................................................................ [ 63%]
+........................................................................ [ 78%]
+........................................................................ [ 94%]
+.........................                                                [100%]
+=============================== warnings summary ===============================
+dbt_diagnostics/classifiers/test_failure.py:37
+  /Users/daniel/dev/dbt-diagnostics/dbt_diagnostics/classifiers/test_failure.py:37: PytestCollectionWarning: cannot collect test class 'TestFailureClassifier' because it has a __init__ constructor (from: dbt_diagnostics/tests/test_granularity.py)
+    class TestFailureClassifier(BaseClassifier):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+455 passed, 2 skipped, 20 deselected, 1 warning in 3.40s
+exit=0
+
+$ pytest -q -m unit
+.........................................................                [100%]
+=============================== warnings summary ===============================
+dbt_diagnostics/classifiers/test_failure.py:37
+  /Users/daniel/dev/dbt-diagnostics/dbt_diagnostics/classifiers/test_failure.py:37: PytestCollectionWarning: cannot collect test class 'TestFailureClassifier' because it has a __init__ constructor (from: dbt_diagnostics/tests/test_granularity.py)
+    class TestFailureClassifier(BaseClassifier):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+57 passed, 420 deselected, 1 warning in 0.22s
+exit=0
+
+$ python -m build
+/Users/daniel/dev/dbt-diagnostics/.venv/bin/python: No module named build
+exit=1

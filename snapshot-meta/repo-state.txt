@@ -1,0 +1,38 @@
+branch: chore/release-tracker
+commit: ee5a146e0f4178ee52ab69a38ee1839be66f9663
+
+working tree:
+?? .DS_Store
+?? docs/OUTPUT_FIVE_MOD.md
+?? docs/OUTPUT_SEVEN.md
+?? docs/OUTPUT_SIX.md
+?? requirements.txt
+?? snapshot-meta/
+
+real fixture and schema-cache inventory:
+dbt_diagnostics/fixtures/real_compilation_ref_not_found_manifest.json
+dbt_diagnostics/fixtures/real_compilation_ref_not_found.json
+dbt_diagnostics/fixtures/real_compilation_source_not_found_manifest.json
+dbt_diagnostics/fixtures/real_compilation_source_not_found.json
+dbt_diagnostics/fixtures/real_contract_violation_extra_column_manifest.json
+dbt_diagnostics/fixtures/real_contract_violation_extra_column.json
+dbt_diagnostics/fixtures/real_division_by_zero_100035_manifest.json
+dbt_diagnostics/fixtures/real_division_by_zero_100035.json
+dbt_diagnostics/fixtures/real_invalid_identifier_000904_manifest.json
+dbt_diagnostics/fixtures/real_invalid_identifier_000904.json
+dbt_diagnostics/fixtures/real_invalid_identifier_lateral_000904_manifest.json
+dbt_diagnostics/fixtures/real_invalid_identifier_lateral_000904.json
+dbt_diagnostics/fixtures/real_manifest_staging_errors.json
+dbt_diagnostics/fixtures/real_numeric_overflow_100132_manifest.json
+dbt_diagnostics/fixtures/real_numeric_overflow_100132.json
+dbt_diagnostics/fixtures/real_object_not_exist_002003_manifest.json
+dbt_diagnostics/fixtures/real_object_not_exist_002003.json
+dbt_diagnostics/fixtures/real_privileges_003001_manifest.json
+dbt_diagnostics/fixtures/real_privileges_003001.json
+dbt_diagnostics/fixtures/real_run_results_staging_errors.json
+dbt_diagnostics/fixtures/real_schema_change_missing_column_manifest.json
+dbt_diagnostics/fixtures/real_schema_change_missing_column.json
+dbt_diagnostics/fixtures/real_string_too_long_100078_manifest.json
+dbt_diagnostics/fixtures/real_string_too_long_100078.json
+dbt_diagnostics/fixtures/real_syntax_error_001003_manifest.json
+dbt_diagnostics/fixtures/real_syntax_error_001003.json
