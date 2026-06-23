@@ -1,0 +1,6 @@
+# --- AI Tree Script Dependencies ---
+# Used for accurate token counting (GPT-4 / o-series)
+tiktoken>=0.7.0
+
+# --- dbt-diagnostics Dependencies ---
+# (Paste the dependencies from your pyproject.toml [project.dependencies] here)
