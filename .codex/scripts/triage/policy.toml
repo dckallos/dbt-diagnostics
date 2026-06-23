@@ -1,0 +1,36 @@
+# Issue governance policy for dckallos/dbt-diagnostics.
+# This file stores process rules, not a copy of live issue state.
+
+[repository]
+owner = "dckallos"
+name = "dbt-diagnostics"
+default_branch = "donkey-kong-sandbox"
+
+[release]
+# Leave empty until the maintainer approves the exact milestone identity.
+milestone_title = ""
+
+[labels]
+# These are accepted as current live labels. Do not delete or rename them by
+# default; migrate label taxonomy only through an approved plan.
+type = ["bug", "enhancement", "documentation", "test", "chore", "spike", "epic"]
+area = ["architecture", "snowflake", "live", "compat", "lineage", "cli", "config", "output", "release"]
+constraint = ["tier-a", "tier-b", "decision-needed", "security", "blocked"]
+priority = ["priority: now", "priority: next", "priority: deferred"]
+
+[audit]
+# Conservative defaults. Enable stricter migration rules after the Project and
+# milestone are approved.
+require_open_issue_project_item = false
+require_open_issue_type_label = false
+require_release_milestone = false
+check_issue_references = true
+check_missing_repo_paths = true
+check_dependency_cycles = true
+check_progress_log_staleness = true
+
+[planning]
+# Generated plan batches. The tool never treats these as approved.
+bootstrap_batch = "bootstrap"
+canary_batch = "canary"
+remaining_batch = "remaining"
