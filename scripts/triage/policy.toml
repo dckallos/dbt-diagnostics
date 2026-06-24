@@ -1,36 +1,69 @@
 # Issue governance policy for dckallos/dbt-diagnostics.
-# This file stores process rules, not a copy of live issue state.
+# Durable rules live here; live tracker state never does.
 
 [repository]
 owner = "dckallos"
 name = "dbt-diagnostics"
 default_branch = "donkey-kong-sandbox"
+required_base_branch = "donkey-kong-sandbox"
+
+[contract]
+id = "dbt-diagnostics.issue-contract.v1"
+version = "1.0"
+semantic_review_required_for_ready = true
+one_issue_per_pr = true
+repository_files_ascii = true
 
 [release]
-# Leave empty until the maintainer approves the exact milestone identity.
-milestone_title = ""
+milestone_number = 1
+epics = [4, 48, 68]
+gate_headings = [
+  "initial release gate",
+  "release engineering owned elsewhere",
+  "build order",
+  "build order and rollback points",
+  "release definition of done",
+]
+additional_issues = [33, 65, 66]
+
+[project]
+enabled = false
+identity = ""
 
 [labels]
-# These are accepted as current live labels. Do not delete or rename them by
-# default; migrate label taxonomy only through an approved plan.
-type = ["bug", "enhancement", "documentation", "test", "chore", "spike", "epic"]
+type = ["bug", "enhancement", "documentation", "test", "chore", "spike", "epic", "architecture"]
 area = ["architecture", "snowflake", "live", "compat", "lineage", "cli", "config", "output", "release"]
 constraint = ["tier-a", "tier-b", "decision-needed", "security", "blocked"]
 priority = ["priority: now", "priority: next", "priority: deferred"]
 
 [audit]
-# Conservative defaults. Enable stricter migration rules after the Project and
-# milestone are approved.
 require_open_issue_project_item = false
-require_open_issue_type_label = false
-require_release_milestone = false
+require_open_issue_type_label = true
+require_release_milestone = true
 check_issue_references = true
 check_missing_repo_paths = true
 check_dependency_cycles = true
 check_progress_log_staleness = true
+check_explicit_overlap = true
+check_active_pull_requests = true
+
+[frontier]
+audit_state_order = [
+  "unsafe",
+  "stale",
+  "overlapping",
+  "needs_contract_revision",
+  "needs_decision",
+  "blocked",
+  "needs_semantic_review",
+  "unknown",
+]
+implementation_requires_accepted_contract = true
+implementation_requires_semantic_review = true
+implementation_requires_dependency_merge_evidence = true
 
 [planning]
-# Generated plan batches. The tool never treats these as approved.
 bootstrap_batch = "bootstrap"
 canary_batch = "canary"
 remaining_batch = "remaining"
+issue_body_mutation_allowed = false
