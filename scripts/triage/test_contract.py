@@ -1,0 +1,403 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from scripts.triage import contract
+
+
+def common_body(extra: str = "") -> str:
+    return f"""## Summary
+
+I will make one bounded change.
+
+## Evidence and confidence
+
+The current source proves the gap. Confidence is high.
+
+{extra}
+
+## Acceptance criteria
+
+- A positive case succeeds.
+- An invalid negative case is rejected.
+- A failed probe degrades to unverified offline behavior.
+- Existing compatibility remains unchanged as a regression check.
+
+## Focused test plan
+
+Run positive, negative, degradation, and regression tests.
+
+## Scope and likely files
+
+- scripts/triage/triage.py
+
+## Explicit non-goals
+
+- No GitHub mutation.
+
+## Dependencies and traceability
+
+- Parent epic: #4
+- Depends on: none.
+"""
+
+
+@pytest.mark.parametrize(
+    ("title", "labels", "extra", "expected_kind"),
+    [
+        (
+            "fix: preserve unknown evidence",
+            ["bug"],
+            """## Current wrong behavior or gap
+
+Unknown becomes missing.
+
+## Root cause or architectural reason
+
+The return type collapses states.
+
+## Expected behavior or target outcome
+
+Unknown remains unknown.
+""",
+            "bug_fix",
+        ),
+        (
+            "feat: add a bounded packet",
+            ["enhancement"],
+            """## User-visible problem or current gap
+
+Workers receive too much context.
+
+## Expected behavior or target outcome
+
+Emit one bounded packet.
+""",
+            "feature_enhancement",
+        ),
+        (
+            "refactor: separate evidence",
+            ["architecture"],
+            """## Current wrong behavior or gap
+
+Mutable prose stores state.
+
+## Expected behavior or target outcome
+
+Typed evidence drives one resolver.
+
+## Migration, coexistence, and rollback
+
+Switch one capability and revert the PR if needed.
+
+## Compatibility and canonical JSON implications
+
+Existing schema-major-1 keys remain additive.
+""",
+            "refactor_architecture",
+        ),
+        (
+            "test: verify live evidence",
+            ["test"],
+            """## User-visible problem or current gap
+
+Mock rows do not establish live semantics.
+
+## External evidence, permissions, credentials, or fixtures
+
+A disposable credential-gated account is required.
+
+## Offline behavior
+
+Offline tests use recorded rows.
+
+## Live behavior and cost tier
+
+Tier A metadata only.
+""",
+            "test_verification",
+        ),
+        (
+            "spike: choose identity attestation",
+            ["spike"],
+            """## Question to answer
+
+Should identity be attested?
+
+## Investigation tasks
+
+- Compare two approaches.
+
+## Deliverable
+
+Record a go/no-go decision.
+
+## Decision criteria
+
+Choose only when evidence establishes value.
+""",
+            "spike_decision",
+        ),
+        (
+            "[Epic] Release correctness",
+            ["epic"],
+            """## Thesis or decision
+
+Facts and confidence remain separate.
+
+## Initial-release gate or build order
+
+- [ ] #55
+
+## Children and backlog
+
+- Release: #55
+- Deferred: #5
+
+## Maintainer decisions and blockers
+
+- OPEN: cost ceiling.
+
+## Workflow
+
+One issue per PR.
+""",
+            "epic",
+        ),
+        (
+            "chore: publish package",
+            ["chore"],
+            """## Deliverable
+
+Publish one tested wheel and sdist.
+
+## Release relevance and priority
+
+This blocks the initial release.
+""",
+            "docs_chore_release",
+        ),
+    ],
+)
+def test_every_contract_kind(
+    title: str,
+    labels: list[str],
+    extra: str,
+    expected_kind: str,
+) -> None:
+    body = common_body(extra)
+    if expected_kind == "epic":
+        body = (
+            """## Summary
+
+Track the release architecture.
+
+## Evidence and confidence
+
+The live tracker and source establish the need.
+
+"""
+            + extra
+        )
+    issue = {"number": 1, "title": title, "labels": labels, "body": body}
+
+    result = contract.audit_contract(issue)
+
+    assert result["issue_kind"] == expected_kind
+    assert result["governance_state"] == "conformant", result["findings"]
+
+
+def test_required_section_is_error() -> None:
+    issue = {
+        "number": 1,
+        "title": "fix: incomplete contract",
+        "labels": ["bug"],
+        "body": "## Summary\n\nOnly a summary.",
+    }
+    result = contract.audit_contract(issue)
+    assert result["governance_state"] == "needs_contract_revision"
+    assert any(
+        item["code"] == "missing-required-section" for item in result["findings"]
+    )
+
+
+def test_live_conditional_sections_are_required() -> None:
+    issue = {
+        "number": 1,
+        "title": "fix: live probe",
+        "labels": ["bug", "live"],
+        "body": common_body(
+            """## Current wrong behavior or gap
+
+A probe fails.
+
+## Root cause or architectural reason
+
+The state is collapsed.
+
+## Expected behavior or target outcome
+
+Preserve unknown.
+"""
+        ),
+    }
+    result = contract.audit_contract(issue)
+    assert "Offline behavior" in result["missing_required_sections"]
+    assert "Live behavior and cost tier" in result["missing_required_sections"]
+
+
+def test_duplicate_heading_is_error() -> None:
+    issue = {
+        "number": 1,
+        "title": "fix: duplicate",
+        "labels": ["bug"],
+        "body": common_body(
+            """## Current wrong behavior
+
+One.
+
+## Current behavior
+
+Two.
+
+## Root cause
+
+Cause.
+
+## Expected behavior
+
+Expected.
+"""
+        ),
+    }
+    result = contract.audit_contract(issue)
+    assert any(item["code"] == "duplicate-section" for item in result["findings"])
+
+
+def test_malformed_heading_is_error() -> None:
+    sections, findings = contract.parse_sections("##Summary\n\nText")
+    assert sections == []
+    assert findings[0]["code"] == "malformed-heading"
+
+
+def test_heading_parser_ignores_code_fences_and_shell_text() -> None:
+    body = """## Summary
+
+Never execute $(touch /tmp/not-created) or `echo $TOKEN`.
+
+```bash
+## Acceptance criteria
+$(rm -rf /)
+```
+
+## Acceptance criteria
+
+- Valid input succeeds.
+"""
+    sections, findings = contract.parse_sections(body)
+    assert not findings
+    assert [section.key for section in sections] == ["summary", "acceptance_criteria"]
+    assert "$(touch" in sections[0].content
+    assert not Path("/tmp/not-created").exists()
+
+
+def test_spike_forbids_implementation_plan() -> None:
+    body = common_body(
+        """## Question to answer
+
+Which option should be chosen?
+
+## Investigation tasks
+
+- Compare evidence.
+
+## Deliverable
+
+Record a decision.
+
+## Decision criteria
+
+Choose the safer option.
+
+## Implementation plan
+
+Implement option A now.
+"""
+    )
+    issue = {"number": 2, "title": "spike: decide", "labels": ["spike"], "body": body}
+    result = contract.audit_contract(issue)
+    assert result["governance_state"] == "unsafe"
+    assert any(item["code"] == "forbidden-section" for item in result["findings"])
+
+
+def test_acceptance_coverage_reports_missing_categories() -> None:
+    body = (
+        common_body(
+            """## Current wrong behavior
+
+Wrong.
+
+## Root cause
+
+Cause.
+
+## Expected behavior
+
+Expected.
+"""
+        )
+        .replace(
+            "- A positive case succeeds.\n- An invalid negative case is rejected.\n- A failed probe degrades to unverified offline behavior.\n- Existing compatibility remains unchanged as a regression check.",
+            "- A valid case succeeds.",
+        )
+        .replace(
+            "Run positive, negative, degradation, and regression tests.",
+            "Run the focused test.",
+        )
+    )
+    issue = {"number": 3, "title": "fix: coverage", "labels": ["bug"], "body": body}
+    result = contract.audit_contract(issue)
+    assert set(result["missing_acceptance_coverage"]) >= {
+        "negative",
+        "degradation",
+        "regression",
+    }
+
+
+def test_proposed_body_reaudits_without_required_section_errors() -> None:
+    issue = {
+        "number": 4,
+        "title": "fix: normalize this",
+        "labels": ["bug"],
+        "body": "## Summary\n\nCurrent text.",
+    }
+    proposed = contract.propose_normalized_body(issue)
+    result = contract.audit_contract({**issue, "body": proposed})
+    assert result["missing_required_sections"] == []
+    assert result["governance_state"] == "conformant"
+
+
+def test_contract_output_is_ascii() -> None:
+    issue = {
+        "number": 5,
+        "title": "fix: ascii",
+        "labels": ["bug"],
+        "body": common_body(
+            """## Current wrong behavior
+
+Wrong.
+
+## Root cause
+
+Cause.
+
+## Expected behavior
+
+Expected.
+"""
+        ),
+    }
+    text = str(contract.audit_contract(issue))
+    text.encode("ascii")
