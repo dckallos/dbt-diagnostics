@@ -72,11 +72,37 @@ least-privileged credentials, and the issue's bounded test plan.
 | Tests (offline) | `bash .codex/bin/action.sh offline` | Run every test not marked `live`, including the chaos tier. |
 | Full pytest | `bash .codex/bin/action.sh full` | Run the exact repository command `pytest -q`. |
 | Compile | `bash .codex/bin/action.sh compile` | Force-compile package, tests, scripts, and Codex helpers. |
-| Issue audit | `bash .codex/bin/action.sh audit` | Run the read-only metadata audit after `scripts/triage/triage.py` is implemented. |
+| Issue audit | `bash .codex/bin/action.sh audit` | Run the read-only contract and readiness audit. |
+| Frontier | `bash .codex/bin/action.sh frontier audit|implement` | Select one deterministic audit or implementation item without side effects. |
 | Package | `bash .codex/bin/action.sh package` | Build one wheel and sdist, inspect them, install the wheel, and smoke-test the CLI. |
 
-The issue-audit action deliberately exits with status 2 while the triage tool is
-absent. It never treats a missing governance check as a pass.
+The audit and frontier actions are read-only. They may refresh GitHub through
+`gh` or consume an explicit offline snapshot. They do not edit issues, create a
+worktree, or start a Codex thread.
+
+## Governance and relay
+
+The issue contract, readiness model, and relay workflow are documented in:
+
+- `docs/ISSUE_CONTRACT_V1.md`;
+- `docs/ISSUE_GOVERNANCE.md`;
+- `docs/CODEX_RELAY.md`;
+- `docs/FRONTIER_SCHEMA_V1.md`.
+
+Typical read-only commands:
+
+```bash
+bash .codex/bin/action.sh audit --json
+bash .codex/bin/action.sh frontier audit --json
+bash .codex/bin/action.sh frontier implement --json
+```
+
+A worktree is an isolated checkout for one branch that shares Git history with
+the repository. Use one issue per worktree when tasks run in parallel. A Codex
+thread is temporary task context, not project state. Resume a thread for the
+same implementation loop; start a fresh thread for a different issue or an
+independent review. See `docs/CODEX_RELAY.md` for the verified current Codex
+behavior and cleanup commands.
 
 ## Starting issue work without stale context
 
