@@ -42,7 +42,7 @@ dbt_diagnostics = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["dbt_diagnostics/tests"]
+testpaths = ["dbt_diagnostics/tests", "scripts/triage"]
 markers = [
     "unit: fast, isolated unit tests (default tier, runs on every PR)",
     "contract: assert artifact parsing/classification against golden fixtures",
