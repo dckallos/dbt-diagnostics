@@ -23,8 +23,5 @@ coverage.xml
 format_files.sh
 output/code-snapshot.md
 output/extension-map.md
-
-# Generated issue-governance and relay artifacts
 output/triage/
-
 .DS_Store
