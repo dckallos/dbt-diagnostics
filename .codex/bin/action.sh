@@ -20,7 +20,8 @@ Actions:
   unit           Run tests marked unit
   last-failed    Re-run the last credential-free pytest failures
   compat         Run the local compatibility schema gate
-  audit          Run the read-only issue metadata audit when its tool exists
+  audit          Run the read-only issue governance/readiness audit
+  frontier MODE Select the read-only audit or implementation frontier
   package        Build, inspect, install, and smoke-test wheel and sdist
   help           Show this message
 USAGE
@@ -58,6 +59,9 @@ case "$action" in
     ;;
   audit)
     exec bash .codex/bin/triage-audit.sh "$@"
+    ;;
+  frontier)
+    exec bash .codex/bin/triage-frontier.sh "$@"
     ;;
   package)
     exec bash .codex/bin/package.sh "$@"
