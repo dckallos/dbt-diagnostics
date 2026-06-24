@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Add issue contract, readiness audit, and read-only relay coordination
+
+- Added the versioned issue contract and separate governance/readiness states.
+- Added bounded review packets, local-only proposed-body validation, deterministic
+  audit and implementation frontiers, and a versioned coordinator JSON schema.
+- Kept all GitHub operations read-only; issue-body mutation and execution remain
+  unavailable.
+- Added focused governance tests, Codex relay documentation, stable read-only
+  actions, and minimal repository skills.
+
+
 <!-- BEGIN #39 -->
 ### Detect mixed-version manifest/run_results pairs (feat, issue #39)
 
