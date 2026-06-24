@@ -1,287 +1,277 @@
-# Issue governance and readiness
+# Issue governance
 
-I use this tooling to inspect the live tracker, apply the versioned issue
-contract, record semantic-review evidence, and select one bounded next item. The
-normal workflow is read-only. Proposed issue-body revisions are local files,
-not GitHub mutations.
+I use this tooling to inspect the live GitHub tracker, detect metadata drift, and
+produce an approval-bound plan before any metadata write is considered.
 
-The canonical contract is `docs/ISSUE_CONTRACT_V1.md`.
-
-## Source of truth
-
-The tooling and review process use this order:
-
-1. Live GitHub issue, pull request, label, milestone, comment, and configured
-   Project metadata.
-2. The current governance implementation on the active governance branch.
-3. Repository source, tests, `AGENTS.md`, `CONTRIBUTING.md`, and design docs.
-4. `docs/PROGRESS_LOG.md` only as historical continuity context.
-5. Generated audit files and prior reports only as non-authoritative leads.
-
-A stale progress entry never overrides live tracker state. A local snapshot is a
-reproducible input, not a substitute for a later refresh.
-
-## Safety boundary
-
-The current command layer does not mutate GitHub.
-
-It does not:
-
-- create, close, reopen, or edit issues or pull requests;
-- change issue titles or bodies;
-- add issue-body mutation to an allowlist;
-- create, delete, or rename labels or milestones;
-- change Projects, branches, releases, protection, secrets, environments, or
-  workflows;
-- create a worktree as a side effect of an audit or frontier command.
-
-The retained `apply` command validates approval artifacts for backward
-compatibility, but actual execution is deliberately unavailable. `--dry-run`
-performs validation only. `--execute` and its compatibility alias are rejected.
-
-Issue text and user-controlled content are never interpolated into a shell
-command. The live snapshot transport uses argument arrays and JSON decoding.
-
-## Command surface
+The normal workflow is read-only:
 
 ```bash
 python scripts/triage/triage.py snapshot
-python scripts/triage/triage.py contract --issue 55
 python scripts/triage/triage.py audit
-python scripts/triage/triage.py review-packet --issue 55 \
-  --output-dir output/triage/issues/55
-python scripts/triage/triage.py standardize --issue 55 \
-  --proposed-body proposed.md \
-  --output-dir output/triage/issues/55
-python scripts/triage/triage.py frontier --mode audit --json
-python scripts/triage/triage.py frontier --mode implement --json
+python scripts/triage/triage.py plan --output-dir output/triage
 ```
 
-All commands accept an offline snapshot where applicable. This is the normal
-mode for tests and reproducible review:
+The tool does not create issues, rewrite issue bodies, close issues, create
+labels, create milestones, create Projects, or change repository settings.
+
+## Source of truth
+
+The tool follows this order:
+
+1. Live GitHub issue, pull-request, label, milestone, and configured Project
+   metadata.
+2. `scripts/triage/policy.toml` for stable process rules and explicitly approved
+   desired metadata.
+3. Repository files for path checks and `docs/PROGRESS_LOG.md` drift checks.
+
+The policy is not a mirror of the tracker. I do not copy issue titles or bodies
+into it. Live metadata is captured in a timestamped snapshot and bound to the
+plan with SHA-256 digests.
+
+`docs/PROGRESS_LOG.md` is historical context, not a substitute for the live
+tracker. The audit reports when tracker updates are newer than its latest dated
+entry or when a declared-open item is already closed.
+
+## Command surface
+
+### Snapshot
 
 ```bash
-python scripts/triage/triage.py audit \
-  --snapshot output/triage/snapshot.json \
-  --semantic-evidence output/triage/semantic-evidence.json \
-  --output-dir output/triage
-```
-
-## Live snapshot
-
-A live snapshot requires the GitHub CLI and an authenticated read identity:
-
-```bash
-gh auth status
+python scripts/triage/triage.py snapshot
 python scripts/triage/triage.py snapshot \
   --output output/triage/snapshot.json
 ```
 
-The snapshot command uses read-only REST GET requests. It captures:
+A snapshot contains:
 
-- issues and pull requests in the tracker namespace;
-- labels and milestones;
-- comments when `--comments` is requested;
-- referenced closed items and open pull request metadata where available;
-- configured Project metadata only when an exact Project identity is enabled;
-- a deterministic content digest that ignores only the generation timestamp.
+- all issues and pull requests returned by the repository tracker endpoint;
+- expanded metadata for open pull requests;
+- labels and label usage;
+- milestones and assignment counts;
+- closed tracker items referenced by open issues;
+- recently closed tracker items;
+- configured GitHub Project V2 metadata, when an exact Project identity is
+  enabled in policy;
+- a content digest that excludes only the generation timestamp.
 
-If `gh` is unavailable, the tool does not pretend to have refreshed GitHub. Use
-an explicitly supplied snapshot and record the transport limitation in the
-review report.
+Snapshot collection uses GitHub REST GET requests and an optional read-only
+GraphQL Project query. It does not perform a write.
 
-## Contract audit
+### Audit
 
-`contract` audits one issue body and its metadata against contract v1. It
-reports:
+```bash
+python scripts/triage/triage.py audit
+python scripts/triage/triage.py audit --issues 54,68
+python scripts/triage/triage.py audit --json
+python scripts/triage/triage.py audit \
+  --snapshot output/triage/snapshot.json
+```
 
-- inferred issue kind;
-- required, conditional, recommended, and forbidden section findings;
-- malformed or duplicated headings;
-- title and type-label consistency;
-- acceptance-coverage categories;
-- body and contract digests.
+The audit checks, subject to policy flags:
 
-A contract audit proves only deterministic structure. It cannot establish that
-the diagnosis, acceptance criteria, migration plan, or tests are semantically
-complete.
+- case-insensitive duplicate labels;
+- labels named in policy but absent from the live repository;
+- title-prefix and label alignment;
+- missing issue or pull-request references;
+- unchecked checklist entries that point at closed tracker items;
+- dependencies that point at already closed tracker items;
+- referenced repository paths that do not exist in the checkout;
+- dependency cycles using only dependency-bearing relationship headings;
+- release-gate issue milestone assignments;
+- open pull-request base branches;
+- configured Project visibility;
+- progress-log date and declared-state drift.
 
-## Governance and readiness audit
+`--issues` filters issue-specific findings. Repository-wide findings still
+print because they can affect the selected issues.
 
-`audit` produces repository-wide and per-issue results. The deterministic layer
-checks, where evidence is available:
+An audit exits nonzero only when it finds an error. Warnings are review items,
+not an automatic write instruction.
 
-- title, issue kind, labels, and milestone;
-- required and conditional sections;
-- tracker references and repository paths;
-- direct dependencies, parent epics, supersession, and graph cycles;
-- closed, duplicate, stale, or contradictory references;
-- release-gate and milestone drift;
-- explicit ownership overlap;
-- active pull request conflicts;
-- one-PR scope warning signals;
-- represented positive, negative, degradation, and regression coverage;
-- unresolved decisions and external blockers;
-- stale progress-log claims;
-- deterministic ordering and hashes.
+### Plan
 
-The report keeps governance conformance and implementation readiness separate.
-The readiness states are documented in `docs/ISSUE_CONTRACT_V1.md`.
+```bash
+python scripts/triage/triage.py plan --output-dir output/triage
+python scripts/triage/triage.py plan \
+  --snapshot output/triage/snapshot.json \
+  --output-dir output/triage
+```
 
-## Semantic-review evidence
-
-Python owns durable tracker facts and deterministic checks. It does not claim to
-prove semantic sufficiency. A source-aware reviewer records evidence in a local
-JSON file and reruns the audit.
-
-A semantic-evidence entry may include:
-
-- source and test claims checked;
-- relevant files and callers inspected;
-- missing edge cases or tests;
-- known false assumptions;
-- unresolved maintainer decisions;
-- external evidence or workflow authority required;
-- overlap conflicts;
-- dependency merge evidence;
-- accepted contract status;
-- a final readiness recommendation and confidence.
-
-The deterministic auditor refuses to promote an issue to `ready` merely because
-its headings are complete. `ready` requires explicit semantic-review evidence
-and all deterministic blockers to be clear.
-
-## Single-issue audit and improvement loop
-
-For one issue:
-
-1. Refresh or load the issue, direct dependencies, parent epic, referenced
-   tracker items, labels, milestone, comments when needed, and repository paths.
-2. Run deterministic contract and metadata checks.
-3. Inspect only the relevant source, callers, tests, and design documents needed
-   to verify the claims and discover hidden failure modes.
-4. Record facts, uncertainty, readiness states, source evidence, and any
-   maintainer decisions in semantic-evidence JSON.
-5. Generate a bounded packet with `review-packet`.
-6. Revise `proposed-body.md` locally when the contract needs correction.
-7. Run `standardize` against the proposed body.
-8. Repeat until all fixable findings are resolved or the remaining items are
-   explicit decisions or external blockers.
-9. Stop before GitHub mutation and request review of the exact proposed text.
-
-A review packet contains:
+The plan command writes:
 
 ```text
-output/triage/issues/<number>/review.json
-output/triage/issues/<number>/review.md
-output/triage/issues/<number>/proposed-body.md
-output/triage/issues/<number>/contract-audit.json
+output/triage/snapshot.json
+output/triage/audit.json
+output/triage/plan.json
+output/triage/plan.md
+output/triage/approval.template.json
 ```
 
-The proposed body uses explicit placeholders for unknown facts. It does not
-invent source evidence, credentials, decisions, or fixture availability.
+Every operation has:
 
-## Across-issues audit queue
+- a deterministic operation ID;
+- a batch;
+- an exact repository and issue target;
+- before and after metadata;
+- live preconditions;
+- an exact REST method, path, and JSON body;
+- a reason;
+- a destructive flag.
 
-The audit frontier chooses the highest-value issue that still needs governance
-or semantic review. It uses only compact audit records and deterministic scores;
-it does not load every issue body into an agent thread.
+The plan SHA-256 covers the complete normalized plan. Editing an operation,
+target, request, batch, or precondition changes the digest and invalidates an
+existing approval.
 
-```bash
-python scripts/triage/triage.py frontier --mode audit --json \
-  --snapshot output/triage/snapshot.json \
-  --audit-file output/triage/audit.json
+The generated approval template approves no batch and no operation.
+
+## Supported and forbidden operations
+
+The initial writer allowlist is intentionally narrow:
+
+```text
+issue.labels.add
+issue.labels.remove
+issue.milestone.set
+issue.milestone.clear
 ```
 
-Audit priority favors, in order:
+The planner and validator reject, among other things:
 
-- unsafe or contradictory state;
-- stale release-gate state;
-- explicit ownership overlap;
-- contract revision;
-- unresolved decisions or blockers;
-- missing semantic review;
-- dependency impact and release relevance;
-- stable issue-number tie-breaking.
-
-After one issue is reviewed, update semantic evidence, rerun the audit, and
-recompute the frontier.
-
-## Implementation frontier
-
-The implementation frontier consumes accepted contracts and readiness results.
-It does not standardize issues.
-
-```bash
-python scripts/triage/triage.py frontier --mode implement --json \
-  --snapshot output/triage/snapshot.json \
-  --audit-file output/triage/audit.json \
-  --packet-output output/triage/frontier-worker-packet.json
+```text
+issue.create
+issue.close
+issue.reopen
+issue.body.update
+issue.title.update
+label.create
+label.delete
+label.rename
+milestone.create
+milestone.close
+project.create
 ```
 
-An implementation candidate must have:
+Issue text is not a supported mutation payload. GitHub request bodies are JSON
+sent through standard input to `gh api`; issue text and other metadata are never
+interpolated into a shell command.
 
-- an accepted governance contract;
-- implementation state `ready`;
-- no dependency cycle;
-- all direct dependencies closed;
-- recorded merge evidence for dependency code when dependencies exist;
-- no unresolved decision;
-- no required external evidence still missing;
-- no missing required repository path;
-- no active pull request conflict;
-- no explicit overlap conflict;
-- no remaining readiness blocker.
+## Batches
 
-When no issue satisfies the rules, the command returns an explicit no-selection
-result. It never guesses.
+`policy.toml` assigns selected issue numbers to `bootstrap`, `canary`, or
+`remaining`. Unlisted operations use `planning.default_batch`.
 
-The coordinator schema and relay workflow are documented in
-`docs/CODEX_RELAY.md` and `docs/FRONTIER_SCHEMA_V1.md`.
+Batches are review units, not approval. An approval file must name both the
+batch and each operation ID that is authorized. An approval may cover several
+batches, but one invocation processes only the selected batch.
 
-## Plan and apply compatibility commands
+## Approval and dry run
 
-`plan` remains available so existing automation does not break. It writes a
-read-only plan with zero operations and the current audit digest.
+Copy the template to a separate file and fill only the approved values:
 
-`apply --dry-run` validates:
+```json
+{
+  "schema_version": 1,
+  "repository": "dckallos/dbt-diagnostics",
+  "plan_sha256": "<exact plan digest>",
+  "approved_batches": ["bootstrap"],
+  "approved_operation_ids": ["op1:<exact operation digest>"],
+  "allow_destructive": false,
+  "approved_by": "<maintainer>",
+  "approved_at": "<UTC timestamp>"
+}
+```
 
-- plan digest;
-- repository identity;
-- approval identity and timestamp;
-- selected batch;
-- exact operation IDs;
-- operation allowlist;
-- absence of issue-body mutation.
-
-There are no supported write operations in this implementation. Any non-empty
-operation list, issue-body request, or execution request is rejected.
-
-## Generated files
-
-Generated output belongs under `output/triage/` and is ignored. It is not a
-source of truth and should not be shipped in the package.
-
-Repository-authored files must remain ASCII. Generated JSON and Markdown are
-written deterministically and checked for ASCII before completion.
-
-## Verification
-
-Run the focused governance suite:
+Then run the mandatory read-only preflight:
 
 ```bash
-pytest -q scripts/triage
+python scripts/triage/triage.py apply --dry-run \
+  --plan output/triage/plan.json \
+  --approval output/triage/approval.json \
+  --plan-sha <sha> \
+  --batch bootstrap
+```
+
+Dry run reads each live issue again. It reports an operation as:
+
+- `ready` when its relevant preconditions still match;
+- `noop` when the desired metadata is already present;
+- `stale` when the issue state or relevant metadata changed;
+- `unsupported` when the operation is outside the allowlist.
+
+Any stale or unsupported operation blocks the batch. Dry run never calls a
+GitHub write endpoint.
+
+## Real execution gate
+
+A real writer session is deliberately harder to invoke:
+
+```bash
+TRIAGE_ENABLE_GITHUB_WRITES=1 \
+python scripts/triage/triage.py apply --execute \
+  --plan output/triage/plan.json \
+  --approval output/triage/approval.json \
+  --plan-sha <sha> \
+  --batch bootstrap \
+  --confirm-repo dckallos/dbt-diagnostics
+```
+
+All of these must agree:
+
+- embedded plan digest;
+- command-line plan digest;
+- approval plan digest;
+- repository in the plan and approval;
+- approved batch;
+- approved operation IDs;
+- destructive-operation permission;
+- exact `--confirm-repo` value;
+- `TRIAGE_ENABLE_GITHUB_WRITES=1`;
+- live preflight state.
+
+The writer uses an exclusive lock and verifies each desired state after the
+request. A successful run writes a receipt under `output/triage/receipts/` by
+default. The lock prevents two local writer sessions from running at once; it
+does not replace live preconditions.
+
+I do not enable the write gate in ordinary Codex setup or actions.
+
+## GitHub authentication
+
+Snapshot, audit, plan, and apply preflight use the local `gh` identity. The
+credential-free repository setup does not log in, load a token, or change GitHub
+configuration.
+
+Use:
+
+```bash
+gh auth status
+```
+
+before a live snapshot. The selected identity needs read access to the tracker.
+A real execute session additionally needs the exact issue-write permissions for
+the approved operations.
+
+## Project metadata
+
+Project auditing remains disabled until `policy.toml` records an exact owner,
+owner type, and Project number. Enabling it adds a read-only GraphQL snapshot.
+The tool does not create a Project or mutate Project fields.
+
+## Policy changes
+
+A policy change is reviewable code. In particular:
+
+- adding `[[desired.issue]]` is an explicit desired-state decision;
+- changing the release milestone changes which assignments are proposed;
+- changing epic headings changes release-gate derivation;
+- changing batch membership changes rollout grouping, not desired metadata;
+- enabling Project reads requires an exact Project identity.
+
+Run the focused tests after every change:
+
+```bash
+pytest -q scripts/triage/test_triage.py
 python -m compileall -q scripts/triage
 ```
 
-Run the repository gate after governance changes:
-
-```bash
-pytest -q
-python -m compileall -q dbt_diagnostics scripts .codex
-bash -n .codex/bin/*.sh
-```
-
-A repeated audit or frontier run over identical inputs must produce identical
-semantic JSON bytes once volatile timestamps are excluded from the input
-snapshot.
+The default pytest configuration includes these tests.
