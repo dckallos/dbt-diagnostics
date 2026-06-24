@@ -17,7 +17,7 @@ bash .codex/bin/action.sh help
 - A real git clone of `dckallos/dbt-diagnostics`.
 - Python 3.11 or newer. Python 3.12 is preferred because it matches current CI.
 - `git`.
-- GitHub CLI (`gh`) for live issue context and later metadata tooling.
+- GitHub CLI (`gh`) for live issue context and governance snapshots.
 
 For issue and Project work, authenticate locally:
 
@@ -72,37 +72,43 @@ least-privileged credentials, and the issue's bounded test plan.
 | Tests (offline) | `bash .codex/bin/action.sh offline` | Run every test not marked `live`, including the chaos tier. |
 | Full pytest | `bash .codex/bin/action.sh full` | Run the exact repository command `pytest -q`. |
 | Compile | `bash .codex/bin/action.sh compile` | Force-compile package, tests, scripts, and Codex helpers. |
-| Issue audit | `bash .codex/bin/action.sh audit` | Run the read-only contract and readiness audit. |
-| Frontier | `bash .codex/bin/action.sh frontier audit|implement` | Select one deterministic audit or implementation item without side effects. |
+| Issue audit | `bash .codex/bin/action.sh audit [--issues N,...]` | Read live tracker metadata and run the issue-governance audit. |
 | Package | `bash .codex/bin/action.sh package` | Build one wheel and sdist, inspect them, install the wheel, and smoke-test the CLI. |
 
-The audit and frontier actions are read-only. They may refresh GitHub through
-`gh` or consume an explicit offline snapshot. They do not edit issues, create a
-worktree, or start a Codex thread.
+The Issue audit action is read-only. It requires a local `gh` identity but never
+calls a GitHub write endpoint.
 
-## Governance and relay
+## Issue governance workflow
 
-The issue contract, readiness model, and relay workflow are documented in:
-
-- `docs/ISSUE_CONTRACT_V1.md`;
-- `docs/ISSUE_GOVERNANCE.md`;
-- `docs/CODEX_RELAY.md`;
-- `docs/FRONTIER_SCHEMA_V1.md`.
-
-Typical read-only commands:
+The full planning surface is available directly:
 
 ```bash
-bash .codex/bin/action.sh audit --json
-bash .codex/bin/action.sh frontier audit --json
-bash .codex/bin/action.sh frontier implement --json
+python scripts/triage/triage.py snapshot
+python scripts/triage/triage.py snapshot \
+  --output output/triage/snapshot.json
+python scripts/triage/triage.py audit
+python scripts/triage/triage.py audit --issues 54,68
+python scripts/triage/triage.py plan --output-dir output/triage
 ```
 
-A worktree is an isolated checkout for one branch that shares Git history with
-the repository. Use one issue per worktree when tasks run in parallel. A Codex
-thread is temporary task context, not project state. Resume a thread for the
-same implementation loop; start a fresh thread for a different issue or an
-independent review. See `docs/CODEX_RELAY.md` for the verified current Codex
-behavior and cleanup commands.
+`plan` writes a normalized snapshot, audit findings, a digest-bound plan, a
+human-readable summary, and an approval template that approves nothing.
+
+A later approved session must run a live read-only preflight before a metadata
+write is eligible:
+
+```bash
+python scripts/triage/triage.py apply --dry-run \
+  --plan output/triage/plan.json \
+  --approval output/triage/approval.json \
+  --plan-sha <sha> \
+  --batch bootstrap
+```
+
+Issue creation, issue closure, issue-body updates, label-definition changes,
+milestone-definition changes, Project creation, and Project mutation are not
+supported operations. See `docs/ISSUE_GOVERNANCE.md` for the complete approval
+and execution gates.
 
 ## Starting issue work without stale context
 
