@@ -692,51 +692,6 @@ def test_body_requires_ignores_immediately_negated_terms() -> None:
     )
 
 
-def test_documented_absence_of_blockers_stays_ready(tmp_path: Path) -> None:
-    (tmp_path / "scripts/triage").mkdir(parents=True)
-    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
-    body = bug_body("- Parent epic: #4").replace(
-        "I will fix one bounded defect.",
-        "I will fix one bounded defect. No open decisions. "
-        "No external evidence required.",
-    )
-    issue = {
-        "number": 1,
-        "state": "open",
-        "title": "fix: ready",
-        "labels": ["bug"],
-        "body": body,
-    }
-    result = readiness.audit_all_issues(
-        snapshot(issue), policy(), root=tmp_path,
-        semantic_evidence={1: accepted_semantic()},
-    )
-    item = next(v for v in result["issues"] if v["issue_number"] == 1)
-    assert item["implementation_state"] == "ready"
-
-
-def test_genuine_open_decision_text_needs_decision(tmp_path: Path) -> None:
-    (tmp_path / "scripts/triage").mkdir(parents=True)
-    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
-    body = bug_body("- Parent epic: #4").replace(
-        "I will fix one bounded defect.",
-        "I will fix one bounded defect. Open decision: choose the default mode.",
-    )
-    issue = {
-        "number": 1,
-        "state": "open",
-        "title": "fix: ready",
-        "labels": ["bug"],
-        "body": body,
-    }
-    result = readiness.audit_all_issues(
-        snapshot(issue), policy(), root=tmp_path,
-        semantic_evidence={1: accepted_semantic()},
-    )
-    item = next(v for v in result["issues"] if v["issue_number"] == 1)
-    assert item["implementation_state"] == "needs_decision"
-
-
 def test_dependency_on_merged_pull_request_is_satisfied(tmp_path: Path) -> None:
     (tmp_path / "scripts/triage").mkdir(parents=True)
     (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")

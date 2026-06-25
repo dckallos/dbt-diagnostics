@@ -711,6 +711,26 @@ def _has_terms(text: str, terms: Iterable[str]) -> bool:
     return any(term in lower for term in terms)
 
 
+# A term documents required work only when it is not immediately negated, so
+# "No open decisions" or "No external evidence required" do not trigger a
+# conditional section. The negation must directly precede the term.
+_NEG_PREFIX_RE = re.compile(r"\b(?:no|not|none|without|never|n/?a)\b[\s:,;.\-]*$")
+
+
+def _requires_terms(text: str, terms: Iterable[str]) -> bool:
+    lower = text.lower()
+    for term in terms:
+        start = 0
+        while True:
+            idx = lower.find(term, start)
+            if idx == -1:
+                break
+            if not _NEG_PREFIX_RE.search(lower[max(0, idx - 24):idx]):
+                return True
+            start = idx + len(term)
+    return False
+
+
 def conditional_requirements(
     kind: str, labels: Iterable[str], body: str, milestone: Any
 ) -> list[Requirement]:
@@ -740,7 +760,7 @@ def conditional_requirements(
                 rationale="A live-capable issue must state offline degradation behavior.",
             )
         )
-    if label_set & {"decision-needed", "blocked"} or _has_terms(
+    if label_set & {"decision-needed", "blocked"} or _requires_terms(
         body,
         (
             "maintainer decision",
@@ -756,7 +776,7 @@ def conditional_requirements(
                 rationale="Decision-needed and blocked work must name the unresolved item.",
             )
         )
-    if _has_terms(
+    if _requires_terms(
         body,
         (
             "credential",
