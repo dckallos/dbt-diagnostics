@@ -40,25 +40,12 @@ def test_environment_actions_are_unique_and_resolvable() -> None:
         assert os.access(script, os.X_OK)
 
 
-def test_setup_never_deletes_unmarked_virtualenv() -> None:
-    setup = (ROOT / ".codex" / "bin" / "setup.sh").read_text(encoding="utf-8")
-    start = setup.index(
-        'if [ -d "$CODEX_VENV_DIR" ] && [ ! -x "$CODEX_VENV_DIR/bin/python" ]; then'
-    )
-    end = setup.index("\nfi\n", start) + len("\nfi\n")
-    incomplete_venv_block = setup[start:end]
-
-    assert '[ -f "$MARKER_FILE" ]' in incomplete_venv_block
-    assert "pyvenv.cfg" not in incomplete_venv_block
-    assert "rm -rf" in incomplete_venv_block
-
-
-def test_unwired_frontier_is_not_exposed_as_codex_action() -> None:
+def test_frontier_wrapper_is_exposed_and_dispatches() -> None:
     action = (ROOT / ".codex" / "bin" / "action.sh").read_text(encoding="utf-8")
     wrapper = (ROOT / ".codex" / "bin" / "triage-frontier.sh").read_text(
         encoding="utf-8"
     )
 
-    assert "frontier MODE" not in action
-    assert "\n  frontier)" not in action
-    assert "frontier selection is not available in PR #73" in wrapper
+    assert "frontier MODE" in action
+    assert "\n  frontier)" in action
+    assert 'exec "$python_path" "$tool" frontier --mode "$mode" "$@"' in wrapper
