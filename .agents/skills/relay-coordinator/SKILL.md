@@ -1,21 +1,18 @@
 ---
 name: relay-coordinator
-description: Run or interpret the deterministic dbt-diagnostics audit or implementation frontier and produce one bounded handoff. Use for queue selection and worker-packet creation, never for implementation or GitHub mutation.
+description: Interpret an explicitly supplied coordinator/frontier JSON artifact without implementing work or mutating GitHub. PR #73 does not expose frontier generation through the CLI.
 ---
 
-1. Read `docs/ISSUE_GOVERNANCE.md`, `docs/CODEX_RELAY.md`, and
-   `docs/FRONTIER_SCHEMA_V1.md`.
-2. Refresh or load an explicit tracker snapshot.
-3. Run the full audit with semantic evidence.
-4. Select one mode:
-   - `bash .codex/bin/action.sh frontier audit --json`
-   - `bash .codex/bin/action.sh frontier implement --json`
-5. Validate the coordinator digest and accept `selected_issue: null` as a valid
-   empty frontier.
-6. For a selected implementation issue, write one worker packet. Do not load
-   unrelated issue bodies into the worker context.
-7. Report the deterministic selection reason, blockers, branch suggestion, and
-   next read-only command.
+1. Read `docs/CODEX_RELAY.md` and `docs/FRONTIER_SCHEMA_V1.md`.
+2. Require a caller-supplied coordinator JSON artifact. Do not invent or select
+   an issue when no artifact is supplied.
+3. Validate its schema version and digest with the documented schema rules.
+4. Accept `selected_issue: null` as a valid empty result.
+5. For a selected issue, report only its deterministic selection reason,
+   blockers, branch suggestion, and next read-only context command.
+6. Stop before implementation or GitHub mutation.
 
+The supported PR #73 CLI surface is `snapshot`, `audit`, `plan`, and `apply`.
+There is no supported `frontier` command or worker-packet generator in this PR.
 The coordinator does not create a branch, worktree, Codex thread, issue, pull
 request, label, milestone, or Project item.
