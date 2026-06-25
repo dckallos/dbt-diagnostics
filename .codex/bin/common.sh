@@ -18,7 +18,7 @@ codex_warn() {
 }
 
 codex_header() {
-  printf '\n== %s ==\n' "$*"
+  printf '\n== %s ==\n' "$*" >&2
 }
 
 codex_repo_root() {
@@ -45,11 +45,11 @@ export PYTHONUNBUFFERED=1
 
 codex_run() {
   local arg
-  printf '+'
+  printf '+' >&2
   for arg in "$@"; do
-    printf ' %q' "$arg"
+    printf ' %q' "$arg" >&2
   done
-  printf '\n'
+  printf '\n' >&2
   "$@"
 }
 
