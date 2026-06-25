@@ -22,6 +22,48 @@ python scripts/triage/triage.py frontier --mode implement --json
 The tool does not create issues, rewrite issue bodies, close issues, create
 labels, create milestones, create Projects, or change repository settings.
 
+## Quick start
+
+The stable wrappers under `.codex/bin/` run the same commands with the repo's
+virtualenv and route status to stderr, so `--json` stdout stays valid JSON.
+
+```bash
+# One-time: create the credential-free virtualenv the wrappers use.
+bash .codex/bin/setup.sh
+
+# Read-only audit of the whole tracker (live; needs an authenticated gh).
+bash .codex/bin/action.sh audit --json | jq .
+bash .codex/bin/action.sh audit                       # human-readable
+
+# Audit only specific issues.
+bash .codex/bin/action.sh audit --issues 68,69,70,54 --json \
+  | jq '.issues[] | {issue_number, governance_state, implementation_state}'
+
+# Capture a snapshot once, then audit it offline (no further GitHub reads).
+python scripts/triage/triage.py snapshot --output output/triage/snapshot.json
+bash .codex/bin/action.sh audit --snapshot output/triage/snapshot.json --json
+
+# Frontier selection (read-only).
+bash .codex/bin/action.sh frontier audit --json | jq '{selected_issue, candidates}'
+python scripts/triage/triage.py plan --snapshot output/triage/snapshot.json \
+  --output-dir output/triage/plan
+bash .codex/bin/action.sh frontier implement \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/plan/audit.json --json
+```
+
+Notes:
+
+- `snapshot` and a live `audit` read the tracker through `gh`; without `gh` on
+  the PATH they fail, so generate the snapshot where `gh` is available and use
+  the `--snapshot` path elsewhere.
+- The implementation frontier requires the readiness audit to cover every issue
+  it will rank. A partial `--audit-file` built with `--issues` is rejected
+  unless `frontier` is run with the same `--issues` scope.
+- These commands never mutate GitHub. The only write path is `apply`, which
+  additionally requires `--execute`, an exact-repository confirmation, and
+  `TRIAGE_ENABLE_GITHUB_WRITES=1`.
+
 ## Source of truth
 
 The tool follows this order:
