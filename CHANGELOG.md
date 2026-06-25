@@ -104,7 +104,10 @@ tool cannot draft them without inventing facts.
 - I documented the assist flow and its guardrails in `docs/ISSUE_GOVERNANCE.md`.
   No deterministic code, command surface, or mutation allowlist changed.
 
-### Fix implementation frontier rejecting merged pull-request dependencies
+### Fix frontier merged-PR dependencies and scoped-audit cycle leakage
+
+Two scope/dependency-resolution correctness fixes in the issue-governance
+toolchain. Both remain read-only and offline.
 
 The readiness audit was made pull-request-aware, but the implementation
 frontier's own dependency-closure re-check still consulted only the issue map.
@@ -122,6 +125,16 @@ negative that kept implementable work out of the frontier.
   pulls map, so the packet reports its real state instead of `unknown`.
 - I added frontier tests: a merged-PR dependency is implementable, an open-PR
   dependency is rejected, and the worker packet reports the PR's closed state.
+- I scoped the metadata audit to the requested issues. A scoped
+  `audit --issues N` previously ran `audit_snapshot` over the whole snapshot and
+  only post-filtered findings carrying an `issue` field, so a global finding such
+  as a dependency cycle among unrelated issues (which has no `issue`) survived
+  and could make the single-issue audit exit with errors. `make_readiness_audit`
+  now passes the same `issue_filter` into `audit_snapshot`, which already drops
+  out-of-scope issue-keyed findings and suppresses cycles that do not touch the
+  filter; the redundant post-filter is removed.
+- I added scoped-audit tests: an unrelated dependency cycle is excluded from a
+  single-issue audit, while a cycle that includes the requested issue is kept.
 
 
 <!-- BEGIN #39 -->

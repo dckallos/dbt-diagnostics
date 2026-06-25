@@ -3083,13 +3083,14 @@ def make_readiness_audit(
         semantic_evidence=semantic_evidence,
         issue_filter=issue_filter,
     )
-    metadata_findings = audit_snapshot(snapshot, policy, root=ROOT)
-    if issue_filter is not None:
-        metadata_findings = [
-            item
-            for item in metadata_findings
-            if item.get("issue") is None or item.get("issue") in issue_filter
-        ]
+    # Scope the metadata audit to the same issue filter so cross-issue global
+    # findings (for example a dependency cycle among issues outside the filter)
+    # cannot make a single-issue audit fail. audit_snapshot already drops
+    # out-of-scope issue-keyed findings and suppresses cycles that do not touch
+    # the filter, so no separate post-filter is needed.
+    metadata_findings = audit_snapshot(
+        snapshot, policy, root=ROOT, issue_filter=issue_filter
+    )
     readiness["metadata_findings"] = metadata_findings
     readiness["metadata_finding_count"] = len(metadata_findings)
     # Record the scope this audit was built with so consumers can detect a

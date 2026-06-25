@@ -522,6 +522,45 @@ def test_dependency_cycle_detection_is_canonical() -> None:
     assert cycles == [[1, 2, 3, 1]]
 
 
+def test_scoped_audit_excludes_unrelated_dependency_cycle() -> None:
+    # `audit --issues 1` must not fail because of a dependency cycle among other
+    # issues. The metadata audit is scoped to the same issue filter, so a cycle
+    # that does not touch the requested issue is not reported.
+    snap = snapshot(
+        [
+            issue(1, title="fix: a", body="Self-contained.", labels=["bug"]),
+            issue(2, title="fix: b", body="Depends on: #3", labels=["bug"]),
+            issue(3, title="fix: c", body="Depends on: #2", labels=["bug"]),
+        ],
+        labels=["bug"],
+    )
+
+    audit = triage.make_readiness_audit(snap, policy(), issue_filter={1})
+
+    codes = {finding["code"] for finding in audit["metadata_findings"]}
+    assert "dependency-cycle" not in codes
+
+
+def test_scoped_audit_keeps_cycle_touching_requested_issue() -> None:
+    # A cycle that includes the requested issue is still reported.
+    snap = snapshot(
+        [
+            issue(1, title="fix: a", body="Depends on: #2", labels=["bug"]),
+            issue(2, title="fix: b", body="Depends on: #1", labels=["bug"]),
+        ],
+        labels=["bug"],
+    )
+
+    audit = triage.make_readiness_audit(snap, policy(), issue_filter={1})
+
+    cycle = [
+        finding
+        for finding in audit["metadata_findings"]
+        if finding["code"] == "dependency-cycle"
+    ]
+    assert cycle and cycle[0]["level"] == "error"
+
+
 def test_blocks_relation_reverses_dependency_edge() -> None:
     snap = snapshot(
         [
