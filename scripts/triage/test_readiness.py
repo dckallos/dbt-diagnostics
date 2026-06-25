@@ -398,7 +398,7 @@ def test_explicit_ownership_overlap_is_detected(tmp_path: Path) -> None:
     assert states == {
         1: "needs_contract_revision",
         2: "needs_contract_revision",
-    } or set(states.values()) == {"overlapping"}
+    }
     assert all(item["overlap_conflicts"] for item in result["issues"])
 
 
@@ -474,3 +474,126 @@ def test_audit_digest_and_order_are_deterministic(tmp_path: Path) -> None:
     )
     assert [item["issue_number"] for item in first["issues"]] == [1, 2]
     assert first["audit_digest"] == second["audit_digest"]
+
+
+def test_bold_relationship_labels_with_colon_inside_bold_are_parsed() -> None:
+    body = """## Traceability
+
+- **Depends on:** #2
+- **Parent epic:** #4
+- **Related:** #6
+- **Supersedes:** #7
+- **Ownership:** coordinator validation
+"""
+    parsed = readiness.parse_relationships(body)
+    assert parsed.dependencies == (2,)
+    assert parsed.parent_epics == (4,)
+    assert parsed.related == (6,)
+    assert parsed.supersedes == (7,)
+    assert parsed.ownership == ("coordinator validation",)
+
+
+def test_release_gate_honors_current_policy_keys_and_dependency_closure() -> None:
+    snap = snapshot(
+        {
+            "number": 9,
+            "state": "open",
+            "title": "[Epic] Release",
+            "labels": ["epic"],
+            "body": "## Ship gate\n\n- [ ] #8\n",
+        },
+        {
+            "number": 8,
+            "state": "open",
+            "title": "fix: gate",
+            "labels": ["bug"],
+            "body": "- **Depends on:** #6\n",
+        },
+        {
+            "number": 7,
+            "state": "open",
+            "title": "fix: configured",
+            "labels": ["bug"],
+            "body": "",
+        },
+        {
+            "number": 6,
+            "state": "open",
+            "title": "fix: dependency",
+            "labels": ["bug"],
+            "body": "",
+        },
+    )
+    value = policy()
+    value["release"] = {
+        "milestone_number": 1,
+        "epic_numbers": [9],
+        "section_headings": ["Ship gate"],
+        "additional_issue_numbers": [7],
+        "include_epics": False,
+        "include_dependency_closure": True,
+    }
+    assert readiness.derive_release_gate(snap, value) == [6, 7, 8]
+
+
+def test_closed_dependency_with_merge_evidence_remains_ready(tmp_path: Path) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    snap = snapshot(
+        {
+            "number": 1,
+            "state": "open",
+            "title": "fix: ready",
+            "labels": ["bug"],
+            "body": bug_body("- **Depends on:** #2"),
+        },
+        {
+            "number": 2,
+            "state": "closed",
+            "state_reason": "completed",
+            "title": "fix: merged dependency",
+            "labels": ["bug"],
+            "body": bug_body(),
+        },
+    )
+    result = readiness.audit_all_issues(
+        snap,
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic(dependency_merge_evidence=True)},
+    )
+    item = next(value for value in result["issues"] if value["issue_number"] == 1)
+    assert item["governance_state"] == "conformant"
+    assert item["implementation_state"] == "ready"
+    assert item["dependency_merge_evidence"] is True
+    assert not any(
+        finding["code"] == "closed-dependency" for finding in item["tracker_findings"]
+    )
+
+
+def test_live_snapshot_pull_request_keys_are_consumed(tmp_path: Path) -> None:
+    issue = {
+        "number": 1,
+        "state": "open",
+        "title": "fix: ready",
+        "labels": ["bug"],
+        "body": bug_body(),
+    }
+    open_pull = {
+        "number": 10,
+        "state": "open",
+        "title": "Fixes #1",
+        "body": "",
+        "head_ref": "fix/1-ready",
+        "base_ref": "wrong-base",
+    }
+    for key in ("pull_requests", "open_pull_requests"):
+        snap = snapshot(issue)
+        snap.pop("pulls")
+        snap[key] = [open_pull]
+        assert readiness.active_pr_conflicts(1, snap) == [10]
+        result = readiness.audit_all_issues(snap, policy(), root=tmp_path)
+        assert any(
+            finding["code"] == "pull-request-base-drift"
+            for finding in result["global_findings"]
+        )

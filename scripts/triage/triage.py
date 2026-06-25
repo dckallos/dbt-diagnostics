@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Plan and audit GitHub issue governance with explicit approval gates.
 
-Snapshot, audit, and plan are read-only. Apply performs a live preflight before
-any selected operation. A real write additionally requires --execute, an exact
-repository confirmation, and TRIAGE_ENABLE_GITHUB_WRITES=1.
+Snapshot, audit, plan, contract, review-packet, standardize, and frontier do
+not mutate GitHub. Apply performs a live preflight before any selected operation.
+A real metadata write additionally requires --execute, an exact repository
+confirmation, and TRIAGE_ENABLE_GITHUB_WRITES=1.
 """
 
 from __future__ import annotations
@@ -30,6 +31,14 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.11+ is required.
     tomllib = None  # type: ignore[assignment]
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.triage import contract as issue_contract  # noqa: E402
+from scripts.triage import frontier as issue_frontier  # noqa: E402
+from scripts.triage import readiness as issue_readiness  # noqa: E402
+from scripts.triage import common as governance_common  # noqa: E402
+
 DEFAULT_POLICY = ROOT / "scripts" / "triage" / "policy.toml"
 DEFAULT_REPO = "dckallos/dbt-diagnostics"
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "triage"
@@ -57,7 +66,7 @@ RELATION_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
     r"(?P<kind>depends\s+on|blocked\s+by|requires|must\s+land\s+after|"
     r"blocks|must\s+land\s+before|parent\s+epic|related|coordinates\s+with|"
-    r"supersedes)\b(?:\*\*)?[^:\n]*:\s*(?P<refs>[^\n]*)$"
+    r"supersedes)\b(?:\*\*)?[^:\n]*:\s*(?:\*\*)?\s*(?P<refs>[^\n]*)$"
 )
 DECLARED_OPEN_RE = re.compile(
     r"(?im)^\s*[-*]?\s*Open\s+(?P<kind>issues?|PRs?)\s*:\s*(?P<refs>[^\n]*)$"
@@ -2720,10 +2729,15 @@ def write_plan_bundle(
     findings: Sequence[Mapping[str, Any]],
     snapshot: Mapping[str, Any],
     output_dir: Path,
+    *,
+    readiness_audit: Mapping[str, Any] | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "snapshot.json", snapshot)
-    write_json(output_dir / "audit.json", list(findings))
+    write_json(
+        output_dir / "audit.json",
+        dict(readiness_audit) if readiness_audit is not None else list(findings),
+    )
     write_json(output_dir / "plan.json", plan)
     atomic_write_text(output_dir / "plan.md", render_plan_markdown(plan, findings))
     write_json(output_dir / "approval.template.json", approval_template(plan))
@@ -2986,6 +3000,276 @@ def parse_issue_filter(value: str | None) -> set[int] | None:
     return result
 
 
+def parse_frontier_issue_filter(
+    value: str | None, *, force_empty: bool = False
+) -> set[int] | None:
+    """Parse a frontier filter, including an explicit empty selection."""
+
+    if force_empty:
+        if value is not None:
+            raise TriageError("--empty-selection cannot be combined with --issues")
+        return set()
+    if value is None:
+        return None
+    if value.strip().casefold() in {"", "none", "empty"}:
+        return set()
+    return parse_issue_filter(value)
+
+
+def issue_from_snapshot(snapshot: Mapping[str, Any], number: int) -> dict[str, Any]:
+    issues = governance_common.issue_map(snapshot)
+    issue = issues.get(number)
+    if issue is None:
+        raise TriageError(f"issue #{number} is not present in the snapshot")
+    return issue
+
+
+def load_semantic_evidence(path: Path | None) -> dict[int, dict[str, Any]] | None:
+    if path is None:
+        return None
+    raw = load_json_file(path, "semantic evidence JSON")
+    result: dict[int, dict[str, Any]] = {}
+    entries = raw.get("issues")
+    if isinstance(entries, list):
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise TriageError(
+                    f"semantic evidence issues[{index}] must be an object"
+                )
+            number = entry.get("issue_number", entry.get("number"))
+            if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+                raise TriageError(
+                    f"semantic evidence issues[{index}] has an invalid issue number"
+                )
+            evidence = entry.get("semantic_review", entry.get("evidence"))
+            if evidence is None:
+                evidence = {
+                    key: item
+                    for key, item in entry.items()
+                    if key not in {"issue_number", "number"}
+                }
+            if not isinstance(evidence, dict):
+                raise TriageError(
+                    f"semantic evidence for issue #{number} must be an object"
+                )
+            if number in result:
+                raise TriageError(
+                    f"semantic evidence contains duplicate issue #{number}"
+                )
+            result[number] = dict(evidence)
+        return result
+
+    for key, evidence in raw.items():
+        if not isinstance(key, str) or not re.fullmatch(r"[1-9][0-9]*", key):
+            raise TriageError(
+                "semantic evidence must map positive issue-number strings to objects"
+            )
+        if not isinstance(evidence, dict):
+            raise TriageError(f"semantic evidence for issue #{key} must be an object")
+        result[int(key)] = dict(evidence)
+    return result
+
+
+def make_readiness_audit(
+    snapshot: Mapping[str, Any],
+    policy: Mapping[str, Any],
+    *,
+    semantic_evidence: Mapping[int, Mapping[str, Any]] | None = None,
+    issue_filter: set[int] | None = None,
+) -> dict[str, Any]:
+    if issue_filter is not None:
+        unknown = sorted(issue_filter - set(governance_common.issue_map(snapshot)))
+        if unknown:
+            raise TriageError(
+                f"issue filter contains unknown issue number(s): {unknown}"
+            )
+    readiness = issue_readiness.audit_all_issues(
+        snapshot,
+        policy,
+        root=ROOT,
+        semantic_evidence=semantic_evidence,
+        issue_filter=issue_filter,
+    )
+    metadata_findings = audit_snapshot(snapshot, policy, root=ROOT)
+    if issue_filter is not None:
+        metadata_findings = [
+            item
+            for item in metadata_findings
+            if item.get("issue") is None or item.get("issue") in issue_filter
+        ]
+    readiness["metadata_findings"] = metadata_findings
+    readiness["metadata_finding_count"] = len(metadata_findings)
+    readiness["audit_digest"] = governance_common.sha256_json(
+        {key: item for key, item in readiness.items() if key != "audit_digest"}
+    )
+    return readiness
+
+
+def validate_readiness_audit(
+    audit: Mapping[str, Any], snapshot: Mapping[str, Any]
+) -> None:
+    if audit.get("schema_version") != 1:
+        raise TriageError(
+            f"unsupported readiness audit schema_version: {audit.get('schema_version')}"
+        )
+    repository = governance_common.repository_name(snapshot)
+    if audit.get("repository") != repository:
+        raise TriageError("audit repository does not match the snapshot")
+    expected_snapshot_digest = governance_common.snapshot_digest(snapshot)
+    if audit.get("snapshot_digest") != expected_snapshot_digest:
+        raise TriageError("audit snapshot digest does not match the snapshot")
+    issues = audit.get("issues")
+    if not isinstance(issues, list):
+        raise TriageError("readiness audit issues must be a list")
+    declared_issue_count = audit.get("issue_count")
+    if (
+        isinstance(declared_issue_count, bool)
+        or not isinstance(declared_issue_count, int)
+        or declared_issue_count != len(issues)
+    ):
+        raise TriageError("readiness audit issue_count does not match issues")
+    snapshot_issues = set(governance_common.issue_map(snapshot))
+    seen: set[int] = set()
+    for index, entry in enumerate(issues):
+        if not isinstance(entry, dict):
+            raise TriageError(f"readiness audit issues[{index}] must be an object")
+        number = entry.get("issue_number")
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            raise TriageError(
+                f"readiness audit issues[{index}] has an invalid issue number"
+            )
+        if number in seen:
+            raise TriageError(f"readiness audit contains duplicate issue #{number}")
+        if number not in snapshot_issues:
+            raise TriageError(
+                f"readiness audit contains unknown snapshot issue #{number}"
+            )
+        seen.add(number)
+    actual = governance_common.sha256_json(
+        {key: item for key, item in audit.items() if key != "audit_digest"}
+    )
+    if audit.get("audit_digest") != actual:
+        raise TriageError(f"readiness audit digest mismatch: expected {actual}")
+
+
+def readiness_audit_has_errors(audit: Mapping[str, Any]) -> bool:
+    findings: list[Mapping[str, Any]] = []
+    global_findings = audit.get("global_findings")
+    if isinstance(global_findings, list):
+        findings.extend(item for item in global_findings if isinstance(item, Mapping))
+    metadata_findings = audit.get("metadata_findings")
+    if isinstance(metadata_findings, list):
+        findings.extend(item for item in metadata_findings if isinstance(item, Mapping))
+    for issue in audit.get("issues") or []:
+        if not isinstance(issue, Mapping):
+            continue
+        for key in ("contract_findings", "tracker_findings"):
+            values = issue.get(key)
+            if isinstance(values, list):
+                findings.extend(item for item in values if isinstance(item, Mapping))
+    return any(item.get("level") == "error" for item in findings)
+
+
+def print_readiness_audit(audit: Mapping[str, Any]) -> int:
+    print(f"Repository: {audit.get('repository')}")
+    print(f"Snapshot digest: {audit.get('snapshot_digest')}")
+    print(f"Audit digest: {audit.get('audit_digest')}")
+    print(f"Issues audited: {audit.get('issue_count', 0)}")
+    print(
+        "Governance states: "
+        + canonical_json(audit.get("governance_state_counts") or {})
+    )
+    print(
+        "Implementation states: "
+        + canonical_json(audit.get("implementation_state_counts") or {})
+    )
+    for finding in audit.get("global_findings") or []:
+        if isinstance(finding, Mapping):
+            print(
+                f"{str(finding.get('level') or 'info').upper()}: "
+                f"{finding.get('code')}: {finding.get('message')}"
+            )
+    for finding in audit.get("metadata_findings") or []:
+        if isinstance(finding, Mapping):
+            prefix = (
+                f"#{finding.get('issue')} "
+                if isinstance(finding.get("issue"), int)
+                else ""
+            )
+            print(
+                f"{str(finding.get('level') or 'info').upper()}: "
+                f"{prefix}{finding.get('code')}: {finding.get('message')}"
+            )
+    for issue in audit.get("issues") or []:
+        if not isinstance(issue, Mapping):
+            continue
+        print(
+            f"#{issue.get('issue_number')} "
+            f"governance={issue.get('governance_state')} "
+            f"implementation={issue.get('implementation_state')} "
+            f"disposition={issue.get('recommended_disposition')}"
+        )
+    return 1 if readiness_audit_has_errors(audit) else 0
+
+
+def contract_result(issue: Mapping[str, Any]) -> dict[str, Any]:
+    result = issue_contract.audit_contract(issue)
+    result.update(
+        {
+            "issue_number": issue.get("number"),
+            "title": issue.get("title"),
+            "body_digest": governance_common.sha256_json(issue.get("body") or ""),
+        }
+    )
+    return result
+
+
+def print_contract_result(result: Mapping[str, Any]) -> int:
+    print(f"Issue: #{result.get('issue_number')} {result.get('title')}")
+    print(f"Contract: {result.get('contract_id')} {result.get('contract_version')}")
+    print(f"Kind: {result.get('issue_kind')}")
+    print(f"Governance state: {result.get('governance_state')}")
+    for finding in result.get("findings") or []:
+        if isinstance(finding, Mapping):
+            print(
+                f"{str(finding.get('level') or 'info').upper()}: "
+                f"{finding.get('code')}: {finding.get('message')}"
+            )
+    return 0 if result.get("contract_accepted") else 1
+
+
+def issue_output_dir(issue_number: int, configured: Path | None) -> Path:
+    return configured or (DEFAULT_OUTPUT_DIR / "issues" / str(issue_number))
+
+
+def read_ascii_file(path: Path, label: str) -> str:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise TriageError(f"{label} not found: {path}") from exc
+    except OSError as exc:
+        raise TriageError(f"could not read {label}: {path}: {exc}") from exc
+    try:
+        governance_common.ensure_ascii_text(text, label=label)
+    except governance_common.TriageError as exc:
+        raise TriageError(str(exc)) from exc
+    return text
+
+
+def load_optional_mapping(path: Path | None, label: str) -> dict[str, Any]:
+    if path is None:
+        return {}
+    return load_json_file(path, label)
+
+
+def latest_progress_context() -> str | None:
+    entry = latest_progress_entry(ROOT / "docs" / "PROGRESS_LOG.md")
+    if entry is None:
+        return None
+    _date, text = entry
+    return text[:4000]
+
+
 def resolve_snapshot(
     args: argparse.Namespace,
     *,
@@ -3026,6 +3310,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="audit an existing snapshot without GitHub reads",
     )
+    audit.add_argument(
+        "--semantic-evidence",
+        type=Path,
+        help="optional local semantic-review evidence JSON",
+    )
 
     plan = subparsers.add_parser(
         "plan", help="write snapshot, audit, plan, and empty approval template"
@@ -3036,6 +3325,104 @@ def build_parser() -> argparse.ArgumentParser:
         dest="snapshot_file",
         type=Path,
         help="plan from an existing snapshot without GitHub reads",
+    )
+    plan.add_argument(
+        "--semantic-evidence",
+        type=Path,
+        help="optional local semantic-review evidence JSON for audit.json",
+    )
+
+    contract = subparsers.add_parser(
+        "contract", help="audit one issue against issue contract v1"
+    )
+    contract.add_argument("--issue", type=int, required=True)
+    contract.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        help="use an existing snapshot without GitHub reads",
+    )
+    contract.add_argument("--json", action="store_true", help="emit JSON")
+    contract.add_argument("--output", type=Path, help="also write JSON locally")
+
+    review_packet = subparsers.add_parser(
+        "review-packet", help="write one bounded local issue review packet"
+    )
+    review_packet.add_argument("--issue", type=int, required=True)
+    review_packet.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        help="use an existing snapshot without GitHub reads",
+    )
+    review_packet.add_argument(
+        "--semantic-evidence",
+        type=Path,
+        help="optional local semantic-review evidence JSON",
+    )
+    review_packet.add_argument("--output-dir", type=Path)
+    review_packet.add_argument("--json", action="store_true", help="emit packet JSON")
+
+    standardize = subparsers.add_parser(
+        "standardize", help="validate and package a proposed issue body locally"
+    )
+    standardize.add_argument("--issue", type=int, required=True)
+    standardize.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        help="use an existing snapshot without GitHub reads",
+    )
+    standardize.add_argument("--proposed-body", type=Path, required=True)
+    standardize.add_argument("--output-dir", type=Path)
+    standardize.add_argument("--json", action="store_true", help="emit result JSON")
+
+    frontier = subparsers.add_parser(
+        "frontier", help="select a deterministic audit or implementation frontier"
+    )
+    frontier.add_argument("--mode", choices=("audit", "implement"), required=True)
+    frontier.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        help="use an existing snapshot without GitHub reads",
+    )
+    frontier_audit_source = frontier.add_mutually_exclusive_group()
+    frontier_audit_source.add_argument(
+        "--audit-file",
+        type=Path,
+        help="consume an existing readiness audit JSON",
+    )
+    frontier_audit_source.add_argument(
+        "--semantic-evidence",
+        type=Path,
+        help="optional local semantic-review evidence JSON when auditing",
+    )
+    frontier.add_argument(
+        "--issues",
+        help="comma-separated eligible issue numbers; use 'none' for an explicit empty selection",
+    )
+    frontier.add_argument(
+        "--empty-selection",
+        action="store_true",
+        help="force an explicit empty frontier without selecting an issue",
+    )
+    frontier.add_argument("--json", action="store_true", help="emit coordinator JSON")
+    frontier.add_argument("--output", type=Path, help="write coordinator JSON locally")
+    frontier.add_argument(
+        "--packet-output",
+        type=Path,
+        help="write a bounded worker packet when an issue is selected",
+    )
+    frontier.add_argument(
+        "--branch-state",
+        type=Path,
+        help="optional caller-supplied local branch/worktree state JSON",
+    )
+    frontier.add_argument(
+        "--progress-context",
+        type=Path,
+        help="optional caller-supplied historical progress excerpt",
     )
 
     apply = subparsers.add_parser(
@@ -3093,25 +3480,191 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 print(text, end="")
             return 0
 
-        findings = audit_snapshot(
+        if args.command == "contract":
+            issue = issue_from_snapshot(snapshot, args.issue)
+            result = contract_result(issue)
+            if args.output:
+                write_json(args.output, result)
+            if args.json:
+                print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=True))
+                return 0 if result.get("contract_accepted") else 1
+            return print_contract_result(result)
+
+        if args.command == "review-packet":
+            issue = issue_from_snapshot(snapshot, args.issue)
+            semantic = load_semantic_evidence(args.semantic_evidence)
+            readiness_audit = make_readiness_audit(
+                snapshot, policy, semantic_evidence=semantic
+            )
+            validate_readiness_audit(readiness_audit, snapshot)
+            packet = issue_frontier.build_worker_packet(
+                args.issue,
+                snapshot,
+                readiness_audit,
+                root=ROOT,
+                progress_context=latest_progress_context(),
+            )
+            packet_errors = issue_frontier.validate_worker_packet(packet)
+            if packet_errors:
+                raise TriageError(
+                    "worker packet validation failed: " + "; ".join(packet_errors)
+                )
+            result = contract_result(issue)
+            output_dir = issue_output_dir(args.issue, args.output_dir)
+            write_json(output_dir / "review-packet.json", packet)
+            write_json(output_dir / "contract.json", result)
+            atomic_write_text(
+                output_dir / "proposed-body.md",
+                issue_contract.propose_normalized_body(issue),
+            )
+            status_stream = sys.stderr if args.json else sys.stdout
+            print(f"Wrote {output_dir / 'review-packet.json'}", file=status_stream)
+            print(f"Wrote {output_dir / 'contract.json'}", file=status_stream)
+            print(f"Wrote {output_dir / 'proposed-body.md'}", file=status_stream)
+            if args.json:
+                print(json.dumps(packet, indent=2, sort_keys=True, ensure_ascii=True))
+            return 0
+
+        if args.command == "standardize":
+            issue = issue_from_snapshot(snapshot, args.issue)
+            proposed_body = read_ascii_file(args.proposed_body, "proposed issue body")
+            proposed_issue = dict(issue)
+            proposed_issue["body"] = proposed_body
+            result = contract_result(proposed_issue)
+            payload = {
+                "schema_version": 1,
+                "repository": governance_common.repository_name(snapshot),
+                "issue_number": args.issue,
+                "source_body_digest": governance_common.sha256_json(
+                    issue.get("body") or ""
+                ),
+                "proposed_body_digest": governance_common.sha256_json(proposed_body),
+                "local_only": True,
+                "github_mutation": False,
+                "contract": result,
+            }
+            payload["standardization_digest"] = governance_common.sha256_json(payload)
+            output_dir = issue_output_dir(args.issue, args.output_dir)
+            atomic_write_text(output_dir / "proposed-body.md", proposed_body)
+            write_json(output_dir / "standardization.json", payload)
+            status_stream = sys.stderr if args.json else sys.stdout
+            print(f"Wrote {output_dir / 'proposed-body.md'}", file=status_stream)
+            print(f"Wrote {output_dir / 'standardization.json'}", file=status_stream)
+            if args.json:
+                print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True))
+            return 0 if result.get("contract_accepted") else 1
+
+        if args.command == "frontier":
+            if args.audit_file:
+                readiness_audit = load_json_file(
+                    args.audit_file, "readiness audit JSON"
+                )
+                validate_readiness_audit(readiness_audit, snapshot)
+            else:
+                semantic = load_semantic_evidence(args.semantic_evidence)
+                readiness_audit = make_readiness_audit(
+                    snapshot, policy, semantic_evidence=semantic
+                )
+                validate_readiness_audit(readiness_audit, snapshot)
+            issue_filter = parse_frontier_issue_filter(
+                args.issues, force_empty=args.empty_selection
+            )
+            if issue_filter:
+                unknown = sorted(
+                    issue_filter - set(governance_common.issue_map(snapshot))
+                )
+                if unknown:
+                    raise TriageError(
+                        f"frontier issue filter contains unknown issue number(s): {unknown}"
+                    )
+            coordinator = issue_frontier.build_coordinator_result(
+                args.mode,
+                snapshot,
+                readiness_audit,
+                issue_filter=issue_filter,
+            )
+            validation_errors = issue_frontier.validate_coordinator_result(coordinator)
+            if validation_errors:
+                raise TriageError(
+                    "coordinator validation failed: " + "; ".join(validation_errors)
+                )
+            status_stream = sys.stderr if args.json else sys.stdout
+            if args.output:
+                write_json(args.output, coordinator)
+                print(f"Wrote {args.output}", file=status_stream)
+            selected = coordinator.get("selected_issue")
+            if args.packet_output and isinstance(selected, int):
+                branch_state = load_optional_mapping(
+                    args.branch_state, "branch/worktree state JSON"
+                )
+                progress_context = (
+                    read_ascii_file(args.progress_context, "progress context")[:4000]
+                    if args.progress_context
+                    else latest_progress_context()
+                )
+                packet = issue_frontier.build_worker_packet(
+                    selected,
+                    snapshot,
+                    readiness_audit,
+                    root=ROOT,
+                    branch_state=branch_state,
+                    progress_context=progress_context,
+                )
+                packet_errors = issue_frontier.validate_worker_packet(packet)
+                if packet_errors:
+                    raise TriageError(
+                        "worker packet validation failed: " + "; ".join(packet_errors)
+                    )
+                write_json(args.packet_output, packet)
+                print(f"Wrote {args.packet_output}", file=status_stream)
+            elif args.packet_output:
+                print(
+                    "Frontier is empty; no worker packet was written.",
+                    file=status_stream,
+                )
+            if args.json:
+                print(
+                    json.dumps(coordinator, indent=2, sort_keys=True, ensure_ascii=True)
+                )
+            else:
+                print(f"Frontier mode: {args.mode}")
+                print(f"Selected issue: {selected}")
+                print(f"Reason: {coordinator.get('selection_reason')}")
+                print(f"Coordinator digest: {coordinator.get('coordinator_digest')}")
+            return 0
+
+        semantic = load_semantic_evidence(getattr(args, "semantic_evidence", None))
+        issue_filter = parse_issue_filter(getattr(args, "issues", None))
+        readiness_audit = make_readiness_audit(
             snapshot,
             policy,
-            issue_filter=parse_issue_filter(getattr(args, "issues", None)),
-            root=ROOT,
+            semantic_evidence=semantic,
+            issue_filter=issue_filter if args.command == "audit" else None,
         )
+        validate_readiness_audit(readiness_audit, snapshot)
+
         if args.command == "audit":
             if args.output:
-                write_json(args.output, findings)
+                write_json(args.output, readiness_audit)
             if args.json:
-                print(json.dumps(findings, indent=2, sort_keys=True, ensure_ascii=True))
-                return (
-                    1 if any(finding["level"] == "error" for finding in findings) else 0
+                print(
+                    json.dumps(
+                        readiness_audit, indent=2, sort_keys=True, ensure_ascii=True
+                    )
                 )
-            return print_audit(findings)
+                return 1 if readiness_audit_has_errors(readiness_audit) else 0
+            return print_readiness_audit(readiness_audit)
 
         if args.command == "plan":
+            findings = audit_snapshot(snapshot, policy, root=ROOT)
             plan_data = make_plan(snapshot, policy, findings)
-            write_plan_bundle(plan_data, findings, snapshot, args.output_dir)
+            write_plan_bundle(
+                plan_data,
+                findings,
+                snapshot,
+                args.output_dir,
+                readiness_audit=readiness_audit,
+            )
             for name in (
                 "snapshot.json",
                 "audit.json",
@@ -3125,7 +3678,7 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
 
         parser.error(f"unsupported command: {args.command}")
         return 2
-    except TriageError as exc:
+    except (TriageError, governance_common.TriageError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

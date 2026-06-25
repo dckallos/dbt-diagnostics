@@ -9,7 +9,7 @@ def snapshot(*issues: dict, pulls: list[dict] | None = None) -> dict:
     return {
         "schema_version": 2,
         "generated_at": "2026-06-24T00:00:00Z",
-        "snapshot_digest": "snap",
+        "snapshot_digest": "a" * 64,
         "repository": "dckallos/dbt-diagnostics",
         "issues": list(issues),
         "pulls": pulls or [],
@@ -38,8 +38,8 @@ def audit(*entries: dict) -> dict:
     return {
         "schema_version": 1,
         "repository": "dckallos/dbt-diagnostics",
-        "snapshot_digest": "snap",
-        "audit_digest": "audit",
+        "snapshot_digest": "a" * 64,
+        "audit_digest": "b" * 64,
         "issues": list(entries),
     }
 
@@ -226,6 +226,7 @@ Implement one issue.
     assert packet["acceptance_criteria"]
     assert packet["non_goals"]
     assert packet["historical_progress_is_authoritative"] is False
+    assert frontier.validate_worker_packet(packet) == []
 
 
 def test_frontier_has_no_worktree_or_github_side_effect(
@@ -246,3 +247,62 @@ def test_frontier_has_no_worktree_or_github_side_effect(
     assert result["selected_issue"] == 1
     assert calls == []
     assert list(tmp_path.iterdir()) == []
+
+
+def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:
+    snap = snapshot(issue(1))
+    snap.pop("snapshot_digest")
+    snap["snapshot_sha256"] = "c" * 64
+    snap["repository"] = {
+        "full_name": "dckallos/dbt-diagnostics",
+        "owner": "dckallos",
+        "name": "dbt-diagnostics",
+    }
+    results = audit(entry(1))
+    results["snapshot_digest"] = "c" * 64
+
+    result = frontier.build_coordinator_result("implement", snap, results)
+
+    assert result["repository"] == "dckallos/dbt-diagnostics"
+    assert result["snapshot_digest"] == "c" * 64
+    assert frontier.validate_coordinator_result(result) == []
+
+
+def test_coordinator_validation_rejects_bad_identity_fields() -> None:
+    result = frontier.build_coordinator_result(
+        "implement", snapshot(issue(1)), audit(entry(1))
+    )
+    result["repository"] = {"full_name": "dckallos/dbt-diagnostics"}
+    result["snapshot_digest"] = None
+    result["coordinator_digest"] = "not-a-digest"
+
+    errors = frontier.validate_coordinator_result(result)
+
+    assert "repository must be owner/name" in errors
+    assert "snapshot_digest must be a lowercase SHA-256 digest" in errors
+    assert "coordinator_digest must be a lowercase SHA-256 digest" in errors
+    assert "coordinator_digest mismatch" in errors
+
+
+def test_worker_packet_enforces_body_and_progress_bounds(tmp_path: Path) -> None:
+    long_body = "x" * (frontier.MAX_WORKER_ISSUE_BODY_CHARS + 100)
+    long_progress = "p" * (frontier.MAX_PROGRESS_CONTEXT_CHARS + 100)
+    snap = snapshot(issue(1, body=long_body))
+    results = audit(entry(1))
+
+    packet = frontier.build_worker_packet(
+        1,
+        snap,
+        results,
+        root=tmp_path,
+        progress_context=long_progress,
+    )
+
+    assert len(packet["issue"]["body"]) == frontier.MAX_WORKER_ISSUE_BODY_CHARS
+    assert packet["issue"]["body_truncated"] is True
+    assert (
+        len(packet["historical_progress_context"])
+        == frontier.MAX_PROGRESS_CONTEXT_CHARS
+    )
+    assert packet["historical_progress_truncated"] is True
+    assert frontier.validate_worker_packet(packet) == []

@@ -1389,3 +1389,437 @@ def test_cli_error_sanitizer_redacts_common_secret_shapes() -> None:
     assert "github_pat_" not in sanitized
     assert "hunter2" not in sanitized
     assert sanitized.count("<redacted>") >= 3
+
+
+def cli_contract_body() -> str:
+    return """## Summary
+
+I will complete one bounded governance integration.
+
+## Evidence and confidence
+
+I confirmed the command surface in scripts/triage/triage.py and its focused tests.
+
+## Current wrong behavior
+
+The advertised command does not dispatch through the CLI.
+
+## Root cause
+
+The parser does not connect the existing module implementation.
+
+## Expected behavior
+
+I will expose the existing implementation without broadening write authority.
+
+## Acceptance criteria
+
+- A positive offline command succeeds.
+- An invalid input is rejected.
+- A missing live dependency degrades without a GitHub write.
+- Existing metadata planning and apply gates remain unchanged in regression tests.
+
+## Focused test plan
+
+I will run positive, negative, degradation, and regression tests.
+
+## Scope and likely files
+
+- scripts/triage/triage.py
+- scripts/triage/test_triage.py
+
+## Explicit non-goals
+
+- I will not mutate an issue body.
+- I will not broaden the metadata operation allowlist.
+
+## Dependencies and traceability
+
+- None.
+"""
+
+
+def write_cli_offline_inputs(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path, dict[str, Any]]:
+    policy_path = tmp_path / "policy.toml"
+    policy_path.write_text(
+        triage.DEFAULT_POLICY.read_text(encoding="ascii"), encoding="ascii"
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    configured_labels = sorted(
+        {label for values in loaded_policy["labels"].values() for label in values}
+    )
+    saved_snapshot = snapshot(
+        [
+            issue(
+                101,
+                title="fix: wire governance command surface",
+                body=cli_contract_body(),
+                labels=["bug"],
+            )
+        ],
+        labels=configured_labels,
+    )
+    saved_snapshot["policy_sha256"] = triage.sha256_json(loaded_policy)
+    saved_snapshot["snapshot_sha256"] = triage.sha256_json(
+        triage.snapshot_without_digest(saved_snapshot)
+    )
+    snapshot_path = tmp_path / "snapshot.json"
+    write_json(snapshot_path, saved_snapshot)
+
+    semantic_path = tmp_path / "semantic.json"
+    write_json(
+        semantic_path,
+        {
+            "101": {
+                "status": "accepted",
+                "source_claims_checked": ["scripts/triage/triage.py"],
+                "tests_checked": ["scripts/triage/test_triage.py"],
+                "one_pr_coherent": True,
+                "confidence": "high",
+                "dependency_merge_evidence": True,
+            }
+        },
+    )
+    return policy_path, snapshot_path, semantic_path, saved_snapshot
+
+
+def test_help_lists_and_parses_all_eight_commands(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    expected = {
+        "snapshot",
+        "audit",
+        "plan",
+        "apply",
+        "contract",
+        "review-packet",
+        "standardize",
+        "frontier",
+    }
+    parser = triage.build_parser()
+    top_help = parser.format_help()
+    for command in expected:
+        assert command in top_help
+        with pytest.raises(SystemExit) as exc:
+            parser.parse_args([command, "--help"])
+        assert exc.value.code == 0
+    capsys.readouterr()
+
+
+def test_snapshot_and_apply_dispatch_through_main(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path, _snapshot_path, _semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    calls: list[str] = []
+
+    def fake_resolve_snapshot(*args: object, **kwargs: object) -> dict[str, Any]:
+        del args, kwargs
+        calls.append("snapshot")
+        return saved_snapshot
+
+    def fake_apply_plan(*args: object, **kwargs: object) -> int:
+        del args, kwargs
+        calls.append("apply")
+        return 0
+
+    monkeypatch.setattr(triage, "resolve_snapshot", fake_resolve_snapshot)
+    monkeypatch.setattr(triage, "apply_plan", fake_apply_plan)
+
+    assert (
+        triage.main(["--policy", str(policy_path), "snapshot"], runner=QueueRunner([]))
+        == 0
+    )
+    json.loads(capsys.readouterr().out)
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "apply",
+                "--plan",
+                str(tmp_path / "plan.json"),
+                "--approval",
+                str(tmp_path / "approval.json"),
+                "--plan-sha",
+                "a" * 64,
+                "--batch",
+                "bootstrap",
+                "--dry-run",
+            ],
+            runner=QueueRunner([]),
+        )
+        == 0
+    )
+    assert calls == ["snapshot", "apply"]
+
+
+def test_offline_contract_review_and_standardize_are_local_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, semantic_path, _saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    runner = QueueRunner([])
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "contract",
+            "--issue",
+            "101",
+            "--snapshot",
+            str(snapshot_path),
+            "--json",
+        ],
+        runner=runner,
+    )
+    assert code == 0
+    contract = json.loads(capsys.readouterr().out)
+    assert contract["contract_accepted"] is True
+
+    output_dir = tmp_path / "issue-101"
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "review-packet",
+            "--issue",
+            "101",
+            "--snapshot",
+            str(snapshot_path),
+            "--semantic-evidence",
+            str(semantic_path),
+            "--output-dir",
+            str(output_dir),
+            "--json",
+        ],
+        runner=runner,
+    )
+    assert code == 0
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["issue"]["number"] == 101
+    assert packet["issue"]["body_truncated"] is False
+    assert (output_dir / "review-packet.json").is_file()
+    assert (output_dir / "contract.json").is_file()
+    proposed_path = output_dir / "proposed-body.md"
+    assert proposed_path.is_file()
+
+    proposed_text = proposed_path.read_text(encoding="ascii")
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "standardize",
+            "--issue",
+            "101",
+            "--snapshot",
+            str(snapshot_path),
+            "--proposed-body",
+            str(proposed_path),
+            "--output-dir",
+            str(output_dir),
+            "--json",
+        ],
+        runner=runner,
+    )
+    assert code == 0
+    standardization = json.loads(capsys.readouterr().out)
+    assert standardization["local_only"] is True
+    assert standardization["github_mutation"] is False
+    assert (output_dir / "proposed-body.md").read_text(
+        encoding="ascii"
+    ) == proposed_text
+    assert runner.calls == []
+
+
+def test_audit_plan_and_frontier_compose_offline_deterministically(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, semantic_path, _saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    runner = QueueRunner([])
+
+    audit_path = tmp_path / "audit-unready.json"
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "audit",
+                "--snapshot",
+                str(snapshot_path),
+                "--output",
+                str(audit_path),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    audit_stdout = json.loads(capsys.readouterr().out)
+    assert audit_stdout == json.loads(audit_path.read_text(encoding="ascii"))
+    assert "metadata_findings" in audit_stdout
+    assert audit_stdout["issues"][0]["implementation_state"] == "needs_semantic_review"
+
+    audit_frontier_args = [
+        "--policy",
+        str(policy_path),
+        "frontier",
+        "--mode",
+        "audit",
+        "--snapshot",
+        str(snapshot_path),
+        "--audit-file",
+        str(audit_path),
+        "--json",
+    ]
+    assert triage.main(audit_frontier_args, runner=runner) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert triage.main(audit_frontier_args, runner=runner) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert first == second
+    assert first["selected_issue"] == 101
+
+    plan_dir = tmp_path / "plan"
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "plan",
+                "--snapshot",
+                str(snapshot_path),
+                "--semantic-evidence",
+                str(semantic_path),
+                "--output-dir",
+                str(plan_dir),
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    capsys.readouterr()
+    ready_audit = json.loads((plan_dir / "audit.json").read_text(encoding="ascii"))
+    assert ready_audit["issues"][0]["implementation_state"] == "ready"
+    triage.validate_readiness_audit(
+        ready_audit,
+        json.loads(snapshot_path.read_text(encoding="ascii")),
+    )
+
+    packet_path = tmp_path / "worker-packet.json"
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "frontier",
+                "--mode",
+                "implement",
+                "--snapshot",
+                str(snapshot_path),
+                "--audit-file",
+                str(plan_dir / "audit.json"),
+                "--packet-output",
+                str(packet_path),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    coordinator = json.loads(capsys.readouterr().out)
+    assert coordinator["selected_issue"] == 101
+    assert packet_path.is_file()
+    packet = json.loads(packet_path.read_text(encoding="ascii"))
+    assert packet["issue"]["number"] == 101
+    assert (
+        len(packet["issue"]["body"])
+        <= triage.issue_frontier.MAX_WORKER_ISSUE_BODY_CHARS
+    )
+
+    empty_packet = tmp_path / "empty-packet.json"
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "frontier",
+                "--mode",
+                "implement",
+                "--snapshot",
+                str(snapshot_path),
+                "--audit-file",
+                str(plan_dir / "audit.json"),
+                "--empty-selection",
+                "--packet-output",
+                str(empty_packet),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    empty = json.loads(capsys.readouterr().out)
+    assert empty["selected_issue"] is None
+    assert not empty_packet.exists()
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "frontier",
+                "--mode",
+                "implement",
+                "--snapshot",
+                str(snapshot_path),
+                "--audit-file",
+                str(plan_dir / "audit.json"),
+                "--issues",
+                "none",
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    empty_by_filter = json.loads(capsys.readouterr().out)
+    assert empty_by_filter["selected_issue"] is None
+    assert runner.calls == []
+
+
+def test_frontier_rejects_conflicting_audit_sources() -> None:
+    parser = triage.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(
+            [
+                "frontier",
+                "--mode",
+                "audit",
+                "--audit-file",
+                "audit.json",
+                "--semantic-evidence",
+                "semantic.json",
+            ]
+        )
+    assert exc.value.code == 2
+
+
+def test_metadata_mutation_allowlist_is_exact_and_body_updates_are_forbidden() -> None:
+    assert triage.SUPPORTED_OPERATION_KINDS == {
+        "issue.labels.add",
+        "issue.labels.remove",
+        "issue.milestone.set",
+        "issue.milestone.clear",
+    }
+    assert "issue.body.update" in triage.FORBIDDEN_OPERATION_KINDS
+    assert "issue.title.update" in triage.FORBIDDEN_OPERATION_KINDS
