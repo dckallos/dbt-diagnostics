@@ -375,7 +375,36 @@ def test_proposed_body_reaudits_without_required_section_errors() -> None:
     }
     proposed = contract.propose_normalized_body(issue)
     result = contract.audit_contract({**issue, "body": proposed})
+    # The proposed skeleton has all required sections present...
     assert result["missing_required_sections"] == []
+    # ...but unresolved placeholders must keep it non-conformant until a
+    # maintainer supplies real content.
+    assert result["governance_state"] == "needs_contract_revision"
+    assert result["contract_accepted"] is False
+    assert any(
+        finding["code"] == "unresolved-placeholder-section"
+        for finding in result["findings"]
+    )
+
+
+def test_proposed_body_is_conformant_once_placeholders_are_resolved() -> None:
+    issue = {
+        "number": 4,
+        "title": "fix: normalize this",
+        "labels": ["bug"],
+        "body": "## Summary\n\nCurrent text.",
+    }
+    proposed = contract.propose_normalized_body(issue)
+    resolved = proposed.replace(
+        contract.UNRESOLVED_PLACEHOLDER, "Concrete maintainer-supplied content."
+    )
+    result = contract.audit_contract({**issue, "body": resolved})
+    assert contract.UNRESOLVED_PLACEHOLDER not in resolved
+    assert result["missing_required_sections"] == []
+    assert not any(
+        finding["code"] == "unresolved-placeholder-section"
+        for finding in result["findings"]
+    )
     assert result["governance_state"] == "conformant"
 
 

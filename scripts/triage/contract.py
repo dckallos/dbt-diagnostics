@@ -11,6 +11,14 @@ from scripts.triage.common import iter_markdown_lines, normalize_labels, slugify
 CONTRACT_VERSION = "1.0"
 CONTRACT_ID = "dbt-diagnostics.issue-contract.v1"
 
+# Placeholder written into a proposed body for any section that could not be
+# established from the current issue. A body still containing it is unresolved
+# and must not be accepted until a maintainer replaces it with real content.
+UNRESOLVED_PLACEHOLDER = (
+    "Unknown. I could not establish this contract item from the current issue "
+    "body; maintainer review is required."
+)
+
 ISSUE_KINDS = (
     "bug_fix",
     "feature_enhancement",
@@ -1025,6 +1033,20 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
             }
         )
 
+    for section in sections:
+        if section.key is not None and UNRESOLVED_PLACEHOLDER in (section.content or ""):
+            findings.append(
+                {
+                    "level": "error",
+                    "code": "unresolved-placeholder-section",
+                    "message": (
+                        f"section '{_TITLE_BY_KEY[section.key]}' still contains the "
+                        "unresolved-placeholder text and needs real content"
+                    ),
+                    "section": section.key,
+                }
+            )
+
     error_codes = {
         finding["code"] for finding in findings if finding["level"] == "error"
     }
@@ -1156,9 +1178,7 @@ def propose_normalized_body(issue: Mapping[str, Any]) -> str:
         if existing and existing.content.strip():
             lines.append(existing.content.strip())
         else:
-            lines.append(
-                "Unknown. I could not establish this contract item from the current issue body; maintainer review is required."
-            )
+            lines.append(UNRESOLVED_PLACEHOLDER)
         lines.append("")
 
     unmapped = [
