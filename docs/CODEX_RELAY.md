@@ -1,5 +1,11 @@
 # Read-only relay and Codex work loop
 
+> Status: design and schema reference. PR #73 contains the frontier model and
+> schema files, but the live `triage.py` parser does not expose a `frontier`
+> command or worker-packet generator. The supported CLI surface is `snapshot`,
+> `audit`, `plan`, and `apply`. Command examples below describe deferred target
+> behavior and must not be treated as executable PR #73 instructions.
+
 This document describes how the governance audit feeds one bounded, accepted
 issue to a Codex worker. The relay is read-only. It does not edit GitHub, create
 a worktree, create a branch, or start a Codex thread as a side effect.
