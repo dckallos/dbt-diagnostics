@@ -208,7 +208,7 @@ def suggested_branch(entry: Mapping[str, Any], title: str) -> str:
         "docs_chore_release": "chore",
     }.get(kind, "chore")
     number = int(entry["issue_number"])
-    cleaned = re.sub(r"^(?:\[[^]]+\]\s*)?(?:[a-z]+):\s*", "", title, flags=re.I)
+    cleaned = re.sub(r"^(?:\[[^]]+\]\s*)?(?:[a-z]+)(?:\([^)]*\))?:\s*", "", title, flags=re.I)
     return f"{prefix}/{number}-{slugify(cleaned, max_length=48)}"
 
 

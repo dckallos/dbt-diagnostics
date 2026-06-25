@@ -401,3 +401,22 @@ Expected.
     }
     text = str(contract.audit_contract(issue))
     text.encode("ascii")
+
+
+def test_scoped_conventional_commit_prefixes_infer_kind_without_label() -> None:
+    assert contract.infer_issue_kind("fix(cli): resolve crash", []) == "bug_fix"
+    assert contract.infer_issue_kind("bug(parser): bad token", []) == "bug_fix"
+    assert (
+        contract.infer_issue_kind("refactor(core): split module", [])
+        == "refactor_architecture"
+    )
+    assert (
+        contract.infer_issue_kind("feat(api): add endpoint", [])
+        == "feature_enhancement"
+    )
+    assert (
+        contract.infer_issue_kind("test(triage): add cases", [])
+        == "test_verification"
+    )
+    # Unscoped conventional-commit prefixes still classify correctly.
+    assert contract.infer_issue_kind("fix: resolve crash", []) == "bug_fix"

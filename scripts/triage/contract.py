@@ -477,7 +477,7 @@ def infer_issue_kind(title: str, labels: Iterable[str] = ()) -> str:
         or normalized_title.startswith("epic:")
     ):
         return "epic"
-    prefix = re.split(r"[:\s]", normalized_title.lstrip("["), maxsplit=1)[0].rstrip("]")
+    prefix = re.split(r"[(:\s]", normalized_title.lstrip("["), maxsplit=1)[0].rstrip("]")
     if prefix in {"fix", "bug", "hotfix"} or "bug" in label_set:
         return "bug_fix"
     if prefix in {"feat", "feature", "enhancement"} or "enhancement" in label_set:

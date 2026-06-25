@@ -306,3 +306,11 @@ def test_worker_packet_enforces_body_and_progress_bounds(tmp_path: Path) -> None
     )
     assert packet["historical_progress_truncated"] is True
     assert frontier.validate_worker_packet(packet) == []
+
+
+def test_suggested_branch_strips_conventional_commit_scope() -> None:
+    entry = {"issue_kind": "bug_fix", "issue_number": 7}
+    branch = frontier.suggested_branch(entry, "fix(cli): resolve crash")
+    assert branch.startswith("fix/7-")
+    assert "cli" not in branch
+    assert "resolve-crash" in branch
