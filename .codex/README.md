@@ -88,11 +88,34 @@ python scripts/triage/triage.py snapshot \
   --output output/triage/snapshot.json
 python scripts/triage/triage.py audit
 python scripts/triage/triage.py audit --issues 54,68
+python scripts/triage/triage.py contract --issue 54
+python scripts/triage/triage.py review-packet --issue 54 \
+  --output-dir output/triage/issues/54
+python scripts/triage/triage.py standardize --issue 54 \
+  --proposed-body output/triage/issues/54/proposed-body.md \
+  --output-dir output/triage/issues/54
 python scripts/triage/triage.py plan --output-dir output/triage
+python scripts/triage/triage.py frontier --mode audit --json
+python scripts/triage/triage.py frontier --mode implement --json
 ```
 
-`plan` writes a normalized snapshot, audit findings, a digest-bound plan, a
-human-readable summary, and an approval template that approves nothing.
+For credential-free use, pass `--snapshot output/triage/snapshot.json` to the
+commands that inspect tracker state. `audit.json` written by `plan` or `audit
+--output` can be passed directly to `frontier --audit-file`.
+
+`plan` writes a normalized snapshot, a full readiness audit, a digest-bound
+metadata plan, a human-readable summary, and an approval template that approves
+nothing. `contract`, `review-packet`, and `standardize` write local files only.
+
+The stable frontier wrapper is:
+
+```bash
+bash .codex/bin/action.sh frontier audit --json
+bash .codex/bin/action.sh frontier implement --json
+```
+
+An empty implementation frontier is valid and reports `selected_issue: null`.
+Neither wrapper creates a branch, worktree, Codex thread, or GitHub mutation.
 
 A later approved session must run a live read-only preflight before a metadata
 write is eligible:
