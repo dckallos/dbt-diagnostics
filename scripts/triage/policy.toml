@@ -1,0 +1,77 @@
+# Issue governance policy for dckallos/dbt-diagnostics.
+#
+# This file stores stable process rules and explicitly approved desired metadata.
+# It does not cache issue bodies, titles, labels, milestones, or Project fields.
+
+[repository]
+owner = "dckallos"
+name = "dbt-diagnostics"
+default_branch = "donkey-kong-sandbox"
+
+[release]
+# Milestone numbers are stable repository-local identifiers. The live snapshot
+# records the current title and state before any operation is planned.
+milestone_number = 1
+epic_numbers = [4, 48, 68]
+section_headings = ["Initial-release gate", "Build order and rollback points"]
+additional_issue_numbers = []
+include_epics = true
+include_dependency_closure = true
+
+[project]
+# Leave disabled until the maintainer records the exact Project owner and number.
+# The planner never creates a Project.
+enabled = false
+owner_type = "user"
+owner = "dckallos"
+number = 0
+
+[labels]
+# These categories describe labels observed in the current tracker. A label can
+# be a title-alignment label without being an exclusive issue type.
+type = ["bug", "enhancement", "docs", "test", "chore", "spike", "epic"]
+area = ["architecture", "snowflake", "live", "compat", "lineage", "cli", "config", "output", "release"]
+constraint = ["tier-a", "tier-b", "decision-needed", "security", "blocked"]
+priority = ["priority: now", "priority: next", "priority: deferred"]
+
+[type_inference.prefixes]
+bug = ["fix:"]
+enhancement = ["feat:", "[Feature]"]
+docs = ["docs:"]
+test = ["test:"]
+chore = ["chore:"]
+spike = ["spike:"]
+epic = ["[Epic]"]
+architecture = ["refactor:"]
+
+[audit]
+# Exact-one-type enforcement remains off because the current tracker uses
+# architecture as the refactor template label rather than a dedicated type.
+require_open_issue_type_label = false
+check_title_label_alignment = true
+check_issue_references = true
+check_closed_checklist_refs = true
+check_closed_dependencies = true
+check_missing_repo_paths = true
+check_dependency_cycles = true
+check_release_milestone = true
+check_open_pr_base = true
+check_project_configuration = true
+check_progress_log_staleness = true
+check_unanchored_citations = true
+check_file_anchors = true
+recent_closed_days = 90
+
+[planning]
+# Staging changes keeps a later approved writer session reviewable. Unlisted
+# operations go to remaining. These lists affect batches only, never desired
+# metadata.
+default_batch = "remaining"
+bootstrap_issue_numbers = [68, 69, 70]
+canary_issue_numbers = [71, 72]
+remaining_issue_numbers = []
+
+[desired]
+# Add [[desired.issue]] entries only after a maintainer approves exact metadata.
+# Supported fields are number, batch, reason, labels_add, labels_remove, and
+# milestone_number (0 clears a milestone). Issue bodies and state are forbidden.

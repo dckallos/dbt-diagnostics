@@ -2,6 +2,141 @@
 
 ## [Unreleased]
 
+### Add issue contract, readiness audit, and read-only relay coordination
+
+- I added the versioned issue contract and separate governance/readiness states.
+- I exposed all eight documented commands: `snapshot`, `audit`, `plan`, `apply`,
+  `contract`, `review-packet`, `standardize`, and `frontier`.
+- I made audit output directly consumable by deterministic audit and
+  implementation frontier selection, including explicit empty selection and
+  bounded coordinator/worker-packet validation.
+- I kept contract review, review packets, and body standardization local-only.
+  Issue-body mutation remains forbidden and the metadata mutation allowlist is
+  unchanged.
+- I added focused governance tests, Codex relay documentation, stable read-only
+  wrappers, and minimal repository skills.
+
+### Fix governance triage readiness/contract correctness and relay stdout
+
+Follow-up correctness fixes to the issue-governance toolchain under
+`scripts/triage/`. All remain read-only and offline.
+
+- I made tracker resolution pull-request-aware. Direct dependencies and
+  unchecked checklist references that name a pull request are now resolved
+  against the pull-request map instead of only the issue map, so a dependency on
+  a merged/closed PR is satisfied (or correctly stale) rather than reported as a
+  missing reference that blocks the issue.
+- I made `Blocks: #N` an enforced inbound relationship. An open issue that
+  declares it blocks another issue now blocks that issue's readiness, rather
+  than being treated as an informational `related` reference.
+- I corrected issue-kind inference. A scoped Conventional Commit prefix such as
+  `fix(cli):` now strips the scope before matching, and the repository's
+  configured `docs` type label is recognized, so neither is misclassified as a
+  feature enhancement (with the wrong required sections and branch prefix).
+- I stopped negated prose from manufacturing required work. "No open decisions"
+  or "No external evidence required" no longer set the decision/external gates;
+  a term counts only when it is not immediately negated.
+- I made missing-path detection section-aware. A path named only in the
+  Scope/deliverable section is an intended new file and no longer blocks the
+  issue as a stale missing reference.
+- I made unresolved placeholders block acceptance. A proposed body that still
+  contains the generated "maintainer review is required" placeholder is reported
+  as `needs_contract_revision`, so `standardize` does not return success for an
+  unresolved contract.
+- I gated frontier selection on audit coverage. The frontier now requires the
+  readiness audit to cover every issue it will rank, so a partial
+  (issue-filtered) `--audit-file` can no longer silently mis-rank or empty the
+  frontier; the audit also records its `audit_scope`.
+- I routed relay wrapper status to stderr. `codex_header` and the `codex_run`
+  command trace now write to stderr, so `bash .codex/bin/action.sh frontier ...
+  --json` (and `audit --json`) emit valid JSON on stdout for schema/digest
+  consumers.
+
+### Make issue file references verifiable by content anchor
+
+Bare `path:line` citations in issue bodies are not reproducible -- line numbers
+drift as code changes, and an in-range line is no proof of freshness. The
+governance audit now reasons about citation content instead of position.
+
+- I added a shared anchor-aware citation parser (`parse_file_references` in
+  `scripts/triage/common.py`) that records line numbers, line ranges, symbol
+  anchors (`path:symbol`), and quoted-snippet anchors (`path "snippet"`). The
+  legacy `referenced_paths` helper is unchanged.
+- The readiness audit emits three advisory findings: `unanchored-file-citation`
+  (warning) recommends a stable anchor for a bare `path:line` or
+  `path:line-range`; `unresolved-file-anchor` (warning) fires when a cited
+  symbol or snippet no longer resolves in the current file; and
+  `line-citation-past-eof` (info) is a one-directional "definitely stale" signal
+  when a cited line exceeds the file's length. An in-range line is never
+  certified as fresh.
+- All three are advisory and never change `implementation_state`. A nonexistent
+  path stays reported once as `missing-repo-path` and is skipped by the anchor
+  check, so the same defect is not double-reported. The Scope/deliverable
+  section exemption from missing-path detection also exempts the citation smell.
+- I routed the `audit` command's path scan (`audit_snapshot` in
+  `scripts/triage/triage.py`) through the same shared parser so both audit
+  surfaces stay consistent, and added `check_unanchored_citations` and
+  `check_file_anchors` toggles to `[audit]` in `scripts/triage/policy.toml`
+  (default on).
+- I documented the verifiable-reference guidance in the issue contract and added
+  focused readiness tests for the smell, symbol and snippet resolution and
+  staleness, past-EOF detection, the deliverable exemption, and the
+  no-double-report behavior.
+
+### Add AI-assisted drafting of missing contract sections (skill assist layer)
+
+`review-packet` writes `proposed-body.md` with a placeholder for each section it
+cannot establish, and the contract audit rejects a body that still contains the
+placeholder. Filling those sections by hand is the slow step; the deterministic
+tool cannot draft them without inventing facts.
+
+- I extended the `issue-governance` skill with a bounded drafting subroutine: it
+  reads `contract.json` (missing sections) and `review-packet.json` (repository
+  context), drafts only the placeholder sections from cited source files, runs
+  `standardize` to confirm the contract passes, and presents the
+  placeholder-to-draft diff for maintainer review.
+- I kept the deterministic tool unchanged. It still emits placeholders and gates;
+  the drafting is an assistive, non-authoritative layer outside it.
+- I required drafts to cite verifiable anchors (`path:symbol` or `path "snippet"`,
+  never a bare `path:line`), to keep proven and inferred separate with
+  hypothesis labels and an open-questions list, to mark each drafted section with
+  a machine-authored provenance note, and to stop before any GitHub mutation.
+- I documented the assist flow and its guardrails in `docs/ISSUE_GOVERNANCE.md`.
+  No deterministic code, command surface, or mutation allowlist changed.
+
+### Fix frontier merged-PR dependencies and scoped-audit cycle leakage
+
+Two scope/dependency-resolution correctness fixes in the issue-governance
+toolchain. Both remain read-only and offline.
+
+The readiness audit was made pull-request-aware, but the implementation
+frontier's own dependency-closure re-check still consulted only the issue map.
+An otherwise-ready issue whose direct dependency was a merged pull request was
+rejected as "direct dependencies are not closed" (the PR number is absent from
+the issue map), even though `dependency_merge_evidence` was true -- a false
+negative that kept implementable work out of the frontier.
+
+- I made `implementation_frontier_candidates` in `scripts/triage/frontier.py`
+  pull-request-aware via a shared `_dependency_is_closed` helper: a dependency
+  is satisfied when it resolves to a closed issue or a closed pull request. The
+  companion `dependency_merge_evidence` guard is unchanged, so a closed-unmerged
+  PR dependency is still rejected.
+- I fixed `build_worker_packet` to resolve a pull-request dependency from the
+  pulls map, so the packet reports its real state instead of `unknown`.
+- I added frontier tests: a merged-PR dependency is implementable, an open-PR
+  dependency is rejected, and the worker packet reports the PR's closed state.
+- I scoped the metadata audit to the requested issues. A scoped
+  `audit --issues N` previously ran `audit_snapshot` over the whole snapshot and
+  only post-filtered findings carrying an `issue` field, so a global finding such
+  as a dependency cycle among unrelated issues (which has no `issue`) survived
+  and could make the single-issue audit exit with errors. `make_readiness_audit`
+  now passes the same `issue_filter` into `audit_snapshot`, which already drops
+  out-of-scope issue-keyed findings and suppresses cycles that do not touch the
+  filter; the redundant post-filter is removed.
+- I added scoped-audit tests: an unrelated dependency cycle is excluded from a
+  single-issue audit, while a cycle that includes the requested issue is kept.
+
+
 <!-- BEGIN #39 -->
 ### Detect mixed-version manifest/run_results pairs (feat, issue #39)
 

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/frontier-schema-v1.json",
+  "title": "dbt-diagnostics frontier coordinator result",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "mode",
+    "repository",
+    "generated_at",
+    "snapshot_digest",
+    "audit_digest",
+    "selected_issue",
+    "issue_contract_digest",
+    "governance_state",
+    "implementation_state",
+    "selection_reason",
+    "parent_epics",
+    "direct_dependencies",
+    "blockers",
+    "required_decisions",
+    "required_external_evidence",
+    "referenced_paths",
+    "suggested_branch",
+    "suggested_next_command",
+    "candidate_count",
+    "rejected_count",
+    "coordinator_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"enum": ["audit", "implement"]},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "generated_at": {"type": "string"},
+    "snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "audit_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "selected_issue": {"type": ["integer", "null"], "minimum": 1},
+    "issue_contract_digest": {"type": ["string", "null"]},
+    "governance_state": {"type": ["string", "null"]},
+    "implementation_state": {"type": ["string", "null"]},
+    "selection_reason": {"type": "string"},
+    "parent_epics": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "direct_dependencies": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "required_decisions": {"type": "array", "items": {"type": "string"}},
+    "required_external_evidence": {"type": "array", "items": {"type": "string"}},
+    "referenced_paths": {"type": "array", "items": {"type": "string"}},
+    "suggested_branch": {"type": ["string", "null"]},
+    "suggested_next_command": {"type": ["string", "null"]},
+    "candidate_count": {"type": "integer", "minimum": 0},
+    "rejected_count": {"type": "integer", "minimum": 0},
+    "score": {"type": "integer"},
+    "score_components": {
+      "type": "object",
+      "additionalProperties": {"type": "integer"}
+    },
+    "rejected_preview": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["issue_number", "title", "reasons"],
+        "properties": {
+          "issue_number": {"type": "integer", "minimum": 1},
+          "title": {"type": ["string", "null"]},
+          "reasons": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "coordinator_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

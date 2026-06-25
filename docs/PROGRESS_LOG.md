@@ -237,3 +237,67 @@ End of session -- 2026-06-16 audit and catch-up
 - `restrictions` must stay `null` (push-restriction lists are org-only).
 
 End of session -- 2026-06-16 branch-protection policy as code
+
+---
+
+## 2026-06-25 -- triage governance correctness pass and next-step handoff
+
+**What changed (branch chore/issue-governance; working tree, validate via CI)**
+- Nine read-only correctness fixes to the issue-governance toolchain under
+  `scripts/triage/`, each verified against source and reproduced before fixing:
+  1. PR-aware dependency resolution (`readiness.py`): dependencies that name a
+     pull request resolve against the PR map, not just the issue map.
+  2. Inbound `Blocks: #N` enforced as a real inbound block, not an
+     informational `related` reference (`readiness.py`).
+  3. Scoped Conventional Commit prefixes (`fix(cli):`) strip the scope before
+     kind inference (`contract.py`); branch slug too (`frontier.py`).
+  4. The configured `docs` type label is recognized in kind inference
+     (`contract.py`).
+  5. Negation-aware decision/external detection (`readiness.py`): "No open
+     decisions" no longer manufactures required work.
+  6. Section-aware missing-path detection (`readiness.py`): paths named only in
+     the Scope/deliverable section are intended new files and do not block.
+  7. PR-aware stale checklist detection (`readiness.py`).
+  8. Unresolved-placeholder rejection in the contract audit (`contract.py`): a
+     proposed body still containing the generated placeholder is
+     `needs_contract_revision`, so `standardize` cannot return success for an
+     unresolved contract.
+  9. Frontier audit-coverage gate (`triage.py`): the frontier requires the
+     readiness audit to cover every issue it will rank; partial
+     (issue-filtered) `--audit-file` no longer silently mis-ranks. Audit records
+     `audit_scope`.
+- Two relay-wrapper fixes (`.codex/bin/common.sh`): `codex_header` and the
+  `codex_run` command trace now write to stderr, so `--json` stdout is valid
+  JSON for schema/digest consumers.
+- Tests added/updated in `test_readiness.py`, `test_contract.py`,
+  `test_frontier.py`, `test_triage.py`. CHANGELOG `[Unreleased]` entry added; a
+  Quick start added to `docs/ISSUE_GOVERNANCE.md`.
+
+**Validation note**
+- The sandbox has no `gh` and no network; `test_contract.py`/`test_triage.py`
+  import `pytest` (unavailable here), so those were validated by calling the
+  functions directly. `test_readiness.py`/`test_frontier.py` ran via a
+  pytest-free harness (readiness 29/29, frontier 15/15). CI `pytest` is the
+  authority and must be run before merge. `gh api --slurp` needs gh >= ~2.43.
+
+**Open follow-ups (planned for a fresh context)**
+- Enhancement A: AI-assisted authoring of missing contract sections in the
+  review-packet flow. The deterministic tool keeps emitting placeholders; an
+  agent (issue-governance skill) drafts them, a human reviews, and
+  `standardize` verifies structure. No determinism change.
+- Enhancement B: file references in issues. Bare `path:line` citations are
+  inherently untrustworthy and drift. Do NOT build the audit around validating
+  line numbers -- "in-range" must never be read as "fresh" (that repeats the
+  visibility-limited -> never_built anti-pattern this pass removed). Instead
+  prefer content-anchored references (symbol or quoted snippet the audit
+  re-locates) and flag bare line numbers as a citation smell. Out-of-range is
+  at most a one-directional "definitely stale" signal.
+- Contract-side conditional-section negation blindness (`contract.py`): same
+  naive term-presence problem as fix #5, in a different file.
+- None of the nine fixes are committed; no `CHANGELOG`/doc edits committed.
+
+**Be careful**
+- ASCII-only; do not add the "Co-authored with CoCo" marker to *.py/*.sql/*.ipynb
+  (repo voice rule + `check_no_attribution.sh` forbid it).
+
+End of session -- 2026-06-25 triage governance correctness pass

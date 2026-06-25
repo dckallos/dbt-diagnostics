@@ -1,0 +1,49 @@
+# Repository-local Codex app environment.
+# Keep app actions thin; command behavior lives under .codex/bin.
+version = 1
+name = "dbt-diagnostics"
+
+[setup]
+script = '''
+bash .codex/bin/setup.sh
+'''
+
+[[actions]]
+name = "Context"
+icon = "run"
+command = "bash .codex/bin/action.sh context"
+
+[[actions]]
+name = "Doctor"
+icon = "run"
+command = "bash .codex/bin/action.sh doctor"
+
+[[actions]]
+name = "Check"
+icon = "check"
+command = "bash .codex/bin/action.sh check"
+
+[[actions]]
+name = "Tests (offline)"
+icon = "test"
+command = "bash .codex/bin/action.sh offline"
+
+[[actions]]
+name = "Full pytest"
+icon = "test"
+command = "bash .codex/bin/action.sh full"
+
+[[actions]]
+name = "Compile"
+icon = "build"
+command = "bash .codex/bin/action.sh compile"
+
+[[actions]]
+name = "Issue audit"
+icon = "check"
+command = "bash .codex/bin/action.sh audit"
+
+[[actions]]
+name = "Package"
+icon = "build"
+command = "bash .codex/bin/action.sh package"

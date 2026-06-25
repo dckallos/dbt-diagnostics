@@ -23,3 +23,5 @@ coverage.xml
 format_files.sh
 output/code-snapshot.md
 output/extension-map.md
+output/triage/
+.DS_Store

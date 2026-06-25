@@ -1,0 +1,5 @@
+# Codex-only developer tools. Runtime and test dependencies remain in
+# pyproject.toml so this file does not become a second package dependency source.
+build>=1.2,<2
+pre-commit>=4,<5
+twine>=6,<7
