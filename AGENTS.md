@@ -84,6 +84,11 @@ plainly and directly.
 - The default setup installs only development dependencies. I set
   `CODEX_INSTALL_LIVE=1` only for explicitly approved Snowflake work, and I do
   not run a live test merely because the connector is installed.
+- I use the single controlled `.venv` that the `.codex` environment builds at
+  the repository root. I do not point `CODEX_VENV_DIR` at an alternate or
+  temporary virtual environment, and I do not spin up ad-hoc venvs to test other
+  Python versions. Local runs use that one `.venv`; multi-version (3.11/3.12)
+  coverage is CI's responsibility, not a local Codex action.
 - I treat GitHub metadata commands as read-only unless the task explicitly
   authorizes mutations. One metadata-writer session owns an approved batch.
 - Local Codex can edit workflow files in the checkout, but workflow, secret,

@@ -153,7 +153,7 @@ model_reasoning_summary = "concise"
 model_verbosity         = "low"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
-project_doc_max_bytes   = 32768                # explicit Codex default; AGENTS.md is ~7 KiB and docs/ never counts, so no raise is needed. Only raise if you add nested AGENTS.md files
+project_doc_max_bytes   = 49152                # headroom above the 32 KiB default; only matters if you add nested AGENTS.md files (docs/ never counts)
 
 [tools]
 web_search = true
@@ -227,7 +227,7 @@ default); once the cap is hit, later (more specific) files are dropped -- the
 most common cause of "Codex ignored my instructions." Only the AGENTS.md
 hierarchy counts toward this cap; `docs/` is loaded on demand and never merged
 in, so it does not consume the budget. This repository has a single root
-`AGENTS.md` of about 6 KiB, well under the default, so nothing is truncated
+`AGENTS.md` of about 7 KiB, well under the default, so nothing is truncated
 today; raising the cap (above) only matters if you later add nested `AGENTS.md`
 files whose combined size approaches 32 KiB. When Codex repeats a mistake,
 capture the lesson in `AGENTS.md`.
