@@ -420,3 +420,20 @@ def test_scoped_conventional_commit_prefixes_infer_kind_without_label() -> None:
     )
     # Unscoped conventional-commit prefixes still classify correctly.
     assert contract.infer_issue_kind("fix: resolve crash", []) == "bug_fix"
+
+
+def test_configured_docs_type_label_infers_docs_kind() -> None:
+    # policy.toml defines the documentation type label as "docs"; a neutral
+    # title must still be recognized via that configured label spelling.
+    assert (
+        contract.infer_issue_kind("update the contributor guide", ["docs"])
+        == "docs_chore_release"
+    )
+    # The legacy "documentation" spelling and "chore" remain recognized.
+    assert (
+        contract.infer_issue_kind("update the contributor guide", ["documentation"])
+        == "docs_chore_release"
+    )
+    assert (
+        contract.infer_issue_kind("housekeeping", ["chore"]) == "docs_chore_release"
+    )

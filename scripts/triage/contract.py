@@ -490,7 +490,7 @@ def infer_issue_kind(title: str, labels: Iterable[str] = ()) -> str:
         return "spike_decision"
     if prefix in {"docs", "documentation", "chore", "release", "build", "ci"}:
         return "docs_chore_release"
-    if label_set & {"documentation", "chore", "release"}:
+    if label_set & {"docs", "documentation", "chore", "release"}:
         return "docs_chore_release"
     return "feature_enhancement"
 
