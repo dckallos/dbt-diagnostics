@@ -11,6 +11,7 @@ from typing import Any, Iterable, Mapping
 from scripts.triage.common import (
     issue_map,
     normalize_issue,
+    parse_file_references,
     parse_iso_date,
     pull_map,
     referenced_paths,
@@ -298,6 +299,130 @@ def missing_paths(issue: Mapping[str, Any], root: Path) -> list[str]:
     return missing
 
 
+def _deliverable_reference_paths(sections: Iterable[Any]) -> set[str]:
+    paths: set[str] = set()
+    for section in sections:
+        if getattr(section, "key", None) in DELIVERABLE_SECTION_KEYS:
+            paths.update(ref.path for ref in parse_file_references(section.content))
+    return paths
+
+
+def unanchored_citations(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Flag file citations that pin a line number instead of a content anchor.
+
+    A bare ``path:line`` or ``path:line-range`` citation is advisory: line
+    numbers drift as code changes and are not reproducible, so the citation
+    should name a stable anchor (a symbol or a quoted snippet). Paths named only
+    as intended deliverables are exempt, mirroring ``missing_paths``. This does
+    not certify any line number as fresh -- it only recommends a verifiable
+    form.
+    """
+
+    body = issue.get("body") or ""
+    sections, _ = parse_sections(body)
+    deliverable_paths = _deliverable_reference_paths(sections)
+    smells: list[dict[str, Any]] = []
+    seen: set[tuple[str, int | None, int | None]] = set()
+    for ref in parse_file_references(body):
+        if ref.kind not in {"line", "range"} or ref.is_anchored:
+            continue
+        if ref.path in deliverable_paths:
+            continue
+        key = (ref.path, ref.line, ref.line_end)
+        if key in seen:
+            continue
+        seen.add(key)
+        smells.append(
+            {
+                "path": ref.path,
+                "line": ref.line,
+                "line_end": ref.line_end,
+                "raw": ref.raw,
+            }
+        )
+    return smells
+
+
+def verify_file_anchors(
+    issue: Mapping[str, Any], root: Path
+) -> dict[str, list[dict[str, Any]]]:
+    """Re-locate content anchors and flag definitely-stale line citations.
+
+    Anchors are confirmed against current file CONTENT, not position: a symbol
+    must still appear as a whole word and a quoted snippet as an exact
+    substring. An anchor that no longer resolves is reported as stale. A cited
+    line greater than the file's line count is reported as a one-directional
+    "definitely stale" signal; an in-range line is never treated as fresh.
+
+    Nonexistent paths are skipped here because ``missing_paths`` already reports
+    them as ``missing-repo-path``; this avoids double-reporting.
+    """
+
+    body = issue.get("body") or ""
+    unresolved: list[dict[str, Any]] = []
+    past_eof: list[dict[str, Any]] = []
+    cache: dict[str, tuple[str, int] | None] = {}
+
+    def load(path: str) -> tuple[str, int] | None:
+        if path not in cache:
+            file_path = root / path
+            if file_path.is_file():
+                try:
+                    text = file_path.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    cache[path] = None
+                else:
+                    cache[path] = (text, len(text.splitlines()))
+            else:
+                cache[path] = None
+        return cache[path]
+
+    seen_anchor: set[tuple[str, str]] = set()
+    seen_eof: set[tuple[str, int]] = set()
+    for ref in parse_file_references(body):
+        loaded = load(ref.path)
+        if loaded is None:
+            continue
+        text, line_count = loaded
+        anchor: str | None = None
+        anchor_type: str | None = None
+        resolved = True
+        if ref.symbol is not None:
+            anchor, anchor_type = ref.symbol, "symbol"
+            resolved = re.search(r"\b" + re.escape(ref.symbol) + r"\b", text) is not None
+        elif ref.snippet is not None:
+            anchor, anchor_type = ref.snippet, "snippet"
+            resolved = ref.snippet in text
+        if anchor is not None and not resolved:
+            key = (ref.path, anchor)
+            if key not in seen_anchor:
+                seen_anchor.add(key)
+                unresolved.append(
+                    {
+                        "path": ref.path,
+                        "anchor": anchor,
+                        "anchor_type": anchor_type,
+                        "raw": ref.raw,
+                    }
+                )
+        cited = [value for value in (ref.line, ref.line_end) if value is not None]
+        if cited:
+            highest = max(cited)
+            if highest > line_count:
+                key2 = (ref.path, highest)
+                if key2 not in seen_eof:
+                    seen_eof.add(key2)
+                    past_eof.append(
+                        {
+                            "path": ref.path,
+                            "line": highest,
+                            "line_count": line_count,
+                            "raw": ref.raw,
+                        }
+                    )
+    return {"unresolved_anchors": unresolved, "line_citations_past_eof": past_eof}
+
+
 def stale_checklist_refs(
     issue: Mapping[str, Any],
     issues: Mapping[int, Mapping[str, Any]],
@@ -542,6 +667,25 @@ def audit_issue(
     body = normalized.get("body") or ""
     relationships = parse_relationships(body)
     missing = missing_paths(normalized, root)
+    audit_cfg = policy.get("audit") if isinstance(policy.get("audit"), Mapping) else {}
+    check_citations = (
+        audit_cfg.get("check_unanchored_citations", True)
+        if isinstance(audit_cfg, Mapping)
+        else True
+    )
+    check_anchors = (
+        audit_cfg.get("check_file_anchors", True)
+        if isinstance(audit_cfg, Mapping)
+        else True
+    )
+    unanchored = unanchored_citations(normalized) if check_citations else []
+    anchor_report = (
+        verify_file_anchors(normalized, root)
+        if check_anchors
+        else {"unresolved_anchors": [], "line_citations_past_eof": []}
+    )
+    unresolved_anchors = anchor_report["unresolved_anchors"]
+    past_eof_citations = anchor_report["line_citations_past_eof"]
     stale_checklists = stale_checklist_refs(normalized, issues, pulls)
     # A dependency may reference an issue or a pull request, tracked in separate
     # snapshot maps. Resolve both so a PR dependency is not reported as absent.
@@ -697,6 +841,43 @@ def audit_issue(
                 "code": "missing-repo-path",
                 "message": "one or more referenced repository paths do not exist",
                 "data": missing,
+            }
+        )
+    if unanchored:
+        tracker_findings.append(
+            {
+                "level": "warning",
+                "code": "unanchored-file-citation",
+                "message": (
+                    "file citations pin a line number instead of a verifiable "
+                    "content anchor (a symbol or quoted snippet); line numbers "
+                    "drift and are not reproducible"
+                ),
+                "data": unanchored,
+            }
+        )
+    if unresolved_anchors:
+        tracker_findings.append(
+            {
+                "level": "warning",
+                "code": "unresolved-file-anchor",
+                "message": (
+                    "one or more cited content anchors no longer resolve in the "
+                    "referenced file and are stale"
+                ),
+                "data": unresolved_anchors,
+            }
+        )
+    if past_eof_citations:
+        tracker_findings.append(
+            {
+                "level": "info",
+                "code": "line-citation-past-eof",
+                "message": (
+                    "one or more cited line numbers are past the end of the "
+                    "referenced file and are definitely stale"
+                ),
+                "data": past_eof_citations,
             }
         )
     if milestone_drift:
@@ -866,6 +1047,9 @@ def audit_issue(
         "milestone_drift": milestone_drift,
         "stale_checklist_references": stale_checklists,
         "missing_repository_paths": missing,
+        "unanchored_file_citations": unanchored,
+        "unresolved_file_anchors": unresolved_anchors,
+        "line_citations_past_eof": past_eof_citations,
         "referenced_paths": referenced_paths(body),
         "active_pr_conflicts": pr_conflicts,
         "overlap_conflicts": issue_overlaps,

@@ -50,6 +50,14 @@ Separate what is proven from what is inferred or unknown. Cite concrete source
 files, functions, tests, artifact fixtures, tracker metadata, or external
 evidence. Mark unsupported assumptions as hypotheses.
 
+When you cite a source location, prefer a verifiable content anchor over a bare
+line number: name the symbol (`path:symbol`) or quote a short snippet
+(`path "snippet"`). Line numbers drift as code changes and are not reproducible,
+so a bare `path:line` citation is advisory only. The audit re-locates a symbol
+or snippet against current file content; it never certifies a line number as
+fresh, and only reports a line as definitely stale when it is past the end of
+the file.
+
 ### Acceptance criteria
 
 Use observable completion conditions. Each criterion should be verifiable by a

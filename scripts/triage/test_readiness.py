@@ -859,3 +859,134 @@ def test_dependency_on_closed_unmerged_pull_request_is_stale(tmp_path: Path) -> 
         finding["code"] == "closed-dependency"
         for finding in item["tracker_findings"]
     )
+
+
+def _refs_issue(body: str) -> dict:
+    return {
+        "number": 1,
+        "state": "open",
+        "title": "fix: refs",
+        "labels": ["bug"],
+        "body": body,
+    }
+
+
+def test_bare_line_citation_is_advisory_not_blocking(tmp_path: Path) -> None:
+    # A bare path:line citation is a smell, not a stale reference: line numbers
+    # drift and are not reproducible, so it stays advisory and does not block.
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    (tmp_path / "scripts/triage/common.py").write_text(
+        "def referenced_paths():\n    return []\n", encoding="ascii"
+    )
+    body = bug_body().replace(
+        "A boolean collapses multiple outcomes.",
+        "A boolean collapses multiple outcomes. See scripts/triage/common.py:1 here.",
+    )
+    result = readiness.audit_all_issues(
+        snapshot(_refs_issue(body)),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic()},
+    )
+    item = result["issues"][0]
+    finding = next(
+        value
+        for value in item["tracker_findings"]
+        if value["code"] == "unanchored-file-citation"
+    )
+    assert finding["level"] == "warning"
+    assert item["unanchored_file_citations"][0]["path"] == "scripts/triage/common.py"
+    assert item["implementation_state"] == "ready"
+
+
+def test_symbol_anchor_resolves_or_reports_stale(tmp_path: Path) -> None:
+    # A symbol anchor checks content, not position: a present symbol resolves
+    # and produces no smell; a renamed symbol is reported stale.
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    (tmp_path / "scripts/triage/common.py").write_text(
+        "def referenced_paths():\n    return []\n", encoding="ascii"
+    )
+
+    def audit(symbol: str) -> dict:
+        body = bug_body().replace(
+            "A boolean collapses multiple outcomes.",
+            f"A boolean collapses multiple outcomes. See scripts/triage/common.py:{symbol}.",
+        )
+        result = readiness.audit_all_issues(
+            snapshot(_refs_issue(body)),
+            policy(),
+            root=tmp_path,
+            semantic_evidence={1: accepted_semantic()},
+        )
+        return result["issues"][0]
+
+    present = audit("referenced_paths")
+    assert present["unresolved_file_anchors"] == []
+    assert all(
+        finding["code"] not in {"unresolved-file-anchor", "unanchored-file-citation"}
+        for finding in present["tracker_findings"]
+    )
+
+    stale = audit("gone_symbol")
+    assert stale["unresolved_file_anchors"][0]["anchor"] == "gone_symbol"
+    assert any(
+        finding["code"] == "unresolved-file-anchor" and finding["level"] == "warning"
+        for finding in stale["tracker_findings"]
+    )
+
+
+def test_snippet_anchor_past_eof_and_deliverable_exemption(tmp_path: Path) -> None:
+    # A resolving snippet yields no stale anchor; a line past EOF is a
+    # one-directional info-level "definitely stale" signal; and a bare line
+    # citation inside the deliverable scope section stays exempt from the smell.
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("alpha\nbeta\n", encoding="ascii")
+    (tmp_path / "scripts/triage/common.py").write_text(
+        "def referenced_paths():\n    return []\n", encoding="ascii"
+    )
+    body = bug_body().replace(
+        "A boolean collapses multiple outcomes.",
+        "A boolean collapses multiple outcomes. "
+        'See scripts/triage/common.py "def referenced_paths" and '
+        "scripts/triage/common.py:9999 here.",
+    ).replace("- scripts/triage/triage.py", "- scripts/triage/triage.py:1")
+    item = readiness.audit_all_issues(
+        snapshot(_refs_issue(body)),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic()},
+    )["issues"][0]
+    codes = {finding["code"] for finding in item["tracker_findings"]}
+    assert item["unresolved_file_anchors"] == []
+    assert "line-citation-past-eof" in codes
+    eof = next(
+        finding
+        for finding in item["tracker_findings"]
+        if finding["code"] == "line-citation-past-eof"
+    )
+    assert eof["level"] == "info"
+    assert item["line_citations_past_eof"][0]["line"] == 9999
+    smelled = {entry["path"] for entry in item["unanchored_file_citations"]}
+    assert "scripts/triage/triage.py" not in smelled
+
+
+def test_missing_path_not_double_reported_as_stale_anchor(tmp_path: Path) -> None:
+    # A nonexistent path is reported once as missing-repo-path; the anchor check
+    # skips it so the same defect is not also reported as a stale anchor.
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    body = bug_body().replace(
+        "A boolean collapses multiple outcomes.",
+        "A boolean collapses multiple outcomes. "
+        "See scripts/triage/ghost.py:missing_symbol here.",
+    )
+    item = readiness.audit_all_issues(
+        snapshot(_refs_issue(body)),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic()},
+    )["issues"][0]
+    assert item["missing_repository_paths"] == ["scripts/triage/ghost.py"]
+    assert item["unresolved_file_anchors"] == []

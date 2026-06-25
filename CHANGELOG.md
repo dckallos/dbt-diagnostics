@@ -52,6 +52,37 @@ Follow-up correctness fixes to the issue-governance toolchain under
   --json` (and `audit --json`) emit valid JSON on stdout for schema/digest
   consumers.
 
+### Make issue file references verifiable by content anchor
+
+Bare `path:line` citations in issue bodies are not reproducible -- line numbers
+drift as code changes, and an in-range line is no proof of freshness. The
+governance audit now reasons about citation content instead of position.
+
+- I added a shared anchor-aware citation parser (`parse_file_references` in
+  `scripts/triage/common.py`) that records line numbers, line ranges, symbol
+  anchors (`path:symbol`), and quoted-snippet anchors (`path "snippet"`). The
+  legacy `referenced_paths` helper is unchanged.
+- The readiness audit emits three advisory findings: `unanchored-file-citation`
+  (warning) recommends a stable anchor for a bare `path:line` or
+  `path:line-range`; `unresolved-file-anchor` (warning) fires when a cited
+  symbol or snippet no longer resolves in the current file; and
+  `line-citation-past-eof` (info) is a one-directional "definitely stale" signal
+  when a cited line exceeds the file's length. An in-range line is never
+  certified as fresh.
+- All three are advisory and never change `implementation_state`. A nonexistent
+  path stays reported once as `missing-repo-path` and is skipped by the anchor
+  check, so the same defect is not double-reported. The Scope/deliverable
+  section exemption from missing-path detection also exempts the citation smell.
+- I routed the `audit` command's path scan (`audit_snapshot` in
+  `scripts/triage/triage.py`) through the same shared parser so both audit
+  surfaces stay consistent, and added `check_unanchored_citations` and
+  `check_file_anchors` toggles to `[audit]` in `scripts/triage/policy.toml`
+  (default on).
+- I documented the verifiable-reference guidance in the issue contract and added
+  focused readiness tests for the smell, symbol and snippet resolution and
+  staleness, past-EOF detection, the deliverable exemption, and the
+  no-double-report behavior.
+
 
 <!-- BEGIN #39 -->
 ### Detect mixed-version manifest/run_results pairs (feat, issue #39)

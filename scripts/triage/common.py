@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -16,6 +17,22 @@ PATH_REF_RE = re.compile(
     r"[A-Za-z0-9_./@+\-]*)(?::(?P<line>[0-9]+))?"
 )
 URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/(?:issues|pull)/(\d+)")
+
+# Anchor-aware file-citation parser. The path alternation is a superset of the
+# legacy PATH_REF_RE matchers (directory prefixes that require a path tail, plus
+# the recognized root files), so a single parser can serve both audit surfaces.
+# After the path it captures, in order of precedence: a quoted snippet anchor, a
+# symbol anchor (an identifier after the colon), or a line / line-range. Only a
+# symbol or snippet is a verifiable content anchor; a bare line number is not.
+FILE_REF_RE = re.compile(
+    r"(?P<path>(?:(?:dbt_diagnostics|docs|scripts|\.github|\.codex|\.agents)/"
+    r"[A-Za-z0-9_./@+\-]+|AGENTS\.md|CONTRIBUTING\.md|README\.md|"
+    r"CHANGELOG\.md|SECURITY\.md|LICENSE|pyproject\.toml|\.gitignore|"
+    r"\.pre-commit-config\.yaml))"
+    r"(?::(?:(?P<line>[0-9]+)(?:-(?P<line_end>[0-9]+))?"
+    r"|(?P<symbol>[A-Za-z_][A-Za-z0-9_]*)))?"
+    r"(?:`?[ \t]+(?P<quote>[\"`])(?P<snippet>[^\"`\n]{1,200})(?P=quote))?"
+)
 
 
 class TriageError(RuntimeError):
@@ -103,6 +120,76 @@ def referenced_paths(text: str) -> list[str]:
             continue
         paths.add(path)
     return sorted(paths)
+
+
+@dataclass(frozen=True)
+class FileReference:
+    """A repository path citation parsed from issue text.
+
+    ``kind`` is one of ``bare``, ``line``, ``range``, ``symbol``, or
+    ``snippet``. ``line``/``line_end`` are set for line and range citations;
+    ``symbol`` or ``snippet`` is set for anchored citations. A citation is
+    content-verifiable (``is_anchored``) only when a symbol or snippet is
+    present -- a bare line number is a position, not an anchor.
+    """
+
+    raw: str
+    path: str
+    line: int | None = None
+    line_end: int | None = None
+    symbol: str | None = None
+    snippet: str | None = None
+    kind: str = "bare"
+
+    @property
+    def is_anchored(self) -> bool:
+        return self.symbol is not None or self.snippet is not None
+
+    @property
+    def is_directory(self) -> bool:
+        return self.path.endswith("/")
+
+
+def parse_file_references(text: str) -> list[FileReference]:
+    """Parse repository file citations, preserving any line or content anchor.
+
+    Unlike ``referenced_paths`` this keeps line numbers, line ranges, symbol
+    anchors, and quoted-snippet anchors, and retains directory paths (trailing
+    slash). It is the shared parser for every audit surface that reasons about
+    file citations.
+    """
+
+    refs: list[FileReference] = []
+    for match in FILE_REF_RE.finditer(text or ""):
+        path = match.group("path").rstrip(".,;:)\"]}'`")
+        if not path:
+            continue
+        line = int(match.group("line")) if match.group("line") else None
+        line_end = int(match.group("line_end")) if match.group("line_end") else None
+        symbol = match.group("symbol")
+        snippet = match.group("snippet")
+        if snippet is not None:
+            kind = "snippet"
+        elif symbol is not None:
+            kind = "symbol"
+        elif line is not None and line_end is not None:
+            kind = "range"
+        elif line is not None:
+            kind = "line"
+        else:
+            kind = "bare"
+        refs.append(
+            FileReference(
+                raw=match.group(0),
+                path=path,
+                line=line,
+                line_end=line_end,
+                symbol=symbol,
+                snippet=snippet,
+                kind=kind,
+            )
+        )
+    return refs
 
 
 def slugify(value: str, *, max_length: int = 48) -> str:

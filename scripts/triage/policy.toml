@@ -58,6 +58,8 @@ check_release_milestone = true
 check_open_pr_base = true
 check_project_configuration = true
 check_progress_log_staleness = true
+check_unanchored_citations = true
+check_file_anchors = true
 recent_closed_days = 90
 
 [planning]

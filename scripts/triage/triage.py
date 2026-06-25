@@ -52,13 +52,6 @@ GITHUB_API_VERSION = "2022-11-28"
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ISSUE_REF_RE = re.compile(r"(?<![A-Za-z0-9_])#(?P<number>[1-9][0-9]*)")
-PATH_REF_RE = re.compile(
-    r"(?P<path>(?:(?:dbt_diagnostics|docs|scripts|\.github|\.codex)/"
-    r"[A-Za-z0-9_./@+\-]+|AGENTS\.md|CONTRIBUTING\.md|README\.md|"
-    r"CHANGELOG\.md|SECURITY\.md|LICENSE|pyproject\.toml|\.gitignore|"
-    r"\.pre-commit-config\.yaml))"
-    r"(?::(?P<line>[0-9]+)(?:-(?P<end_line>[0-9]+))?)?"
-)
 MARKDOWN_HEADING_RE = re.compile(r"(?m)^(?P<marks>#{1,6})\s+(?P<title>.+?)\s*$")
 PROGRESS_DATE_RE = re.compile(r"(?m)^##\s+(?P<date>20\d\d-\d\d-\d\d)\b")
 UNCHECKED_LINE_RE = re.compile(r"(?im)^\s*[-*]\s+\[\s\]\s+(?P<body>[^\n]*)$")
@@ -1685,11 +1678,11 @@ def audit_snapshot(
             missing_files: set[str] = set()
             missing_directories: set[str] = set()
             body = str(issue.get("body") or "")
-            for match in PATH_REF_RE.finditer(body):
-                path_text = match.group("path").rstrip(".,;)]}`'")
+            for ref in governance_common.parse_file_references(body):
+                path_text = ref.path
                 if not path_text or (root / path_text).exists():
                     continue
-                if path_text.endswith("/"):
+                if ref.is_directory:
                     missing_directories.add(path_text)
                 else:
                     missing_files.add(path_text)
