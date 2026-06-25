@@ -299,20 +299,30 @@ def missing_paths(issue: Mapping[str, Any], root: Path) -> list[str]:
 
 
 def stale_checklist_refs(
-    issue: Mapping[str, Any], issues: Mapping[int, Mapping[str, Any]]
+    issue: Mapping[str, Any],
+    issues: Mapping[int, Mapping[str, Any]],
+    pulls: Mapping[int, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     stale: list[dict[str, Any]] = []
+    pulls = pulls or {}
     for match in CHECKLIST_REF_RE.finditer(issue.get("body") or ""):
         if match.group("done").lower() == "x":
             continue
         for reference in sorted(refs_in_text(match.group("text"))):
+            # A checklist item may reference an issue or a pull request; both are
+            # tracker items, so resolve against either map before judging it open.
             target = issues.get(reference)
+            is_pull_request = False
+            if target is None:
+                target = pulls.get(reference)
+                is_pull_request = target is not None
             if target and target.get("state") != "open":
                 stale.append(
                     {
                         "reference": reference,
                         "state": target.get("state"),
                         "state_reason": target.get("state_reason"),
+                        "is_pull_request": is_pull_request,
                         "text": match.group("text").strip(),
                     }
                 )
@@ -532,7 +542,7 @@ def audit_issue(
     body = normalized.get("body") or ""
     relationships = parse_relationships(body)
     missing = missing_paths(normalized, root)
-    stale_checklists = stale_checklist_refs(normalized, issues)
+    stale_checklists = stale_checklist_refs(normalized, issues, pulls)
     # A dependency may reference an issue or a pull request, tracked in separate
     # snapshot maps. Resolve both so a PR dependency is not reported as absent.
     closed_dependencies = referenced_closed_items(normalized, issues)

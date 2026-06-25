@@ -268,6 +268,44 @@ def test_scope_named_new_deliverable_does_not_block(tmp_path: Path) -> None:
     assert item["implementation_state"] == "ready"
 
 
+def test_unchecked_checklist_referencing_closed_pull_request_is_stale(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+
+    def audit(checkbox: str, pr_state: str):
+        body = bug_body().replace(
+            "- A positive case succeeds.",
+            f"- A positive case succeeds.\n- [{checkbox}] #73 land the relay",
+        )
+        issue = {
+            "number": 1,
+            "state": "open",
+            "title": "fix: ready",
+            "labels": ["bug"],
+            "body": body,
+        }
+        pr = {"number": 73, "state": pr_state, "state_reason": None}
+        result = readiness.audit_all_issues(
+            snapshot(issue, pulls=[pr]),
+            policy(),
+            root=tmp_path,
+            semantic_evidence={1: accepted_semantic()},
+        )
+        return result["issues"][0]
+
+    # Unchecked item referencing a closed PR is stale work.
+    stale = audit(" ", "closed")
+    assert stale["governance_state"] == "stale"
+    refs = stale["stale_checklist_references"]
+    assert any(r["reference"] == 73 and r["is_pull_request"] for r in refs)
+
+    # A checked item, or an open PR, is not stale.
+    assert audit("x", "closed")["stale_checklist_references"] == []
+    assert audit(" ", "open")["stale_checklist_references"] == []
+
+
 def test_one_pr_scope_warning_is_reported(tmp_path: Path) -> None:
     paths = "\n".join(f"- docs/path_{index}.md" for index in range(15))
     issue = {
