@@ -104,6 +104,25 @@ tool cannot draft them without inventing facts.
 - I documented the assist flow and its guardrails in `docs/ISSUE_GOVERNANCE.md`.
   No deterministic code, command surface, or mutation allowlist changed.
 
+### Fix implementation frontier rejecting merged pull-request dependencies
+
+The readiness audit was made pull-request-aware, but the implementation
+frontier's own dependency-closure re-check still consulted only the issue map.
+An otherwise-ready issue whose direct dependency was a merged pull request was
+rejected as "direct dependencies are not closed" (the PR number is absent from
+the issue map), even though `dependency_merge_evidence` was true -- a false
+negative that kept implementable work out of the frontier.
+
+- I made `implementation_frontier_candidates` in `scripts/triage/frontier.py`
+  pull-request-aware via a shared `_dependency_is_closed` helper: a dependency
+  is satisfied when it resolves to a closed issue or a closed pull request. The
+  companion `dependency_merge_evidence` guard is unchanged, so a closed-unmerged
+  PR dependency is still rejected.
+- I fixed `build_worker_packet` to resolve a pull-request dependency from the
+  pulls map, so the packet reports its real state instead of `unknown`.
+- I added frontier tests: a merged-PR dependency is implementable, an open-PR
+  dependency is rejected, and the worker packet reports the PR's closed state.
+
 
 <!-- BEGIN #39 -->
 ### Detect mixed-version manifest/run_results pairs (feat, issue #39)

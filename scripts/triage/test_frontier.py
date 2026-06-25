@@ -84,6 +84,69 @@ def entry(
     return value
 
 
+def test_merged_pull_request_dependency_is_implementable() -> None:
+    # A ready issue whose only direct dependency is a merged pull request must be
+    # a candidate. The PR lives in the pulls map, not issues, so the closure
+    # check must consult pull_map instead of rejecting it as not closed.
+    snap = snapshot(
+        issue(1),
+        pulls=[
+            {
+                "number": 73,
+                "state": "closed",
+                "state_reason": None,
+                "title": "land it",
+            }
+        ],
+    )
+    results = audit(entry(1, dependencies=[73], dependency_merge_evidence=True))
+    candidates, rejected = frontier.implementation_frontier_candidates(snap, results)
+    assert [item["issue_number"] for item in candidates] == [1]
+    assert rejected == []
+
+
+def test_open_pull_request_dependency_is_not_implementable() -> None:
+    # An open PR dependency is not closed, so the issue is rejected. This guards
+    # the closed-versus-open distinction the pull-aware check must preserve.
+    snap = snapshot(
+        issue(1),
+        pulls=[
+            {"number": 73, "state": "open", "state_reason": None, "title": "wip"}
+        ],
+    )
+    results = audit(entry(1, dependencies=[73], dependency_merge_evidence=True))
+    candidates, rejected = frontier.implementation_frontier_candidates(snap, results)
+    assert candidates == []
+    assert any(
+        "direct dependencies are not closed" in reason
+        for item in rejected
+        for reason in item["reasons"]
+    )
+
+
+def test_worker_packet_resolves_merged_pull_request_dependency(tmp_path: Path) -> None:
+    # The worker packet must show a merged-PR dependency with its real closed
+    # state, not "unknown", which it would report if it consulted only issues.
+    snap = snapshot(
+        issue(1),
+        pulls=[
+            {
+                "number": 73,
+                "state": "closed",
+                "state_reason": None,
+                "title": "land it",
+            }
+        ],
+    )
+    results = audit(entry(1, dependencies=[73], dependency_merge_evidence=True))
+    packet = frontier.build_worker_packet(1, snap, results, root=tmp_path)
+    dependency = next(
+        item for item in packet["dependencies"] if item["issue_number"] == 73
+    )
+    assert dependency["state"] == "closed"
+    assert dependency["title"] == "land it"
+
+
 def test_audit_frontier_prioritizes_unsafe_release_work() -> None:
     snap = snapshot(
         issue(1, labels=["bug", "priority: now"]),

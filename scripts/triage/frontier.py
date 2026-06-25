@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from scripts.triage.common import (
     issue_map,
+    pull_map,
     repository_name,
     sha256_json,
     slugify,
@@ -103,6 +104,28 @@ def audit_frontier_candidates(
     return sorted(candidates, key=lambda item: (-item["score"], item["issue_number"]))
 
 
+def _dependency_is_closed(
+    dependency: int,
+    issues: Mapping[int, Mapping[str, Any]],
+    pulls: Mapping[int, Mapping[str, Any]],
+) -> bool:
+    """A direct dependency is satisfied when it resolves to a closed issue or a
+    closed pull request. Pull requests live in a separate snapshot map, so a
+    merged-PR dependency must be looked up there rather than treated as missing
+    (and therefore unclosed). The companion dependency_merge_evidence guard
+    still requires recorded merge evidence, so a closed-unmerged PR is not let
+    through here alone.
+    """
+
+    target = issues.get(dependency)
+    if target is not None:
+        return target.get("state") == "closed"
+    pull = pulls.get(dependency)
+    if pull is not None:
+        return pull.get("state") == "closed"
+    return False
+
+
 def implementation_frontier_candidates(
     snapshot: Mapping[str, Any],
     audit: Mapping[str, Any],
@@ -110,6 +133,7 @@ def implementation_frontier_candidates(
     issue_filter: set[int] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     issues = issue_map(snapshot)
+    pulls = pull_map(snapshot)
     entries = _issue_entries(audit)
     candidates: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -146,7 +170,7 @@ def implementation_frontier_candidates(
         unclosed = [
             dependency
             for dependency in dependencies
-            if dependency not in issues or issues[dependency].get("state") != "closed"
+            if not _dependency_is_closed(dependency, issues, pulls)
         ]
         if unclosed:
             reasons.append(
@@ -464,9 +488,10 @@ def build_worker_packet(
         raise ValueError(f"issue #{issue_number} is not present in snapshot and audit")
     issue = issues[issue_number]
     entry = entries[issue_number]
+    pulls = pull_map(snapshot)
     dependencies = []
     for dependency in sorted(entry.get("direct_dependencies") or []):
-        target = issues.get(dependency)
+        target = issues.get(dependency) or pulls.get(dependency)
         dependencies.append(
             {
                 "issue_number": dependency,
