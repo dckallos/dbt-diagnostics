@@ -45,7 +45,12 @@ PARENT_LINE_RE = re.compile(
 )
 RELATED_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
-    r"(?:related|coordinates with|coordinate with|supports|consumed by|blocks)"
+    r"(?:related|coordinates with|coordinate with|supports|consumed by)"
+    r"\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
+)
+BLOCKS_LINE_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?:blocks)"
     r"\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
 )
 SUPERSEDES_LINE_RE = re.compile(
@@ -86,6 +91,7 @@ class RelationshipSet:
     dependencies: tuple[int, ...]
     parent_epics: tuple[int, ...]
     related: tuple[int, ...]
+    blocks: tuple[int, ...]
     supersedes: tuple[int, ...]
     ownership: tuple[str, ...]
 
@@ -102,6 +108,7 @@ def parse_relationships(body: str) -> RelationshipSet:
         dependencies=tuple(sorted(_line_refs(DEPENDENCY_LINE_RE, body))),
         parent_epics=tuple(sorted(_line_refs(PARENT_LINE_RE, body))),
         related=tuple(sorted(_line_refs(RELATED_LINE_RE, body))),
+        blocks=tuple(sorted(_line_refs(BLOCKS_LINE_RE, body))),
         supersedes=tuple(sorted(_line_refs(SUPERSEDES_LINE_RE, body))),
         ownership=tuple(
             sorted(
@@ -120,6 +127,23 @@ def dependency_graph(snapshot: Mapping[str, Any]) -> dict[int, set[int]]:
     for number, issue in issue_map(snapshot, include_closed=False).items():
         graph[number] = set(parse_relationships(issue.get("body") or "").dependencies)
     return graph
+
+
+def blocked_by_graph(snapshot: Mapping[str, Any]) -> dict[int, set[int]]:
+    """Map each issue to the issues that declare ``Blocks: #<it>``.
+
+    A ``Blocks`` edge on issue A is the inverse of a dependency: the named
+    target is blocked by A. The tracker often records the relationship only on
+    the blocker side, so readiness resolves it here and enforces it as an
+    inbound block, rather than treating ``Blocks`` as an informational
+    ``related`` reference. Closed issues are retained so the consumer can decide
+    that a closed blocker no longer blocks.
+    """
+    blocked_by: dict[int, set[int]] = defaultdict(set)
+    for number, issue in issue_map(snapshot).items():
+        for target in parse_relationships(issue.get("body") or "").blocks:
+            blocked_by[target].add(number)
+    return blocked_by
 
 
 def find_cycles(edges: Mapping[int, set[int]]) -> list[list[int]]:
@@ -455,6 +479,7 @@ def audit_issue(
     release_gate: set[int],
     impact: Mapping[int, int],
     overlaps: Mapping[int, list[dict[str, Any]]],
+    blocked_by: Mapping[int, set[int]] | None = None,
     semantic_evidence: Mapping[int, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_issue(issue)
@@ -482,6 +507,15 @@ def audit_issue(
         dependency
         for dependency in relationships.dependencies
         if dependency not in issues and dependency not in pulls
+    ]
+    # Inbound blockers: other open issues that declare `Blocks: #<this>`. The
+    # relationship may be recorded only on the blocker side, so enforce it here
+    # rather than relying on this issue to also declare a forward dependency.
+    inbound_blockers = sorted((blocked_by or {}).get(number, set()))
+    open_inbound_blockers = [
+        blocker
+        for blocker in inbound_blockers
+        if blocker in issues and issues[blocker].get("state") == "open"
     ]
     issue_cycles = [cycle for cycle in cycles if number in cycle[:-1]]
     issue_overlaps = overlaps.get(number, [])
@@ -754,6 +788,9 @@ def audit_issue(
         "closed_or_stale_dependencies": closed_dependencies,
         "parent_epics": list(relationships.parent_epics),
         "related_items": list(relationships.related),
+        "blocks": list(relationships.blocks),
+        "inbound_blockers": inbound_blockers,
+        "open_inbound_blockers": open_inbound_blockers,
         "supersedes": list(relationships.supersedes),
         "dependency_cycles": issue_cycles,
         "dependency_impact": int(impact.get(number, 0)),
@@ -805,6 +842,7 @@ def audit_all_issues(
     impact = dependency_impact(graph)
     release_gate = set(derive_release_gate(snapshot, policy))
     overlaps = detect_explicit_overlaps(snapshot)
+    blocked_by = blocked_by_graph(snapshot)
     results = []
     for number in sorted(issues):
         if issue_filter is not None and number not in issue_filter:
@@ -819,6 +857,7 @@ def audit_all_issues(
                 release_gate=release_gate,
                 impact=impact,
                 overlaps=overlaps,
+                blocked_by=blocked_by,
                 semantic_evidence=semantic_evidence,
             )
         )

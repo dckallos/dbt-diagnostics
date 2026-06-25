@@ -599,6 +599,76 @@ def test_live_snapshot_pull_request_keys_are_consumed(tmp_path: Path) -> None:
         )
 
 
+def test_blocks_line_parses_into_blocks_not_related() -> None:
+    parsed = readiness.parse_relationships(
+        bug_body("- Parent epic: #4\n- Blocks: #70, #54\n- Related: #63")
+    )
+    assert parsed.blocks == (54, 70)
+    assert parsed.related == (63,)
+    assert 70 not in parsed.related and 54 not in parsed.related
+
+
+def test_open_inbound_blocker_blocks_otherwise_ready_issue(tmp_path: Path) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    blocker = {
+        "number": 1,
+        "state": "open",
+        "title": "fix: blocker",
+        "labels": ["bug"],
+        "body": bug_body("- Parent epic: #4\n- Blocks: #2"),
+    }
+    blocked = {
+        "number": 2,
+        "state": "open",
+        "title": "fix: blocked",
+        "labels": ["bug"],
+        "body": bug_body("- Parent epic: #4"),
+    }
+    result = readiness.audit_all_issues(
+        snapshot(blocker, blocked),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic(), 2: accepted_semantic()},
+    )
+    item = next(v for v in result["issues"] if v["issue_number"] == 2)
+    assert item["implementation_state"] == "blocked"
+    assert item["open_inbound_blockers"] == [1]
+    assert any(
+        finding["code"] == "blocked-by-open-issue"
+        for finding in item["tracker_findings"]
+    )
+
+
+def test_closed_inbound_blocker_does_not_block(tmp_path: Path) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    blocker = {
+        "number": 1,
+        "state": "closed",
+        "state_reason": "completed",
+        "title": "fix: blocker",
+        "labels": ["bug"],
+        "body": bug_body("- Parent epic: #4\n- Blocks: #2"),
+    }
+    blocked = {
+        "number": 2,
+        "state": "open",
+        "title": "fix: blocked",
+        "labels": ["bug"],
+        "body": bug_body("- Parent epic: #4"),
+    }
+    result = readiness.audit_all_issues(
+        snapshot(blocker, blocked),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={2: accepted_semantic()},
+    )
+    item = next(v for v in result["issues"] if v["issue_number"] == 2)
+    assert item["open_inbound_blockers"] == []
+    assert item["implementation_state"] == "ready"
+
+
 def test_dependency_on_merged_pull_request_is_satisfied(tmp_path: Path) -> None:
     (tmp_path / "scripts/triage").mkdir(parents=True)
     (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
