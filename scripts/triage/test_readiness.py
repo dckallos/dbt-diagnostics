@@ -597,3 +597,106 @@ def test_live_snapshot_pull_request_keys_are_consumed(tmp_path: Path) -> None:
             finding["code"] == "pull-request-base-drift"
             for finding in result["global_findings"]
         )
+
+
+def test_dependency_on_merged_pull_request_is_satisfied(tmp_path: Path) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    issue = {
+        "number": 1,
+        "state": "open",
+        "title": "fix: ready",
+        "labels": ["bug"],
+        "body": bug_body("- **Depends on:** #2"),
+    }
+    merged_pull = {
+        "number": 2,
+        "state": "closed",
+        "title": "feat: merged dependency",
+        "body": "",
+        "head_ref": "feat/2-dependency",
+        "base_ref": "donkey-kong-sandbox",
+        "merged_at": "2026-06-24T00:00:00Z",
+        "merge_commit_sha": "abc1234",
+    }
+    result = readiness.audit_all_issues(
+        snapshot(issue, pulls=[merged_pull]),
+        policy(),
+        root=tmp_path,
+        # The PR's own merge state must satisfy the dependency, so deny the
+        # semantic merge-evidence default to prove the PR map is consulted.
+        semantic_evidence={1: accepted_semantic(dependency_merge_evidence=False)},
+    )
+    item = next(value for value in result["issues"] if value["issue_number"] == 1)
+    assert item["implementation_state"] == "ready"
+    assert item["dependency_merge_evidence"] is True
+    assert not any(
+        finding["code"] in {"missing-dependency", "closed-dependency"}
+        for finding in item["tracker_findings"]
+    )
+
+
+def test_dependency_on_open_pull_request_blocks_but_is_not_missing(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    issue = {
+        "number": 1,
+        "state": "open",
+        "title": "fix: ready",
+        "labels": ["bug"],
+        "body": bug_body("- **Depends on:** #2"),
+    }
+    open_pull = {
+        "number": 2,
+        "state": "open",
+        "title": "feat: dependency in flight",
+        "body": "",
+        "head_ref": "feat/2-dependency",
+        "base_ref": "donkey-kong-sandbox",
+    }
+    result = readiness.audit_all_issues(
+        snapshot(issue, pulls=[open_pull]),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic(dependency_merge_evidence=False)},
+    )
+    item = next(value for value in result["issues"] if value["issue_number"] == 1)
+    assert item["implementation_state"] == "blocked"
+    assert not any(
+        finding["code"] == "missing-dependency"
+        for finding in item["tracker_findings"]
+    )
+
+
+def test_dependency_on_closed_unmerged_pull_request_is_stale(tmp_path: Path) -> None:
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    issue = {
+        "number": 1,
+        "state": "open",
+        "title": "fix: ready",
+        "labels": ["bug"],
+        "body": bug_body("- **Depends on:** #2"),
+    }
+    closed_pull = {
+        "number": 2,
+        "state": "closed",
+        "title": "feat: abandoned dependency",
+        "body": "",
+        "head_ref": "feat/2-dependency",
+        "base_ref": "donkey-kong-sandbox",
+    }
+    result = readiness.audit_all_issues(
+        snapshot(issue, pulls=[closed_pull]),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic(dependency_merge_evidence=False)},
+    )
+    item = next(value for value in result["issues"] if value["issue_number"] == 1)
+    assert item["implementation_state"] == "stale"
+    assert any(
+        finding["code"] == "closed-dependency"
+        for finding in item["tracker_findings"]
+    )

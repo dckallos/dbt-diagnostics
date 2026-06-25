@@ -300,6 +300,33 @@ def referenced_closed_items(
     return result
 
 
+def referenced_closed_pulls(
+    dependencies: Iterable[int], pulls: Mapping[int, Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Closed/merged pull requests a dependency references.
+
+    Dependencies may name a PR rather than an issue. The snapshot tracks PRs in
+    a separate map, so resolve them here before a reference is judged absent.
+    """
+    result: list[dict[str, Any]] = []
+    for reference in dependencies:
+        pull = pulls.get(reference)
+        if pull and pull.get("state") != "open":
+            merge_commit = pull.get("merge_commit_sha")
+            result.append(
+                {
+                    "reference": reference,
+                    "relationship": "dependency",
+                    "state": pull.get("state"),
+                    "state_reason": pull.get("state_reason"),
+                    "pull_request": True,
+                    "merged": bool(pull.get("merged_at") or merge_commit),
+                    "merge_commit_sha": merge_commit,
+                }
+            )
+    return result
+
+
 def active_pr_conflicts(issue_number: int, snapshot: Mapping[str, Any]) -> list[int]:
     conflicts: list[int] = []
     for number, pull in pull_map(snapshot).items():
@@ -435,21 +462,26 @@ def audit_issue(
     if not isinstance(number, int):
         raise ValueError("issue number is required")
     issues = issue_map(snapshot)
+    pulls = pull_map(snapshot)
     contract = audit_contract(normalized)
     body = normalized.get("body") or ""
     relationships = parse_relationships(body)
     missing = missing_paths(normalized, root)
     stale_checklists = stale_checklist_refs(normalized, issues)
+    # A dependency may reference an issue or a pull request, tracked in separate
+    # snapshot maps. Resolve both so a PR dependency is not reported as absent.
     closed_dependencies = referenced_closed_items(normalized, issues)
+    closed_dependencies += referenced_closed_pulls(relationships.dependencies, pulls)
     open_dependencies = [
         dependency
         for dependency in relationships.dependencies
-        if dependency in issues and issues[dependency].get("state") == "open"
+        if (dependency in issues and issues[dependency].get("state") == "open")
+        or (dependency in pulls and pulls[dependency].get("state") == "open")
     ]
     missing_dependencies = [
         dependency
         for dependency in relationships.dependencies
-        if dependency not in issues
+        if dependency not in issues and dependency not in pulls
     ]
     issue_cycles = [cycle for cycle in cycles if number in cycle[:-1]]
     issue_overlaps = overlaps.get(number, [])
@@ -464,6 +496,8 @@ def audit_issue(
     )
 
     def has_merge_evidence(item: Mapping[str, Any]) -> bool:
+        if item.get("merged") or item.get("merge_commit_sha"):
+            return True
         if item.get("state_reason") in {"duplicate", "not_planned"}:
             return False
         reference = item.get("reference")
