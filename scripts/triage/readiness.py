@@ -9,14 +9,15 @@ import re
 from typing import Any, Iterable, Mapping
 
 from scripts.triage.common import (
-    content_digest,
     issue_map,
     normalize_issue,
     parse_iso_date,
     pull_map,
     referenced_paths,
     refs_in_text,
+    repository_name,
     sha256_json,
+    snapshot_digest,
 )
 from scripts.triage.contract import audit_contract, normalize_heading, parse_sections
 
@@ -34,22 +35,26 @@ IMPLEMENTATION_STATES = (
 )
 
 DEPENDENCY_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?"
-    r"(?P<label>depends on(?: [^:]+)?|blocked by(?: [^:]+)?|requires(?: [^:]+)?|must land after|sequence after|prerequisites?)"
-    r"\s*:\s*(?P<value>.+)$"
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?P<label>depends on(?: [^:*]+)?|blocked by(?: [^:*]+)?|requires(?: [^:*]+)?|must land after|sequence after|prerequisites?)"
+    r"\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
 )
 PARENT_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:parent epic|parent|epic)\s*:\s*(?P<value>.+)$"
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?:parent epic|parent|epic)\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
 )
 RELATED_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?"
-    r"(?:related|coordinates with|coordinate with|supports|consumed by|blocks)\s*:\s*(?P<value>.+)$"
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?:related|coordinates with|coordinate with|supports|consumed by|blocks)"
+    r"\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
 )
 SUPERSEDES_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:supersedes|absorbs|merged into)\s*:\s*(?P<value>.+)$"
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?:supersedes|absorbs|merged into)\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
 )
 OWNERSHIP_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:owns|scope owner|ownership)\s*:\s*(?P<value>.+)$"
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?:owns|scope owner|ownership)\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.+)$"
 )
 CHECKLIST_REF_RE = re.compile(r"(?m)^\s*[-*]\s*\[(?P<done>[ xX])\]\s*(?P<text>.*)$")
 DECISION_TERMS = (
@@ -182,11 +187,17 @@ def derive_release_gate(
     release = (
         policy.get("release") if isinstance(policy.get("release"), Mapping) else {}
     )
-    epic_numbers = release.get("epics") if isinstance(release, Mapping) else None
+    epic_numbers = (
+        release.get("epic_numbers", release.get("epics"))
+        if isinstance(release, Mapping)
+        else None
+    )
     if not isinstance(epic_numbers, list):
         epic_numbers = [4, 48, 68]
     section_names = (
-        release.get("gate_headings") if isinstance(release, Mapping) else None
+        release.get("section_headings", release.get("gate_headings"))
+        if isinstance(release, Mapping)
+        else None
     )
     if not isinstance(section_names, list):
         section_names = [
@@ -198,13 +209,15 @@ def derive_release_gate(
         ]
     normalized_names = {normalize_heading(name) for name in section_names}
     gate: set[int] = set()
+    include_epics = bool(release.get("include_epics", True))
     for raw_number in epic_numbers:
         if not isinstance(raw_number, int):
             continue
         issue = issues.get(raw_number)
         if not issue:
             continue
-        gate.add(raw_number)
+        if include_epics:
+            gate.add(raw_number)
         sections, _ = parse_sections(issue.get("body") or "")
         for section in sections:
             normalized = normalize_heading(section.title)
@@ -213,11 +226,30 @@ def derive_release_gate(
             ):
                 gate.update(refs_in_text(section.content))
     configured = (
-        release.get("additional_issues") if isinstance(release, Mapping) else None
+        release.get("additional_issue_numbers", release.get("additional_issues"))
+        if isinstance(release, Mapping)
+        else None
     )
     if isinstance(configured, list):
         gate.update(item for item in configured if isinstance(item, int))
-    return sorted(gate)
+
+    if bool(release.get("include_dependency_closure", True)):
+        queue = list(gate)
+        while queue:
+            number = queue.pop()
+            issue = issues.get(number)
+            if issue is None:
+                continue
+            for dependency in parse_relationships(issue.get("body") or "").dependencies:
+                if dependency not in gate:
+                    gate.add(dependency)
+                    queue.append(dependency)
+
+    return sorted(
+        number
+        for number in gate
+        if number in issues and issues[number].get("state") == "open"
+    )
 
 
 def missing_paths(issue: Mapping[str, Any], root: Path) -> list[str]:
@@ -424,6 +456,39 @@ def audit_issue(
     semantic = _semantic_review(normalized, semantic_evidence)
     scope = scope_warning(normalized)
 
+    merge_evidence_default = bool(semantic.get("dependency_merge_evidence", False))
+    raw_merge_details = semantic.get("dependency_merge_evidence_details")
+    merge_evidence_details = (
+        dict(raw_merge_details) if isinstance(raw_merge_details, Mapping) else {}
+    )
+
+    def has_merge_evidence(item: Mapping[str, Any]) -> bool:
+        if item.get("state_reason") in {"duplicate", "not_planned"}:
+            return False
+        reference = item.get("reference")
+        detail = merge_evidence_details.get(str(reference))
+        if detail is None:
+            detail = merge_evidence_details.get(reference)
+        if isinstance(detail, Mapping):
+            return bool(
+                detail.get("merged")
+                or detail.get("merge_commit_sha")
+                or detail.get("pull_request")
+                or detail.get("evidence")
+            )
+        if detail is not None:
+            return bool(detail)
+        return merge_evidence_default
+
+    stale_closed_dependencies = [
+        item for item in closed_dependencies if not has_merge_evidence(item)
+    ]
+    dependency_merge_evidence = bool(relationships.dependencies) and not (
+        open_dependencies or missing_dependencies or stale_closed_dependencies
+    )
+    if not relationships.dependencies:
+        dependency_merge_evidence = True
+
     labels = set(normalized.get("labels") or [])
     decision_required = (
         "decision-needed" in labels
@@ -465,12 +530,15 @@ def audit_issue(
                 "data": item,
             }
         )
-    for item in closed_dependencies:
+    for item in stale_closed_dependencies:
         tracker_findings.append(
             {
                 "level": "error",
                 "code": "closed-dependency",
-                "message": f"direct dependency #{item['reference']} is closed",
+                "message": (
+                    f"direct dependency #{item['reference']} is closed without "
+                    "accepted merge evidence"
+                ),
                 "data": item,
             }
         )
@@ -549,7 +617,7 @@ def audit_issue(
     if governance_state == "conformant":
         if issue_overlaps:
             governance_state = "conflicting"
-        elif stale_checklists or closed_dependencies or milestone_drift:
+        elif stale_checklists or stale_closed_dependencies or milestone_drift:
             governance_state = "stale"
         elif missing_dependencies:
             governance_state = "unknown"
@@ -572,7 +640,7 @@ def audit_issue(
         implementation_state = "unsafe"
     elif governance_state in {"needs_contract_revision", "conflicting", "unknown"}:
         implementation_state = "needs_contract_revision"
-    elif stale_checklists or closed_dependencies or milestone_drift:
+    elif stale_checklists or stale_closed_dependencies or milestone_drift:
         implementation_state = "stale"
     elif issue_overlaps:
         implementation_state = "overlapping"
@@ -645,12 +713,8 @@ def audit_issue(
         "contract_accepted": governance_state == "conformant",
         "implementation_state": implementation_state,
         "direct_dependencies": list(relationships.dependencies),
-        "dependency_merge_evidence": bool(
-            semantic.get("dependency_merge_evidence", False)
-        ),
-        "dependency_merge_evidence_details": dict(
-            semantic.get("dependency_merge_evidence_details") or {}
-        ),
+        "dependency_merge_evidence": dependency_merge_evidence,
+        "dependency_merge_evidence_details": merge_evidence_details,
         "open_dependencies": sorted(open_dependencies),
         "closed_or_stale_dependencies": closed_dependencies,
         "parent_epics": list(relationships.parent_epics),
@@ -729,7 +793,7 @@ def audit_all_issues(
     drift = progress_log_drift(snapshot, root / "docs" / "PROGRESS_LOG.md")
     if drift:
         global_findings.append({"level": "warning", **drift})
-    projects = snapshot.get("projects")
+    projects = snapshot.get("projects", snapshot.get("project"))
     if not isinstance(projects, Mapping) or projects.get("status") not in {
         "available",
         "configured",
@@ -763,8 +827,8 @@ def audit_all_issues(
             )
     payload = {
         "schema_version": 1,
-        "repository": snapshot.get("repository"),
-        "snapshot_digest": snapshot.get("snapshot_digest") or content_digest(snapshot),
+        "repository": repository_name(snapshot),
+        "snapshot_digest": snapshot_digest(snapshot),
         "policy_digest": sha256_json(policy),
         "release_gate_issues": sorted(release_gate),
         "dependency_cycles": cycles,

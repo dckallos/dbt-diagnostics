@@ -6,11 +6,19 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
-from scripts.triage.common import issue_map, sha256_json, slugify
+from scripts.triage.common import (
+    issue_map,
+    repository_name,
+    sha256_json,
+    slugify,
+    snapshot_digest,
+)
 from scripts.triage.contract import parse_sections
 
 COORDINATOR_SCHEMA_VERSION = 1
 WORKER_PACKET_SCHEMA_VERSION = 1
+MAX_WORKER_ISSUE_BODY_CHARS = 30000
+MAX_PROGRESS_CONTEXT_CHARS = 4000
 
 AUDIT_STATE_PRIORITY = {
     "unsafe": 1200,
@@ -242,9 +250,9 @@ def build_coordinator_result(
     base = {
         "schema_version": COORDINATOR_SCHEMA_VERSION,
         "mode": mode,
-        "repository": snapshot.get("repository"),
+        "repository": repository_name(snapshot),
         "generated_at": generated_at,
-        "snapshot_digest": snapshot.get("snapshot_digest"),
+        "snapshot_digest": snapshot_digest(snapshot),
         "audit_digest": audit.get("audit_digest"),
         "selected_issue": None,
         "issue_contract_digest": None,
@@ -305,7 +313,20 @@ def validate_coordinator_result(value: Mapping[str, Any]) -> list[str]:
         "snapshot_digest",
         "audit_digest",
         "selected_issue",
+        "issue_contract_digest",
+        "governance_state",
+        "implementation_state",
         "selection_reason",
+        "parent_epics",
+        "direct_dependencies",
+        "blockers",
+        "required_decisions",
+        "required_external_evidence",
+        "referenced_paths",
+        "suggested_branch",
+        "suggested_next_command",
+        "candidate_count",
+        "rejected_count",
         "coordinator_digest",
     }
     missing = sorted(required - set(value))
@@ -315,11 +336,84 @@ def validate_coordinator_result(value: Mapping[str, Any]) -> list[str]:
         errors.append("unsupported schema_version")
     if value.get("mode") not in {"audit", "implement"}:
         errors.append("invalid mode")
+    repository = value.get("repository")
+    if not isinstance(repository, str) or not re.fullmatch(r"[^/]+/[^/]+", repository):
+        errors.append("repository must be owner/name")
+    if not isinstance(value.get("generated_at"), str):
+        errors.append("generated_at must be a string")
+    for key in ("snapshot_digest", "audit_digest", "coordinator_digest"):
+        digest = value.get(key)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            errors.append(f"{key} must be a lowercase SHA-256 digest")
     selected = value.get("selected_issue")
     if selected is not None and (
-        isinstance(selected, bool) or not isinstance(selected, int)
+        isinstance(selected, bool) or not isinstance(selected, int) or selected <= 0
     ):
-        errors.append("selected_issue must be an integer or null")
+        errors.append("selected_issue must be a positive integer or null")
+    for key in ("issue_contract_digest", "governance_state", "implementation_state"):
+        item = value.get(key)
+        if item is not None and not isinstance(item, str):
+            errors.append(f"{key} must be a string or null")
+    if not isinstance(value.get("selection_reason"), str):
+        errors.append("selection_reason must be a string")
+    for key in ("parent_epics", "direct_dependencies"):
+        items = value.get(key)
+        if not isinstance(items, list) or any(
+            isinstance(item, bool) or not isinstance(item, int) or item <= 0
+            for item in (items if isinstance(items, list) else [])
+        ):
+            errors.append(f"{key} must be an array of positive integers")
+    for key in (
+        "blockers",
+        "required_decisions",
+        "required_external_evidence",
+        "referenced_paths",
+    ):
+        items = value.get(key)
+        if not isinstance(items, list) or any(
+            not isinstance(item, str)
+            for item in (items if isinstance(items, list) else [])
+        ):
+            errors.append(f"{key} must be an array of strings")
+    for key in ("suggested_branch", "suggested_next_command"):
+        item = value.get(key)
+        if item is not None and not isinstance(item, str):
+            errors.append(f"{key} must be a string or null")
+    for key in ("candidate_count", "rejected_count"):
+        item = value.get(key)
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+            errors.append(f"{key} must be a non-negative integer")
+    if selected is None:
+        for key in (
+            "issue_contract_digest",
+            "governance_state",
+            "implementation_state",
+            "suggested_branch",
+            "suggested_next_command",
+        ):
+            if value.get(key) is not None:
+                errors.append(f"{key} must be null for an empty frontier")
+    elif value.get("issue_contract_digest") is None:
+        errors.append("issue_contract_digest is required for a selected issue")
+    score = value.get("score")
+    if score is not None and (isinstance(score, bool) or not isinstance(score, int)):
+        errors.append("score must be an integer when present")
+    components = value.get("score_components")
+    if components is not None and (
+        not isinstance(components, Mapping)
+        or any(
+            not isinstance(key, str)
+            or isinstance(item, bool)
+            or not isinstance(item, int)
+            for key, item in (
+                components.items() if isinstance(components, Mapping) else []
+            )
+        )
+    ):
+        errors.append("score_components must map strings to integers")
+    preview = value.get("rejected_preview")
+    if preview is not None and (not isinstance(preview, list) or len(preview) > 20):
+        errors.append("rejected_preview must be an array of at most 20 items")
     actual_digest = sha256_json(
         {key: item for key, item in value.items() if key != "coordinator_digest"}
     )
@@ -399,11 +493,13 @@ def build_worker_packet(
         {"path": path, "exists": (root / path).exists()}
         for path in sorted(entry.get("referenced_paths") or [])
     ]
+    full_body = issue.get("body") or ""
+    bounded_body = full_body[:MAX_WORKER_ISSUE_BODY_CHARS]
     packet = {
         "schema_version": WORKER_PACKET_SCHEMA_VERSION,
-        "repository": snapshot.get("repository"),
+        "repository": repository_name(snapshot),
         "generated_at": snapshot.get("generated_at") or "unknown",
-        "snapshot_digest": snapshot.get("snapshot_digest"),
+        "snapshot_digest": snapshot_digest(snapshot),
         "audit_digest": audit.get("audit_digest"),
         "issue": {
             "number": issue_number,
@@ -411,7 +507,8 @@ def build_worker_packet(
             "url": issue.get("html_url"),
             "labels": issue.get("labels") or [],
             "milestone": issue.get("milestone"),
-            "body": issue.get("body") or "",
+            "body": bounded_body,
+            "body_truncated": len(full_body) > len(bounded_body),
         },
         "contract": {
             "id": entry.get("contract_id"),
@@ -442,8 +539,102 @@ def build_worker_packet(
             "pytest -q",
         ],
         "branch_worktree_state": dict(branch_state or {}),
-        "historical_progress_context": progress_context,
+        "historical_progress_context": (progress_context or "")[
+            :MAX_PROGRESS_CONTEXT_CHARS
+        ]
+        or None,
+        "historical_progress_truncated": bool(
+            progress_context and len(progress_context) > MAX_PROGRESS_CONTEXT_CHARS
+        ),
         "historical_progress_is_authoritative": False,
     }
     packet["packet_digest"] = sha256_json(packet)
     return packet
+
+
+def validate_worker_packet(value: Mapping[str, Any]) -> list[str]:
+    """Validate the bounded worker-packet envelope and its digest."""
+
+    errors: list[str] = []
+    required = {
+        "schema_version",
+        "repository",
+        "generated_at",
+        "snapshot_digest",
+        "audit_digest",
+        "issue",
+        "contract",
+        "acceptance_criteria",
+        "non_goals",
+        "dependencies",
+        "parent_epics",
+        "referenced_paths",
+        "likely_entry_points",
+        "uncertainty",
+        "required_verification_commands",
+        "branch_worktree_state",
+        "historical_progress_context",
+        "historical_progress_truncated",
+        "historical_progress_is_authoritative",
+        "packet_digest",
+    }
+    missing = sorted(required - set(value))
+    if missing:
+        errors.append("missing keys: " + ", ".join(missing))
+    if value.get("schema_version") != WORKER_PACKET_SCHEMA_VERSION:
+        errors.append("unsupported schema_version")
+    repository = value.get("repository")
+    if not isinstance(repository, str) or not re.fullmatch(r"[^/]+/[^/]+", repository):
+        errors.append("repository must be owner/name")
+    if not isinstance(value.get("generated_at"), str):
+        errors.append("generated_at must be a string")
+    for key in ("snapshot_digest", "audit_digest", "packet_digest"):
+        digest = value.get(key)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            errors.append(f"{key} must be a lowercase SHA-256 digest")
+    issue = value.get("issue")
+    if not isinstance(issue, Mapping):
+        errors.append("issue must be an object")
+    else:
+        number = issue.get("number")
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            errors.append("issue.number must be a positive integer")
+        body = issue.get("body")
+        if not isinstance(body, str) or len(body) > MAX_WORKER_ISSUE_BODY_CHARS:
+            errors.append("issue.body exceeds the worker-packet bound")
+        if not isinstance(issue.get("body_truncated"), bool):
+            errors.append("issue.body_truncated must be boolean")
+    if not isinstance(value.get("contract"), Mapping):
+        errors.append("contract must be an object")
+    for key in ("acceptance_criteria", "non_goals"):
+        item = value.get(key)
+        if item is not None and not isinstance(item, str):
+            errors.append(f"{key} must be a string or null")
+    for key in (
+        "dependencies",
+        "parent_epics",
+        "referenced_paths",
+        "likely_entry_points",
+        "required_verification_commands",
+    ):
+        if not isinstance(value.get(key), list):
+            errors.append(f"{key} must be an array")
+    if not isinstance(value.get("uncertainty"), Mapping):
+        errors.append("uncertainty must be an object")
+    if not isinstance(value.get("branch_worktree_state"), Mapping):
+        errors.append("branch_worktree_state must be an object")
+    progress = value.get("historical_progress_context")
+    if progress is not None and (
+        not isinstance(progress, str) or len(progress) > MAX_PROGRESS_CONTEXT_CHARS
+    ):
+        errors.append("historical_progress_context exceeds the worker-packet bound")
+    if not isinstance(value.get("historical_progress_truncated"), bool):
+        errors.append("historical_progress_truncated must be boolean")
+    if value.get("historical_progress_is_authoritative") is not False:
+        errors.append("historical progress must be marked non-authoritative")
+    actual_digest = sha256_json(
+        {key: item for key, item in value.items() if key != "packet_digest"}
+    )
+    if value.get("packet_digest") != actual_digest:
+        errors.append("packet_digest mismatch")
+    return errors

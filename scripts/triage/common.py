@@ -222,23 +222,58 @@ def issue_map(
 
 
 def pull_map(snapshot: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+    """Return pull requests from either synthetic or live snapshot schemas."""
+
     result: dict[int, dict[str, Any]] = {}
-    for raw in snapshot.get("pulls") or []:
-        if not isinstance(raw, Mapping):
+    for collection_name in ("pulls", "pull_requests", "open_pull_requests"):
+        values = snapshot.get(collection_name) or []
+        if not isinstance(values, list):
             continue
-        item = normalize_pull(raw)
-        number = item.get("number")
-        if isinstance(number, int):
-            result[number] = item
+        for raw in values:
+            if not isinstance(raw, Mapping):
+                continue
+            item = normalize_pull(raw)
+            number = item.get("number")
+            if isinstance(number, int):
+                result[number] = item
     return result
 
 
+def repository_name(snapshot: Mapping[str, Any]) -> str | None:
+    """Return owner/name from either supported snapshot repository shape."""
+
+    value = snapshot.get("repository")
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        full_name = value.get("full_name")
+        if isinstance(full_name, str) and full_name:
+            return full_name
+        owner = value.get("owner")
+        name = value.get("name")
+        if isinstance(owner, str) and owner and isinstance(name, str) and name:
+            return f"{owner}/{name}"
+    return None
+
+
+def snapshot_digest(snapshot: Mapping[str, Any]) -> str:
+    """Return the declared digest from either supported snapshot schema."""
+
+    for key in ("snapshot_sha256", "snapshot_digest"):
+        value = snapshot.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return content_digest(snapshot)
+
+
 def content_digest(snapshot: Mapping[str, Any]) -> str:
-    excluded = {"generated_at", "snapshot_digest"}
+    excluded = {"generated_at", "snapshot_digest", "snapshot_sha256"}
     payload = {key: value for key, value in snapshot.items() if key not in excluded}
     for key, field in (
         ("issues", "number"),
         ("pulls", "number"),
+        ("pull_requests", "number"),
+        ("open_pull_requests", "number"),
         ("milestones", "number"),
         ("labels", "name"),
     ):

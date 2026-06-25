@@ -1137,7 +1137,7 @@ def propose_normalized_body(issue: Mapping[str, Any]) -> str:
             lines.append(existing.content.strip())
         else:
             lines.append(
-                "Unknown. The current issue body does not establish this contract item; maintainer review is required."
+                "Unknown. I could not establish this contract item from the current issue body; maintainer review is required."
             )
         lines.append("")
 
