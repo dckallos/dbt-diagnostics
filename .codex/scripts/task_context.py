@@ -255,6 +255,29 @@ def render_issue_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def issue_from_snapshot_file(path: Path, issue_number: int) -> dict[str, Any]:
+    """Return one raw issue object from a tracker snapshot JSON.
+
+    The snapshot is the read-only artifact produced by the triage toolchain;
+    its ``issues`` list holds raw GitHub issue objects keyed by ``number``. This
+    is the offline fallback when gh is unavailable or unauthenticated.
+    """
+
+    if not path.is_file():
+        raise ContextError(f"snapshot not found: {path}")
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ContextError(f"invalid snapshot JSON: {path}: {exc}") from exc
+    issues = snapshot.get("issues") if isinstance(snapshot, dict) else None
+    if not isinstance(issues, list):
+        raise ContextError(f"snapshot has no issues list: {path}")
+    for raw in issues:
+        if isinstance(raw, dict) and raw.get("number") == issue_number:
+            return raw
+    raise ContextError(f"issue #{issue_number} not present in snapshot: {path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("issue", nargs="?", type=int, help="GitHub issue number")
@@ -265,6 +288,14 @@ def main() -> int:
         help="include the five most recent comments",
     )
     parser.add_argument("--json", action="store_true", help="emit JSON")
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        help=(
+            "read the issue from a tracker snapshot JSON when gh is unavailable "
+            "or unauthenticated (read-only offline fallback)"
+        ),
+    )
     args = parser.parse_args()
 
     root = Path(os.environ.get("CODEX_REPO_ROOT", Path.cwd())).resolve()
@@ -288,33 +319,58 @@ def main() -> int:
             print(render_local_markdown(local), end="")
         return 0
 
-    if shutil.which("gh") is None:
-        print("ERROR: gh is required; install it and run gh auth login", file=sys.stderr)
-        return 2
-
-    auth = subprocess.run(
-        ["gh", "auth", "status"],
-        cwd=root,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    if auth.returncode != 0:
-        print("ERROR: gh is not authenticated; run gh auth login", file=sys.stderr)
-        return 2
+    gh_available = shutil.which("gh") is not None
+    gh_authenticated = False
+    if gh_available:
+        auth = subprocess.run(
+            ["gh", "auth", "status"],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        gh_authenticated = auth.returncode == 0
 
     try:
-        repository = discover_repository(root, args.repo)
-        issue = issue_payload(
-            root=root,
-            issue_number=int(issue_number),
-            repository=repository,
-            include_comments=args.comments,
-        )
+        if gh_available and gh_authenticated:
+            repository = discover_repository(root, args.repo)
+            issue = issue_payload(
+                root=root,
+                issue_number=int(issue_number),
+                repository=repository,
+                include_comments=args.comments,
+            )
+            source = "live"
+        elif args.snapshot is not None:
+            issue = issue_from_snapshot_file(args.snapshot, int(issue_number))
+            repository = args.repo or issue.get("repository") or "unknown/unknown"
+            source = "snapshot"
+            note = (
+                "gh unavailable" if not gh_available else "gh unauthenticated"
+            )
+            print(
+                f"WARNING: {note}; read issue #{issue_number} from snapshot "
+                f"{args.snapshot} (offline, read-only).",
+                file=sys.stderr,
+            )
+        else:
+            reason = (
+                "gh is required; install it"
+                if not gh_available
+                else "gh is not authenticated; run gh auth login"
+            )
+            print(
+                f"ERROR: {reason}, or pass --snapshot PATH to read issue "
+                f"#{issue_number} offline. The public tracker can also be read "
+                "directly with scripts/triage/triage.py.",
+                file=sys.stderr,
+            )
+            return 2
         payload = {
             "repository": repository,
             "issue": issue,
             "local": local,
+            "source": source,
             "referenced_paths": referenced_paths(issue.get("body") or "", root),
         }
     except (ContextError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:

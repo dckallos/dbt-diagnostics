@@ -366,3 +366,62 @@ End of session -- 2026-06-25 triage governance correctness pass
   and the frontier is recomputed.
 
 End of session -- 2026-06-25 issue 74 governance dogfood
+
+---
+
+## 2026-06-25 -- per-issue governance scaffolding optimization (review follow-up)
+
+**What changed**
+- Acted on a critical review of the #74 governance dogfood. Edited scaffolding
+  and toolchain; read-only throughout (no GitHub mutation path added):
+  - `.agents/skills/issue-governance/SKILL.md`: added a disposition-hypothesis
+    step and an explicit draft -> self-verify-anchors -> standardize ->
+    bounded-repair loop with stop/escalation conditions.
+  - `AGENTS.md`: added an always-loaded "Issue governance" pointer (read-only,
+    one issue at a time, content-anchor rules).
+  - `scripts/triage/readiness.py`: `.agents/.codex`-style prose shorthand is now
+    a non-blocking `prose-path-shorthand` warning, kept out of
+    `missing_repository_paths` (additive field `prose_path_references`).
+  - `scripts/triage/contract.py`: suppress the redundant "Negative, degradation,
+    and regression coverage" recommendation when that coverage is already
+    present in the acceptance/test text.
+  - `.codex/scripts/task_context.py`: `context <issue>` gains a `--snapshot`
+    offline fallback instead of hard-failing on unauthenticated `gh`.
+  - `docs/CODEX_GETTING_STARTED.md`: corrected the project_doc_max_bytes/docs
+    explanation (only the AGENTS.md hierarchy counts toward the cap).
+- Added tests: `scripts/triage/test_task_context.py` plus new cases in
+  `test_contract.py` and `test_readiness.py`.
+- Wrote five proposed follow-up issue bodies under
+  `output/triage/proposed-issues/`: forest-synthesis disposition pass, read-only
+  Projects planner, gated dbt-MCP failure harness, governance issue-kind
+  decision, and a draft-level anchor-check CLI. Read-only artifacts; not filed.
+
+**Validation**
+- Full triage suite passes under real pytest 9.1.1: `135 passed` (was 128).
+- All edited Python compiles; all edited files are ASCII; no "Co-authored with
+  CoCo" marker on any .py (repo voice rule + CI guard).
+- Re-ran `contract_result` on the existing #74 proposed body: still
+  `conformant` and accepted, now with zero warnings.
+
+**Current state**
+- Authored in the Snowsight Workspace stage; NOT committed to git, NOT pushed.
+  No branch, no PR yet.
+- `output/triage/issues/74/proposed-body.md` is unchanged and still accepted; it
+  has not been applied to the GitHub issue.
+
+**Next steps**
+- Commit this session on a branch off `donkey-kong-sandbox` and open one PR into
+  `donkey-kong-sandbox`.
+- On the Mac, run the full suite (`pytest -q`, ~603 tests) to confirm no
+  regression outside the triage package.
+- Re-run the #74 governance lifecycle from scratch with the new scaffolding to
+  exercise the disposition step and the clean-warning path end to end.
+- File the five proposed follow-up issues if accepted.
+
+**Be careful**
+- The toolchain must stay read-only; the Projects-planner follow-up must remain
+  plan-only.
+- New readiness field `prose_path_references` and finding code
+  `prose-path-shorthand` are additive; keep them additive.
+
+End of session -- 2026-06-25 per-issue governance scaffolding optimization

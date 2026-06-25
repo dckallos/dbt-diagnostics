@@ -135,14 +135,102 @@ callback port and use plain `codex login`.
 - Connected services carry over from ChatGPT (for example, a Google Drive
   connection made in ChatGPT also appears in Codex). Disconnect anytime.
 
-## 6. Configuration notes
+## 6. Configuration
 
-User-level config lives at `~/.codex/config.toml`. Useful keys: `model`,
-`model_reasoning_effort` (medium is the recommended daily driver; `high` or
-`xhigh` for hard, non-latency-sensitive work), `plan_mode_reasoning_effort`,
-`approval_policy`, and `sandbox_mode`. Prefer per-task profiles (for example a
-read-only `governance` profile) over pinning a global maximum effort. When Codex
-repeats a mistake, capture the lesson in `AGENTS.md`.
+User-level config lives at `~/.codex/config.toml`. A common mistake is nesting
+model and reasoning keys inside a `[projects."<path>"]` table; that table only
+carries `trust_level`. Model, reasoning, and document keys must be top-level (or
+in a profile). A working baseline:
+
+```toml
+# ~/.codex/config.toml -- applies to every project
+
+# model = "..."        # leave unset to use Codex's current default for your account.
+                       # If you pin one, use a value your /model picker lists; do NOT hardcode
+                       # an old model -- several are periodically retired for ChatGPT sign-in.
+model_reasoning_effort  = "xhigh"              # max thinking; use a lighter profile for routine edits
+model_reasoning_summary = "concise"
+model_verbosity         = "low"
+approval_policy         = "on-request"
+sandbox_mode            = "workspace-write"
+project_doc_max_bytes   = 32768                # explicit Codex default; AGENTS.md is ~7 KiB and docs/ never counts, so no raise is needed. Only raise if you add nested AGENTS.md files
+
+[tools]
+web_search = true
+
+[history]
+persistence = "save-all"
+
+# trust_level is the ONLY key that belongs in a per-project table
+[projects."/absolute/path/to/dbt-diagnostics"]
+trust_level = "trusted"
+```
+
+### Profiles (thinking vs task)
+
+The profile mechanism changed at Codex 0.134.0, so check `codex --version`
+first. Both forms define a read-only "thinking" profile and a write-enabled
+"task" profile; invoke with `codex --profile thinking` or `codex --profile
+task`. A one-off override needs no profile: `codex -c model_reasoning_effort=xhigh`.
+
+Codex < 0.134.0 -- define `[profiles.NAME]` tables inside `~/.codex/config.toml`
+(overlay files are ignored on these versions):
+
+```toml
+[profiles.thinking]
+model_reasoning_effort  = "xhigh"
+model_reasoning_summary = "detailed"
+sandbox_mode            = "read-only"
+approval_policy         = "on-request"
+
+[profiles.task]
+model_reasoning_effort = "xhigh"
+model_verbosity        = "low"
+sandbox_mode           = "workspace-write"
+approval_policy        = "on-request"
+```
+
+Codex >= 0.134.0 -- `--profile` no longer reads `[profiles.NAME]` tables; put
+each profile in its own overlay file (`~/.codex/thinking.config.toml`,
+`~/.codex/task.config.toml`) with the same keys. If `--profile NAME` reports
+"config profile not found", your binary's form does not match how the profile is
+defined (most often a pre-0.134.0 binary that was given an overlay file).
+
+### Model selection
+
+Do not hardcode a model. The Codex model lineup for ChatGPT sign-in changes
+frequently and models are periodically retired for ChatGPT accounts (a retired
+model may linger only under API-key auth). What you can actually select is gated
+by your installed CLI version and your account, so the only reliable source is
+your own runtime: run the `/model` slash command in a session to list what is
+available (and `/reasoning` to switch effort). If a model you expect is missing,
+update the CLI (`codex --version`, then `codex update`) and refresh auth
+(`codex logout` then `codex login`). Leaving `model` unset lets Codex pick its
+current default for your account.
+
+### Tools
+
+`web_search` is an opt-in `[tools]` toggle. Command execution, `apply_patch`
+file edits, file reads, `view_image`, and the plan tool are built into the
+harness (not toggles). Add external tools via `[mcp_servers.<name>]`; extend
+behavior with custom slash commands (`~/.codex/prompts`), skills (`SKILL.md`),
+and subagents (`[agents]`).
+
+### Context Codex reads at startup
+
+Codex assembles its initial understanding from its built-in system prompt plus
+the AGENTS.md hierarchy, walked root to cwd: in each directory it picks one file
+in priority `AGENTS.override.md` > `AGENTS.md` > `project_doc_fallback_filenames`,
+concatenated root-first with closer-to-cwd winning conflicts. Skills load on
+demand. The merged AGENTS.md set is capped at `project_doc_max_bytes` (32 KiB by
+default); once the cap is hit, later (more specific) files are dropped -- the
+most common cause of "Codex ignored my instructions." Only the AGENTS.md
+hierarchy counts toward this cap; `docs/` is loaded on demand and never merged
+in, so it does not consume the budget. This repository has a single root
+`AGENTS.md` of about 6 KiB, well under the default, so nothing is truncated
+today; raising the cap (above) only matters if you later add nested `AGENTS.md`
+files whose combined size approaches 32 KiB. When Codex repeats a mistake,
+capture the lesson in `AGENTS.md`.
 
 ## References
 
@@ -151,5 +239,9 @@ repeats a mistake, capture the lesson in `AGENTS.md`.
 - CLI command-line options: https://developers.openai.com/codex/cli/reference
 - Using Codex with your ChatGPT plan:
   https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan
+- Models: https://developers.openai.com/codex/models
+- Config basics: https://developers.openai.com/codex/config-basic
+- Advanced configuration (profiles): https://developers.openai.com/codex/config-advanced
 - Configuration reference: https://developers.openai.com/codex/config-reference
+- Custom instructions with AGENTS.md: https://developers.openai.com/codex/guides/agents-md
 - Best practices: https://developers.openai.com/codex/learn/best-practices

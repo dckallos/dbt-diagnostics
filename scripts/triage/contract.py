@@ -1033,6 +1033,27 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
             }
         )
 
+    # The named "Negative, degradation, and regression coverage" recommended
+    # section is redundant when the acceptance/test text already demonstrates
+    # that coverage. Drop the recommendation in that case so an otherwise
+    # conformant body is not nagged into adding a duplicate heading.
+    redundant_coverage_section = "Negative, degradation, and regression coverage"
+    if redundant_coverage_section in missing_recommended and all(
+        coverage[name] for name in ("negative", "degradation", "regression")
+    ):
+        missing_recommended = [
+            label for label in missing_recommended
+            if label != redundant_coverage_section
+        ]
+        findings = [
+            finding
+            for finding in findings
+            if not (
+                finding.get("code") == "missing-recommended-section"
+                and finding.get("message", "").endswith(redundant_coverage_section)
+            )
+        ]
+
     for section in sections:
         if section.key is not None and UNRESOLVED_PLACEHOLDER in (section.content or ""):
             findings.append(

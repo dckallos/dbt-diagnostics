@@ -447,6 +447,36 @@ identical lines.
 the run's identity (invocation_id + CURRENT_ROLE) so role recovery does not
 depend on query-history retention or the presence of a query_id.
 
+### Optimize per-issue governance: loop guidance, snapshot fallback, and audit-noise fixes
+
+Improvements to the issue-governance toolchain surfaced by dogfooding issue #74.
+All changes remain read-only and offline; no GitHub mutation path is added.
+
+- I gave the `issue-governance` skill an explicit working loop instead of a flat
+  recipe: a single-issue disposition hypothesis (keep / duplicate / split /
+  wont-do) that escalates rather than standardizing an issue whose existence is
+  in question; a draft -> self-verify-anchors -> standardize -> bounded-repair
+  cycle (max three passes); and explicit stop/escalation conditions. Cross-issue
+  judgment is declared out of scope for a per-issue run.
+- I moved the non-negotiable governance rules (read-only, one issue at a time,
+  content anchors) into `AGENTS.md` so they hold even when no skill is loaded.
+- I stopped prose path shorthand from blocking readiness. A citation that joins
+  existing top-level directory names into one token (for example
+  `.agents/.codex`) is now a non-blocking `prose-path-shorthand` warning,
+  segregated from `missing_repository_paths` via the additive
+  `prose_path_references` field; a genuine stale path still blocks.
+- I suppressed a redundant recommended-section warning. When acceptance/test
+  text already demonstrates negative, degradation, and regression coverage, the
+  contract no longer also asks for a separately headed
+  "Negative, degradation, and regression coverage" section.
+- I relaxed the `.codex` task-context gate. `context <issue>` now falls back to a
+  `--snapshot` read when `gh` is missing or unauthenticated, so a public
+  read-only issue is reachable offline instead of failing hard.
+- I corrected the Codex getting-started note that implied `docs/` counts toward
+  `project_doc_max_bytes`; only the AGENTS.md hierarchy does.
+- I added focused tests for the snapshot fallback, the coverage-suppression
+  rule, and the prose-path warning. The governance suite passes (135).
+
 ---
 
 ## v0.5.0 -- 2026-06-07 (workspace only; not yet tested on Mac)
