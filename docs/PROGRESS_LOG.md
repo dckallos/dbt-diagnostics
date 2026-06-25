@@ -301,3 +301,68 @@ End of session -- 2026-06-16 branch-protection policy as code
   (repo voice rule + `check_no_attribution.sh` forbid it).
 
 End of session -- 2026-06-25 triage governance correctness pass
+
+---
+
+## 2026-06-25 -- issue 74 governance dogfood
+
+**What changed**
+- Ran the issue-governance and relay lifecycle for #74 without mutating GitHub.
+- `bash .codex/bin/action.sh doctor` passed with warnings for dirty wrapper mode
+  bits, no `gh` login, and absent compatibility schema cache.
+- `.codex/bin/action.sh context 74` failed because local `gh` is not
+  authenticated; direct `python scripts/triage/triage.py contract --issue 74`
+  could still read the public issue.
+- Wrote local artifacts under `output/triage/issues/74/`: contract and review
+  packet JSON, semantic evidence, the drafted `proposed-body.md`, and
+  `standardization.json`.
+- The proposed body is contract-accepted locally (`governance_state:
+  conformant`, proposed body digest
+  `7c21da370b7f6652e8cc6b8e02a6e6f8b2eb30632ff5fd9a282c92738eee2006`,
+  standardization digest
+  `91a5e2b119859460b5f97e81d05628dfa8ad3e0079a31dbbb8b0b49491c11bea`).
+  It still has the non-blocking recommended-section warning for
+  `Negative, degradation, and regression coverage` because only generated
+  placeholder sections were drafted.
+- Frontier audit mode selects #74; implementation mode returns an empty frontier
+  and rejects #74 because the live issue body is still nonconformant, the
+  `.agents/.codex` path is missing, maintainer choices remain, and the proposed
+  body has not been applied.
+
+**Validation**
+- `python -m compileall -q dbt_diagnostics scripts/triage` passed.
+- Focused triage tests passed: `128 passed`.
+- `bash .codex/bin/action.sh full` passed on Python 3.12.9:
+  `603 passed, 2 skipped, 1 warning`.
+- `CODEX_VENV_DIR=/private/tmp/dbt-diagnostics-py311-issue74 bash
+  .codex/bin/action.sh full` passed on Python 3.11.11:
+  `603 passed, 2 skipped, 1 warning`.
+
+**Current state**
+- Branch:
+  `test/74-test-dogfood-the-agentscodex-codex-skills-governance-lifecycle-this-issue-is-the-fixture`.
+- `origin/donkey-kong-sandbox` was fetched and is an ancestor of `HEAD`.
+- No GitHub tracker mutation was performed.
+- Existing executable-bit changes remain on four `.codex/bin/*` wrapper files.
+
+**Next steps**
+- Maintainer reviews `output/triage/issues/74/proposed-body.md` and applies it
+  by hand if accepted.
+- Fix or intentionally exempt the `.agents/.codex` path reference in the live
+  issue body.
+- Decide the tracker home for repository-governance work; recommendation from
+  this pass is a dedicated governance epic, not product epics #4, #48, or #68.
+- Keep AI section drafting as a skill assist for prose, but add a deterministic
+  harness for artifact shape, placeholder-only diffs, source-anchor checks, and
+  standardize validation.
+- Reconcile the missing policy labels reported by audit: `cli`, `config`,
+  `docs`, `lineage`, `live`, `output`, `release`, `security`, and `spike`.
+
+**Be careful**
+- The generated proposed body contains explicit machine-draft markers required
+  by the issue-governance skill; the maintainer should rewrite those into their
+  own voice before applying if desired.
+- Do not treat the live issue as implementation-ready until the body is applied
+  and the frontier is recomputed.
+
+End of session -- 2026-06-25 issue 74 governance dogfood
