@@ -61,3 +61,20 @@ def test_snapshot_without_issues_list_raises(tmp_path: Path) -> None:
     path.write_text(json.dumps({"not_issues": []}), encoding="utf-8")
     with pytest.raises(task_context.ContextError):
         task_context.issue_from_snapshot_file(path, 74)
+
+
+def test_resolve_snapshot_prefers_explicit(tmp_path: Path) -> None:
+    explicit = tmp_path / "given.json"
+    assert task_context.resolve_snapshot_path(explicit, tmp_path) == explicit
+
+
+def test_resolve_snapshot_auto_discovers_default_when_present(tmp_path: Path) -> None:
+    default = task_context.default_snapshot_path(tmp_path)
+    default.parent.mkdir(parents=True)
+    default.write_text("{}", encoding="utf-8")
+    assert task_context.resolve_snapshot_path(None, tmp_path) == default
+
+
+def test_resolve_snapshot_returns_none_when_no_default(tmp_path: Path) -> None:
+    assert task_context.resolve_snapshot_path(None, tmp_path) is None
+

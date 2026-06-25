@@ -12,13 +12,20 @@ decides anything that requires comparing issues. Cross-issue judgment
 (deduplication, splitting, ordering, project structure) is out of scope and is
 left to the deterministic synthesis pass and the maintainer.
 
+When you report recommended decisions, do not propose local multi-Python-version
+runs (for example running the suite under both 3.11 and 3.12). Use the single
+controlled `.venv`; multi-version coverage is CI's responsibility.
+
 ## 1. Load only what this issue needs
 
 1. Read `AGENTS.md`, `docs/ISSUE_CONTRACT_V1.md`, and
    `docs/ISSUE_GOVERNANCE.md`.
 2. Run the deterministic contract audit:
    `python scripts/triage/triage.py contract --issue <issue>`.
-   For offline work, add `--snapshot output/triage/snapshot.json`.
+   For offline work, add `--snapshot output/triage/snapshot.json`. If `gh` is
+   unavailable or unauthenticated, generate that snapshot once with
+   `python scripts/triage/triage.py snapshot --output output/triage/snapshot.json`;
+   `context` and the triage commands then fall back to it automatically.
 3. Load only the issue, direct dependencies, relevant parent excerpt,
    referenced paths, direct callers, tests, and design docs. Do not preload the
    whole repository.
@@ -50,13 +57,11 @@ content anchor (`path:symbol` or `path "snippet"`), never a bare `path:line`.
    `python scripts/triage/triage.py review-packet --issue <issue>`.
 2. Revise `proposed-body.md` locally, drafting ONLY missing or placeholder
    sections. Do not rewrite sections that already conform.
-3. Self-verify anchors before invoking the gate. The deterministic anchor
-   verifier (`readiness.verify_file_anchors`) only runs on the applied issue-body
-   audit path; there is no draft-level CLI yet, so check by hand: for every
-   `path:symbol` and `path "snippet"` you wrote, confirm the symbol still appears
-   as a whole word, and the snippet as an exact substring, in the current file.
-   Fix or hypothesis-label any that do not. Never invent a symbol, line, or
-   snippet to satisfy a section.
+3. Self-verify anchors before invoking the gate. Run the draft anchor checker
+   over your proposed body:
+   `python .codex/scripts/anchor_check.py output/triage/issues/<issue>/proposed-body.md`
+   It must report `0 unresolved` and `0 past EOF`. Fix or hypothesis-label any it
+   flags. Never invent a symbol, line, or snippet to satisfy a section.
 4. Validate the contract with the deterministic gate (sections, coverage, title;
    exit 0 accepted, 1 not):
    `python scripts/triage/triage.py standardize --issue <issue> --proposed-body <path>`.

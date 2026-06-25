@@ -278,6 +278,23 @@ def issue_from_snapshot_file(path: Path, issue_number: int) -> dict[str, Any]:
     raise ContextError(f"issue #{issue_number} not present in snapshot: {path}")
 
 
+def default_snapshot_path(root: Path) -> Path:
+    """Conventional snapshot location the triage toolchain writes and reads."""
+
+    return root / "output" / "triage" / "snapshot.json"
+
+
+def resolve_snapshot_path(explicit: Path | None, root: Path) -> Path | None:
+    """Pick the snapshot to use: an explicit --snapshot wins; otherwise fall back
+    to the conventional path only when it exists."""
+
+    if explicit is not None:
+        return explicit
+    candidate = default_snapshot_path(root)
+    return candidate if candidate.is_file() else None
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("issue", nargs="?", type=int, help="GitHub issue number")
@@ -319,20 +336,20 @@ def main() -> int:
             print(render_local_markdown(local), end="")
         return 0
 
+    snapshot_path = resolve_snapshot_path(args.snapshot, root)
     gh_available = shutil.which("gh") is not None
-    gh_authenticated = False
-    if gh_available:
-        auth = subprocess.run(
-            ["gh", "auth", "status"],
-            cwd=root,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        gh_authenticated = auth.returncode == 0
 
-    try:
-        if gh_available and gh_authenticated:
+    issue: dict[str, Any] | None = None
+    repository: str | None = None
+    source: str | None = None
+    live_error: Exception | None = None
+
+    # Attempt the live read first whenever gh is present. gh authentication is
+    # not pre-gated: gh can read a public issue even when `gh auth status` is
+    # imperfect, so try the read and fall back only if it actually fails. This
+    # mirrors scripts/triage/triage.py, which has no auth pre-gate.
+    if gh_available:
+        try:
             repository = discover_repository(root, args.repo)
             issue = issue_payload(
                 root=root,
@@ -341,41 +358,50 @@ def main() -> int:
                 include_comments=args.comments,
             )
             source = "live"
-        elif args.snapshot is not None:
-            issue = issue_from_snapshot_file(args.snapshot, int(issue_number))
+        except (ContextError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+            live_error = exc
+
+    if issue is None:
+        if snapshot_path is not None:
+            try:
+                issue = issue_from_snapshot_file(snapshot_path, int(issue_number))
+            except (ContextError, json.JSONDecodeError) as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
             repository = args.repo or issue.get("repository") or "unknown/unknown"
             source = "snapshot"
             note = (
-                "gh unavailable" if not gh_available else "gh unauthenticated"
+                "gh unavailable"
+                if not gh_available
+                else f"live gh read failed ({live_error})"
             )
             print(
                 f"WARNING: {note}; read issue #{issue_number} from snapshot "
-                f"{args.snapshot} (offline, read-only).",
+                f"{snapshot_path} (offline, read-only).",
                 file=sys.stderr,
             )
         else:
             reason = (
-                "gh is required; install it"
+                "gh is unavailable"
                 if not gh_available
-                else "gh is not authenticated; run gh auth login"
+                else f"live gh read failed: {live_error}"
             )
             print(
-                f"ERROR: {reason}, or pass --snapshot PATH to read issue "
-                f"#{issue_number} offline. The public tracker can also be read "
-                "directly with scripts/triage/triage.py.",
+                f"ERROR: {reason}; no snapshot at {default_snapshot_path(root)} and "
+                "none passed via --snapshot. Generate one with 'python "
+                "scripts/triage/triage.py snapshot --output "
+                "output/triage/snapshot.json' or pass --snapshot PATH.",
                 file=sys.stderr,
             )
             return 2
-        payload = {
-            "repository": repository,
-            "issue": issue,
-            "local": local,
-            "source": source,
-            "referenced_paths": referenced_paths(issue.get("body") or "", root),
-        }
-    except (ContextError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+
+    payload = {
+        "repository": repository,
+        "issue": issue,
+        "local": local,
+        "source": source,
+        "referenced_paths": referenced_paths(issue.get("body") or "", root),
+    }
 
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
