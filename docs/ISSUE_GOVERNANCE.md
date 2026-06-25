@@ -225,6 +225,34 @@ python scripts/triage/triage.py standardize --issue 54 \
 digest-bound `standardization.json`. It never calls a GitHub write endpoint and
 cannot add an issue-body operation to a plan.
 
+### AI-assisted section drafting (assist layer)
+
+`review-packet` writes `proposed-body.md` with the deterministic placeholder
+("Unknown. I could not establish ... maintainer review is required.") for any
+section it cannot establish, and the contract audit rejects a body that still
+contains it. The deterministic tool is unchanged: it still emits placeholders
+and gates.
+
+The `issue-governance` skill adds an optional assist layer on top. When sections
+are missing, the agent reads `contract.json` (the missing sections) and
+`review-packet.json` (the bounded repository context), drafts only the
+placeholder sections from cited source files, and writes them back into
+`proposed-body.md`. The agent then runs `standardize` to confirm the contract
+passes and presents the placeholder-to-draft diff for maintainer review.
+
+This layer is assistive and non-authoritative. It must:
+
+- draft only placeholder sections and never rewrite established content;
+- cite sources with verifiable anchors (`path:symbol` or `path "snippet"`),
+  never a bare `path:line`, so the draft passes the audit's citation checks;
+- keep proven and inferred separate -- hypothesis-label anything it cannot
+  ground and list residual open questions, never fabricating acceptance facts,
+  test results, or decisions to clear the gate;
+- prefix each drafted section with
+  `> Draft (machine-authored; needs maintainer verification)`;
+- stop before any GitHub mutation. The maintainer reviews the diff and applies
+  the edit; the deterministic audit remains the source of truth.
+
 ### Frontier
 
 ```bash

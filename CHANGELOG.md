@@ -83,6 +83,27 @@ governance audit now reasons about citation content instead of position.
   staleness, past-EOF detection, the deliverable exemption, and the
   no-double-report behavior.
 
+### Add AI-assisted drafting of missing contract sections (skill assist layer)
+
+`review-packet` writes `proposed-body.md` with a placeholder for each section it
+cannot establish, and the contract audit rejects a body that still contains the
+placeholder. Filling those sections by hand is the slow step; the deterministic
+tool cannot draft them without inventing facts.
+
+- I extended the `issue-governance` skill with a bounded drafting subroutine: it
+  reads `contract.json` (missing sections) and `review-packet.json` (repository
+  context), drafts only the placeholder sections from cited source files, runs
+  `standardize` to confirm the contract passes, and presents the
+  placeholder-to-draft diff for maintainer review.
+- I kept the deterministic tool unchanged. It still emits placeholders and gates;
+  the drafting is an assistive, non-authoritative layer outside it.
+- I required drafts to cite verifiable anchors (`path:symbol` or `path "snippet"`,
+  never a bare `path:line`), to keep proven and inferred separate with
+  hypothesis labels and an open-questions list, to mark each drafted section with
+  a machine-authored provenance note, and to stop before any GitHub mutation.
+- I documented the assist flow and its guardrails in `docs/ISSUE_GOVERNANCE.md`.
+  No deterministic code, command surface, or mutation allowlist changed.
+
 
 <!-- BEGIN #39 -->
 ### Detect mixed-version manifest/run_results pairs (feat, issue #39)
