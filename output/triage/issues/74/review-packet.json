@@ -1,0 +1,128 @@
+{
+  "acceptance_criteria": null,
+  "audit_digest": "0244d21eac0e3f2c973257570dc9056cc3cc7d736c4dbac7c0ab46fe8391cf0b",
+  "branch_worktree_state": {},
+  "contract": {
+    "digest": "32e10bf7e45fb29a18a503ec5e46849f9b9ed1b758300d183be94b4319cd84ba",
+    "governance_state": "needs_contract_revision",
+    "id": "dbt-diagnostics.issue-contract.v1",
+    "implementation_state": "needs_contract_revision",
+    "version": "1.0"
+  },
+  "dependencies": [],
+  "generated_at": "2026-06-25T19:53:08.374908Z",
+  "historical_progress_context": "## 2026-06-25 -- triage governance correctness pass and next-step handoff\n\n**What changed (branch chore/issue-governance; working tree, validate via CI)**\n- Nine read-only correctness fixes to the issue-governance toolchain under\n  `scripts/triage/`, each verified against source and reproduced before fixing:\n  1. PR-aware dependency resolution (`readiness.py`): dependencies that name a\n     pull request resolve against the PR map, not just the issue map.\n  2. Inbound `Blocks: #N` enforced as a real inbound block, not an\n     informational `related` reference (`readiness.py`).\n  3. Scoped Conventional Commit prefixes (`fix(cli):`) strip the scope before\n     kind inference (`contract.py`); branch slug too (`frontier.py`).\n  4. The configured `docs` type label is recognized in kind inference\n     (`contract.py`).\n  5. Negation-aware decision/external detection (`readiness.py`): \"No open\n     decisions\" no longer manufactures required work.\n  6. Section-aware missing-path detection (`readiness.py`): paths named only in\n     the Scope/deliverable section are intended new files and do not block.\n  7. PR-aware stale checklist detection (`readiness.py`).\n  8. Unresolved-placeholder rejection in the contract audit (`contract.py`): a\n     proposed body still containing the generated placeholder is\n     `needs_contract_revision`, so `standardize` cannot return success for an\n     unresolved contract.\n  9. Frontier audit-coverage gate (`triage.py`): the frontier requires the\n     readiness audit to cover every issue it will rank; partial\n     (issue-filtered) `--audit-file` no longer silently mis-ranks. Audit records\n     `audit_scope`.\n- Two relay-wrapper fixes (`.codex/bin/common.sh`): `codex_header` and the\n  `codex_run` command trace now write to stderr, so `--json` stdout is valid\n  JSON for schema/digest consumers.\n- Tests added/updated in `test_readiness.py`, `test_contract.py`,\n  `test_frontier.py`, `test_triage.py`. CHANGELOG `[Unreleased]` entry added; a\n  Quick start added to `docs/ISSUE_GOVERNANCE.md`.\n\n**Validation note**\n- The sandbox has no `gh` and no network; `test_contract.py`/`test_triage.py`\n  import `pytest` (unavailable here), so those were validated by calling the\n  functions directly. `test_readiness.py`/`test_frontier.py` ran via a\n  pytest-free harness (readiness 29/29, frontier 15/15). CI `pytest` is the\n  authority and must be run before merge. `gh api --slurp` needs gh >= ~2.43.\n\n**Open follow-ups (planned for a fresh context)**\n- Enhancement A: AI-assisted authoring of missing contract sections in the\n  review-packet flow. The deterministic tool keeps emitting placeholders; an\n  agent (issue-governance skill) drafts them, a human reviews, and\n  `standardize` verifies structure. No determinism change.\n- Enhancement B: file references in issues. Bare `path:line` citations are\n  inherently untrustworthy and drift. Do NOT build the audit around validating\n  line numbers -- \"in-range\" must never be read as \"fresh\" (that repeats the\n  visibility-limited -> never_built anti-pattern this pass removed). Instead\n  prefer content-anchored references (symbol or quoted snippet the audit\n  re-locates) and flag bare line numbers as a citation smell. Out-of-range is\n  at most a one-directional \"definitely stale\" signal.\n- Contract-side conditional-section negation blindness (`contract.py`): same\n  naive term-presence problem as fix #5, in a different file.\n- None of the nine fixes are committed; no `CHANGELOG`/doc edits committed.\n\n**Be careful**\n- ASCII-only; do not add the \"Co-authored with CoCo\" marker to *.py/*.sql/*.ipynb\n  (repo voice rule + `check_no_attribution.sh` forbid it).\n\nEnd of session -- 2026-06-25 triage governance correctness pass\n",
+  "historical_progress_is_authoritative": false,
+  "historical_progress_truncated": false,
+  "issue": {
+    "body": "## Summary\n\nBeta-test the new Codex skills and read-only governance toolchain that now lives\nunder `.agents/` and `.codex/`, and decide what is still needed before it is\nproduction-ready. This issue is deliberately the test fixture: it gets pulled\nthrough the full governance lifecycle so we can watch each stage behave on a\nreal, slightly nonconformant issue.\n\nThis issue intentionally does NOT satisfy the v1 issue contract. The gaps are the\npoint -- they give the conform / draft / standardize flow something real to do.\nPlease do not pre-fix them before the test runs.\n\n## Test setup (where this runs)\n\nI (the maintainer) am running these tests on my local machine using the local\nCodex app, signed in with my ChatGPT Pro account (no OpenAI API key). The\ndriving, drafting, and any eventual GitHub writes happen from my local Codex\nsession. The toolchain itself stays read-only and never writes to GitHub; I\napply any conformed issue body by hand after reviewing it.\n\n## Components under test\n\n- Skills: `.agents/skills/issue-governance/SKILL.md` and the\n  `.agents/skills/relay-coordinator` skill.\n- Wrappers: `.codex/bin/action.sh` (actions: `context`, `audit`, `frontier`,\n  `check`, `full`).\n- Deterministic toolchain:\n  - `scripts/triage/common.py:parse_file_references`\n  - `scripts/triage/readiness.py:audit_all_issues`\n  - `scripts/triage/contract.py:propose_normalized_body`\n  - `scripts/triage/frontier.py:implementation_frontier_candidates`\n\n(References above use verifiable symbol anchors on purpose, to dogfood the new\ncontent-anchor checks rather than bare line numbers.)\n\n## How this is scoped\n\nThe work is split into what I do and what I expect Codex to do. My steps are\nexact commands. The Codex side is described as outcomes, not a recipe: choose the\napproach, the commands, and the implementation yourself. If a better path exists\nthan what is implied here, take it and tell me why. The goal of this beta is\npartly to see how much Codex can design on its own, so I am deliberately leaving\nthe \"how\" open.\n\n### My actions (maintainer, local)\n\n1. Stand up the environment and authenticate Codex against my ChatGPT Pro account:\n\n   ```bash\n   bash .codex/bin/action.sh setup\n   bash .codex/bin/action.sh doctor\n   codex login            # browser OAuth; choose \"Continue with Google\"\n   codex login status     # confirm ChatGPT-plan auth, not an API key\n   ```\n\n2. Point Codex at this issue and let it run the lifecycle (it chooses the how):\n\n   ```bash\n   codex --profile task \"Work issue #74: run the .agents/.codex governance lifecycle end to end, conform this issue to contract v1, decide the implementation, and report findings.\"\n   ```\n\n3. Run the local gate (CI parity) before trusting any result:\n\n   ```bash\n   bash .codex/bin/action.sh full\n   ```\n\n4. Review the placeholder-to-draft diff, then apply the conformed body to GitHub\n   by hand (the tooling never writes):\n\n   ```bash\n   gh issue edit 74 --body-file output/triage/issues/74/proposed-body.md\n   ```\n\n5. Make the production-readiness decisions listed below.\n\n### Lifecycle commands (reference)\n\nExact governance commands available to Codex (and to me). Codex decides the\nsequence and may deviate; nothing here writes to GitHub.\n\n```bash\n# Live context for this issue (capture a snapshot first if working offline)\nbash .codex/bin/action.sh context 74\n\n# Read-only audits\npython scripts/triage/triage.py contract --issue 74\npython scripts/triage/triage.py audit --issues 74\n\n# Review packet -> writes contract.json, review-packet.json, proposed-body.md\npython scripts/triage/triage.py review-packet --issue 74 \\\n  --output-dir output/triage/issues/74\n\n# After drafting the missing sections into proposed-body.md, validate the contract\npython scripts/triage/triage.py standardize --issue 74 \\\n  --proposed-body output/triage/issues/74/proposed-body.md\n\n# Read-only frontier selection\npython scripts/triage/triage.py frontier --mode implement\n```\n\n### Codex's expected actions (design left to Codex)\n\nTreat these as the outcomes I want, not a script. You decide how to achieve them.\n\n- Pull this issue and conform it to contract v1: surface the intentional gaps,\n  draft only the missing sections from cited source using verifiable anchors\n  (`path:symbol` or `path \"snippet\"`, never a bare `path:line`), mark each draft\n  as machine-authored and needing verification, and get `standardize` to pass\n  without fabricating acceptance facts, test results, or decisions.\n- Decide the implementation details for any follow-on work this issue implies. I\n  am intentionally not prescribing them -- propose the design, the boundaries,\n  and the tests yourself.\n- Carry the issue through the rest of the lifecycle you judge relevant (readiness\n  audit, frontier selection, worker packet, and ultimately a PR) and report where\n  the tooling or skills helped or got in the way.\n- Flag anything that felt underspecified, brittle, or production-blocking as you\n  go -- that feedback is a primary deliverable of this beta.\n\n## Production-readiness decisions (the decision part)\n\n- [ ] Decide where the issue-governance work itself is tracked. No parent epic\n      exists for the toolchain today; the product epics are #4, #48, and #68.\n- [ ] Decide whether the AI-drafting assist layer stays skill-only or gains a\n      deterministic harness.\n- [ ] Confirm `bash .codex/bin/action.sh full` (CI parity) passes for the\n      toolchain on Python 3.11 and 3.12.\n- [ ] Reconcile the label taxonomy: labels referenced in\n      `scripts/triage/policy.toml` that are not yet real labels in this repo.\n- [ ] Record the dogfooding result in `docs/PROGRESS_LOG.md`.\n\n## Scope and non-goals\n\n- In scope: exercising the read-only governance lifecycle end to end from my\n  local Codex session, and recording what each stage does on a real issue.\n- Non-goals: any GitHub mutation performed by the tooling; warehouse or live\n  probes; changing the deterministic gates; modifying `.github/workflows/*`.\n\n## Intentional contract gaps (do not pre-fix before the test)\n\nThis body omits a formal Evidence-and-confidence block, observable acceptance\ncriteria, a focused test plan, and a dependencies/traceability section on\npurpose, so the conform-and-draft flow has real work to surface.",
+    "body_truncated": false,
+    "labels": [
+      "test",
+      "tier-a"
+    ],
+    "milestone": null,
+    "number": 74,
+    "title": "test: dogfood the .agents/.codex Codex skills governance lifecycle (this issue is the fixture)",
+    "url": "https://github.com/dckallos/dbt-diagnostics/issues/74"
+  },
+  "likely_entry_points": [
+    ".agents/.codex",
+    ".agents/skills/issue-governance/SKILL.md",
+    ".agents/skills/relay-coordinator",
+    ".agents/skills/relay-coordinator/SKILL.md",
+    ".codex/bin/action.sh",
+    ".codex/bin/common.sh",
+    ".codex/bin/triage-audit.sh",
+    ".codex/bin/triage-frontier.sh",
+    "docs/CODEX_RELAY.md",
+    "docs/FRONTIER_SCHEMA_V1.md",
+    "docs/ISSUE_CONTRACT_V1.md",
+    "docs/ISSUE_GOVERNANCE.md",
+    "docs/PROGRESS_LOG.md",
+    "pyproject.toml",
+    "scripts/triage/common.py",
+    "scripts/triage/contract.py",
+    "scripts/triage/frontier.py",
+    "scripts/triage/policy.toml",
+    "scripts/triage/readiness.py",
+    "scripts/triage/triage.py"
+  ],
+  "non_goals": null,
+  "packet_digest": "079f03fca4f7387c43d6a75297cff407dbe8447f8d3a2141bab512ca5058dbaa",
+  "parent_epics": [],
+  "referenced_paths": [
+    {
+      "exists": false,
+      "path": ".agents/.codex"
+    },
+    {
+      "exists": true,
+      "path": ".agents/skills/issue-governance/SKILL.md"
+    },
+    {
+      "exists": true,
+      "path": ".agents/skills/relay-coordinator"
+    },
+    {
+      "exists": true,
+      "path": ".codex/bin/action.sh"
+    },
+    {
+      "exists": true,
+      "path": "docs/PROGRESS_LOG.md"
+    },
+    {
+      "exists": true,
+      "path": "scripts/triage/common.py"
+    },
+    {
+      "exists": true,
+      "path": "scripts/triage/contract.py"
+    },
+    {
+      "exists": true,
+      "path": "scripts/triage/frontier.py"
+    },
+    {
+      "exists": true,
+      "path": "scripts/triage/policy.toml"
+    },
+    {
+      "exists": true,
+      "path": "scripts/triage/readiness.py"
+    },
+    {
+      "exists": true,
+      "path": "scripts/triage/triage.py"
+    }
+  ],
+  "repository": "dckallos/dbt-diagnostics",
+  "required_verification_commands": [
+    "python -m compileall -q dbt_diagnostics scripts/triage",
+    "pytest -q"
+  ],
+  "schema_version": 1,
+  "snapshot_digest": "4455aa19273e50b6b67d150d8cdc750896054fb4fb9fbd9168756a1374cb4d36",
+  "uncertainty": {
+    "blockers": [
+      "The live issue body is intentionally nonconformant until the maintainer applies a reviewed proposed body.",
+      "The live issue body references .agents/.codex as if it were a repository path, but that combined path does not exist.",
+      "bash .codex/bin/action.sh context 74 fails in this session because gh is not authenticated.",
+      "missing repository paths: .agents/.codex"
+    ],
+    "required_decisions": [
+      "Choose the tracker home for issue-governance work; the current product epics are #4, #48, and #68, but this toolchain is cross-cutting repository governance.",
+      "Choose whether AI-assisted section drafting remains skill-only or gets a deterministic harness around the draft review artifact."
+    ],
+    "required_external_evidence": [
+      "CI or maintainer must confirm the full gate on both Python 3.11 and Python 3.12 before treating the lifecycle as production-ready.",
+      "Maintainer must verify the local Codex login mode and apply any accepted issue body by hand."
+    ],
+    "semantic_review_notes": [
+      "The deterministic contract, audit, review-packet, standardize, and frontier commands are read-only or local-only for issue text.",
+      "Direct python triage commands can read the public tracker here even though the context wrapper refuses unauthenticated gh.",
+      "The issue is a coherent single dogfooding PR or handoff, but implementation should stop at local proposed-body validation until maintainer review."
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "issues": [
+    {
+      "issue_number": 74,
+      "semantic_review": {
+        "status": "accepted",
+        "confidence": "medium",
+        "one_pr_coherent": true,
+        "dependency_merge_evidence": true,
+        "dependency_merge_evidence_details": {},
+        "external_evidence_available": false,
+        "source_claims_checked": [
+          ".agents/skills/issue-governance/SKILL.md",
+          ".agents/skills/relay-coordinator/SKILL.md",
+          ".codex/bin/action.sh",
+          ".codex/bin/common.sh",
+          ".codex/bin/triage-audit.sh",
+          ".codex/bin/triage-frontier.sh",
+          "docs/CODEX_RELAY.md",
+          "docs/FRONTIER_SCHEMA_V1.md",
+          "docs/ISSUE_CONTRACT_V1.md",
+          "docs/ISSUE_GOVERNANCE.md",
+          "pyproject.toml",
+          "scripts/triage/common.py",
+          "scripts/triage/contract.py",
+          "scripts/triage/frontier.py",
+          "scripts/triage/policy.toml",
+          "scripts/triage/readiness.py",
+          "scripts/triage/triage.py"
+        ],
+        "tests_checked": [
+          ".codex/bin/test.sh",
+          "scripts/triage/test_contract.py",
+          "scripts/triage/test_frontier.py",
+          "scripts/triage/test_readiness.py",
+          "scripts/triage/test_triage.py"
+        ],
+        "required_decisions": [
+          "Choose the tracker home for issue-governance work; the current product epics are #4, #48, and #68, but this toolchain is cross-cutting repository governance.",
+          "Choose whether AI-assisted section drafting remains skill-only or gets a deterministic harness around the draft review artifact."
+        ],
+        "required_external_evidence": [
+          "Maintainer must verify the local Codex login mode and apply any accepted issue body by hand."
+        ],
+        "blockers": [
+          "The live issue body is intentionally nonconformant until the maintainer applies a reviewed proposed body.",
+          "The live issue body references .agents/.codex as if it were a repository path, but that combined path does not exist.",
+          "bash .codex/bin/action.sh context 74 fails in this session because gh is not authenticated."
+        ],
+        "notes": [
+          "The deterministic contract, audit, review-packet, standardize, and frontier commands are read-only or local-only for issue text.",
+          "Direct python triage commands can read the public tracker here even though the context wrapper refuses unauthenticated gh.",
+          "The issue is a coherent single dogfooding PR or handoff, but implementation should stop at local proposed-body validation until maintainer review.",
+          "bash .codex/bin/action.sh full passed under the repository Python 3.12.9 venv and under a temporary Python 3.11.11 venv via CODEX_VENV_DIR."
+        ]
+      }
+    }
+  ]
+}

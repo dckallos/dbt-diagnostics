@@ -1,0 +1,187 @@
+{
+  "acceptance_coverage": {
+    "degradation": false,
+    "negative": false,
+    "positive": false,
+    "regression": false
+  },
+  "body_digest": "32e10bf7e45fb29a18a503ec5e46849f9b9ed1b758300d183be94b4319cd84ba",
+  "contract_accepted": false,
+  "contract_id": "dbt-diagnostics.issue-contract.v1",
+  "contract_version": "1.0",
+  "findings": [
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Evidence and confidence",
+      "rationale": "Claims must identify evidence and uncertainty."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Acceptance criteria",
+      "rationale": "Completion must be observable and testable."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Focused test plan",
+      "rationale": "Verification must be focused and reproducible."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Dependencies and traceability",
+      "rationale": "Dependencies, parent work, and related ownership must be explicit."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: User-visible problem or current gap or Current wrong behavior or gap",
+      "rationale": "The verification gap must be stated."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Explicit non-goals",
+      "rationale": "The test issue must not silently expand product behavior."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Live behavior and cost tier",
+      "rationale": "Live behavior and cost tier are conditional on warehouse access."
+    },
+    {
+      "code": "missing-required-section",
+      "level": "error",
+      "message": "missing required section: Offline behavior",
+      "rationale": "A live-capable issue must state offline degradation behavior."
+    },
+    {
+      "code": "missing-degradation-coverage",
+      "level": "warning",
+      "message": "acceptance/test text does not explicitly represent degradation coverage"
+    },
+    {
+      "code": "missing-negative-coverage",
+      "level": "warning",
+      "message": "acceptance/test text does not explicitly represent negative coverage"
+    },
+    {
+      "code": "missing-positive-coverage",
+      "level": "warning",
+      "message": "acceptance/test text does not explicitly represent positive coverage"
+    },
+    {
+      "code": "missing-recommended-section",
+      "level": "warning",
+      "message": "missing recommended section: Negative, degradation, and regression coverage",
+      "rationale": "Negative and degradation cases should be represented."
+    },
+    {
+      "code": "missing-regression-coverage",
+      "level": "warning",
+      "message": "acceptance/test text does not explicitly represent regression coverage"
+    }
+  ],
+  "governance_state": "needs_contract_revision",
+  "issue_kind": "test_verification",
+  "issue_number": 74,
+  "missing_acceptance_coverage": [
+    "positive",
+    "negative",
+    "degradation",
+    "regression"
+  ],
+  "missing_recommended_sections": [
+    "Negative, degradation, and regression coverage"
+  ],
+  "missing_required_sections": [
+    "Acceptance criteria",
+    "Dependencies and traceability",
+    "Evidence and confidence",
+    "Explicit non-goals",
+    "Focused test plan",
+    "Live behavior and cost tier",
+    "Offline behavior",
+    "User-visible problem or current gap or Current wrong behavior or gap"
+  ],
+  "present_sections": [
+    "scope_files",
+    "summary"
+  ],
+  "sections": [
+    {
+      "content_digest": "beta-test-the-new-codex",
+      "key": "summary",
+      "level": 2,
+      "line": 1,
+      "title": "Summary"
+    },
+    {
+      "content_digest": "i-the-maintainer-am-runn",
+      "key": null,
+      "level": 2,
+      "line": 13,
+      "title": "Test setup (where this runs)"
+    },
+    {
+      "content_digest": "skills-agents-skills-iss",
+      "key": null,
+      "level": 2,
+      "line": 21,
+      "title": "Components under test"
+    },
+    {
+      "content_digest": "the-work-is-split-into-w",
+      "key": null,
+      "level": 2,
+      "line": 36,
+      "title": "How this is scoped"
+    },
+    {
+      "content_digest": "1-stand-up-the-environme",
+      "key": null,
+      "level": 3,
+      "line": 45,
+      "title": "My actions (maintainer, local)"
+    },
+    {
+      "content_digest": "exact-governance-command",
+      "key": null,
+      "level": 3,
+      "line": 77,
+      "title": "Lifecycle commands (reference)"
+    },
+    {
+      "content_digest": "treat-these-as-the-outco",
+      "key": null,
+      "level": 3,
+      "line": 102,
+      "title": "Codex's expected actions (design left to Codex)"
+    },
+    {
+      "content_digest": "decide-where-the-issue-g",
+      "key": null,
+      "level": 2,
+      "line": 120,
+      "title": "Production-readiness decisions (the decision part)"
+    },
+    {
+      "content_digest": "in-scope-exercising-the",
+      "key": "scope_files",
+      "level": 2,
+      "line": 132,
+      "title": "Scope and non-goals"
+    },
+    {
+      "content_digest": "this-body-omits-a-formal",
+      "key": null,
+      "level": 2,
+      "line": 139,
+      "title": "Intentional contract gaps (do not pre-fix before the test)"
+    }
+  ],
+  "title": "test: dogfood the .agents/.codex Codex skills governance lifecycle (this issue is the fixture)"
+}
