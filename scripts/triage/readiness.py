@@ -511,7 +511,11 @@ def audit_issue(
     # Inbound blockers: other open issues that declare `Blocks: #<this>`. The
     # relationship may be recorded only on the blocker side, so enforce it here
     # rather than relying on this issue to also declare a forward dependency.
-    inbound_blockers = sorted((blocked_by or {}).get(number, set()))
+    # Fall back to deriving the map from the snapshot so a caller that does not
+    # precompute it still gets correct blocking.
+    if blocked_by is None:
+        blocked_by = blocked_by_graph(snapshot)
+    inbound_blockers = sorted(blocked_by.get(number, set()))
     open_inbound_blockers = [
         blocker
         for blocker in inbound_blockers
@@ -619,6 +623,14 @@ def audit_issue(
                 "message": f"direct dependency #{dependency} is absent from the snapshot",
             }
         )
+    for blocker in open_inbound_blockers:
+        tracker_findings.append(
+            {
+                "level": "error",
+                "code": "blocked-by-open-issue",
+                "message": f"open issue #{blocker} declares it blocks this issue",
+            }
+        )
     if issue_cycles:
         tracker_findings.append(
             {
@@ -715,7 +727,7 @@ def audit_issue(
         implementation_state = "overlapping"
     elif issue_cycles or missing_dependencies or missing or pr_conflicts:
         implementation_state = "blocked"
-    elif open_dependencies or explicitly_blocked:
+    elif open_dependencies or explicitly_blocked or open_inbound_blockers:
         implementation_state = "blocked"
     elif decision_required:
         implementation_state = "needs_decision"
@@ -739,6 +751,11 @@ def audit_issue(
         blockers.append(
             "open direct dependencies: "
             + ", ".join(f"#{item}" for item in open_dependencies)
+        )
+    if open_inbound_blockers:
+        blockers.append(
+            "blocked by open issues: "
+            + ", ".join(f"#{item}" for item in open_inbound_blockers)
         )
     if missing:
         blockers.append("missing repository paths: " + ", ".join(missing))
