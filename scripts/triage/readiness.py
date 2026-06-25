@@ -469,6 +469,32 @@ def _body_has_any(body: str, terms: Iterable[str]) -> bool:
     return any(term in lower for term in terms)
 
 
+# A term documents required work only when it is not immediately negated. The
+# negation must directly precede the term (allowing simple separators) so that a
+# distant "no" elsewhere in the line does not suppress a real signal.
+_NEG_PREFIX_RE = re.compile(r"\b(?:no|not|none|without|never|n/?a)\b[\s:,;.\-]*$")
+
+
+def _body_requires(body: str, terms: Iterable[str]) -> bool:
+    """True if any term appears in the body without an immediate negation.
+
+    Phrases such as "No open decisions" or "No external evidence required"
+    document the absence of blockers and must not be treated as required work.
+    """
+    lower = (body or "").lower()
+    for term in terms:
+        start = 0
+        while True:
+            idx = lower.find(term, start)
+            if idx == -1:
+                break
+            preceding = lower[max(0, idx - 24):idx]
+            if not _NEG_PREFIX_RE.search(preceding):
+                return True
+            start = idx + len(term)
+    return False
+
+
 def audit_issue(
     issue: Mapping[str, Any],
     *,
@@ -565,10 +591,10 @@ def audit_issue(
     labels = set(normalized.get("labels") or [])
     decision_required = (
         "decision-needed" in labels
-        or _body_has_any(body, DECISION_TERMS)
+        or _body_requires(body, DECISION_TERMS)
         or bool(semantic.get("required_decisions"))
     )
-    external_required = _body_has_any(body, EXTERNAL_TERMS) or bool(
+    external_required = _body_requires(body, EXTERNAL_TERMS) or bool(
         semantic.get("required_external_evidence")
     )
     explicitly_blocked = "blocked" in labels or bool(semantic.get("blockers"))
