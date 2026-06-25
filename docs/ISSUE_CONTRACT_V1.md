@@ -36,7 +36,7 @@ result as semantic-review evidence.
 
 ## Common core
 
-Every issue requires these sections or an accepted equivalent heading:
+I require implementation issues to use these sections or an accepted equivalent heading. Epics use the reduced common core documented in the Epic section below.
 
 ### Summary
 
@@ -226,7 +226,7 @@ not ship runtime behavior.
 
 ## Epic
 
-Required in addition to the common core:
+I use a reduced common core for epics: `Summary` and `Evidence and confidence`, plus these epic-specific sections:
 
 - `Thesis or decision`
 - `Initial-release gate or build order`

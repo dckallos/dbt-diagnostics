@@ -8,7 +8,15 @@ The normal workflow is read-only:
 ```bash
 python scripts/triage/triage.py snapshot
 python scripts/triage/triage.py audit
+python scripts/triage/triage.py contract --issue 54
+python scripts/triage/triage.py review-packet --issue 54 \
+  --output-dir output/triage/issues/54
+python scripts/triage/triage.py standardize --issue 54 \
+  --proposed-body output/triage/issues/54/proposed-body.md \
+  --output-dir output/triage/issues/54
 python scripts/triage/triage.py plan --output-dir output/triage
+python scripts/triage/triage.py frontier --mode audit --json
+python scripts/triage/triage.py frontier --mode implement --json
 ```
 
 The tool does not create issues, rewrite issue bodies, close issues, create
@@ -67,7 +75,12 @@ python scripts/triage/triage.py audit \
   --snapshot output/triage/snapshot.json
 ```
 
-The audit checks, subject to policy flags:
+The audit writes one digest-bound readiness document that is directly
+consumable by `frontier --audit-file`. It includes contract conformance,
+implementation-readiness state, dependency and overlap facts, semantic-review
+status, and the existing metadata-governance findings.
+
+The metadata checks remain subject to policy flags:
 
 - case-insensitive duplicate labels;
 - labels named in policy but absent from the live repository;
@@ -123,6 +136,97 @@ target, request, batch, or precondition changes the digest and invalidates an
 existing approval.
 
 The generated approval template approves no batch and no operation.
+
+### Contract
+
+```bash
+python scripts/triage/triage.py contract --issue 54
+python scripts/triage/triage.py contract --issue 54 \
+  --snapshot output/triage/snapshot.json --json
+```
+
+I use `contract` to audit exactly one issue against contract v1. It emits the
+inferred issue kind, governance state, acceptance-coverage checks, findings,
+and a body digest. With `--snapshot`, it performs no GitHub call.
+
+### Review packet
+
+```bash
+python scripts/triage/triage.py review-packet --issue 54 \
+  --snapshot output/triage/snapshot.json \
+  --semantic-evidence output/triage/semantic-evidence.json \
+  --output-dir output/triage/issues/54
+```
+
+The command writes only local files:
+
+```text
+output/triage/issues/54/review-packet.json
+output/triage/issues/54/contract.json
+output/triage/issues/54/proposed-body.md
+```
+
+The packet is bounded to one issue, direct dependencies, issue-specific parent
+excerpts, referenced paths, checked source and test entry points, uncertainty,
+and verification commands. It does not embed the full tracker.
+
+### Standardize
+
+```bash
+python scripts/triage/triage.py standardize --issue 54 \
+  --snapshot output/triage/snapshot.json \
+  --proposed-body output/triage/issues/54/proposed-body.md \
+  --output-dir output/triage/issues/54
+```
+
+`standardize` validates an ASCII local body and writes that exact text plus a
+digest-bound `standardization.json`. It never calls a GitHub write endpoint and
+cannot add an issue-body operation to a plan.
+
+### Frontier
+
+```bash
+python scripts/triage/triage.py frontier --mode audit \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
+python scripts/triage/triage.py frontier --mode implement \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json \
+  --packet-output output/triage/frontier-worker-packet.json
+```
+
+Audit mode selects the highest deterministic issue that still needs governance
+or semantic-review work. Implement mode selects only an accepted issue whose
+readiness state is `ready`; it rejects unresolved dependencies, missing merge
+evidence, cycles, decisions, external blockers, missing paths, active pull
+request conflicts, overlap, and other readiness blockers.
+
+Selection is deterministic. Ties use the issue number. `--empty-selection` or
+`--issues none` explicitly returns `selected_issue: null`. That is a valid
+coordinator result, and no worker packet is written for an empty frontier.
+
+The coordinator and optional worker packet are digest-validated before they are
+written. The frontier command never creates a branch, worktree, Codex thread,
+or GitHub mutation.
+
+### Offline forms
+
+Every tracker-reading command except `snapshot` accepts an explicit snapshot.
+The following sequence is credential-free:
+
+```bash
+python scripts/triage/triage.py audit \
+  --snapshot output/triage/snapshot.json \
+  --output output/triage/audit.json
+python scripts/triage/triage.py frontier --mode audit \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
+```
+
+`apply --dry-run` is intentionally different: it performs a live read-only
+preflight against current issue metadata, but it does not write. Execute mode
+retains the approval, exact repository confirmation, environment, lock,
+just-in-time verification, and receipt gates documented below.
 
 ## Supported and forbidden operations
 

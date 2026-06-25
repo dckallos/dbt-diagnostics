@@ -79,3 +79,8 @@ separate bounded schema with the issue body, accepted contract facts, relevant
 parent/dependency excerpts, source/test entry points, unresolved uncertainty,
 verification commands, and branch/worktree state. It does not embed the full
 tracker or every issue body.
+
+I cap the selected issue body at 30,000 characters and historical progress
+context at 4,000 characters. The packet records whether either field was
+truncated. Before writing a coordinator or packet, the CLI validates required
+identity fields, digest formats, field types, bounds, and the canonical digest.
