@@ -16,6 +16,42 @@
 - I added focused governance tests, Codex relay documentation, stable read-only
   wrappers, and minimal repository skills.
 
+### Fix governance triage readiness/contract correctness and relay stdout
+
+Follow-up correctness fixes to the issue-governance toolchain under
+`scripts/triage/`. All remain read-only and offline.
+
+- I made tracker resolution pull-request-aware. Direct dependencies and
+  unchecked checklist references that name a pull request are now resolved
+  against the pull-request map instead of only the issue map, so a dependency on
+  a merged/closed PR is satisfied (or correctly stale) rather than reported as a
+  missing reference that blocks the issue.
+- I made `Blocks: #N` an enforced inbound relationship. An open issue that
+  declares it blocks another issue now blocks that issue's readiness, rather
+  than being treated as an informational `related` reference.
+- I corrected issue-kind inference. A scoped Conventional Commit prefix such as
+  `fix(cli):` now strips the scope before matching, and the repository's
+  configured `docs` type label is recognized, so neither is misclassified as a
+  feature enhancement (with the wrong required sections and branch prefix).
+- I stopped negated prose from manufacturing required work. "No open decisions"
+  or "No external evidence required" no longer set the decision/external gates;
+  a term counts only when it is not immediately negated.
+- I made missing-path detection section-aware. A path named only in the
+  Scope/deliverable section is an intended new file and no longer blocks the
+  issue as a stale missing reference.
+- I made unresolved placeholders block acceptance. A proposed body that still
+  contains the generated "maintainer review is required" placeholder is reported
+  as `needs_contract_revision`, so `standardize` does not return success for an
+  unresolved contract.
+- I gated frontier selection on audit coverage. The frontier now requires the
+  readiness audit to cover every issue it will rank, so a partial
+  (issue-filtered) `--audit-file` can no longer silently mis-rank or empty the
+  frontier; the audit also records its `audit_scope`.
+- I routed relay wrapper status to stderr. `codex_header` and the `codex_run`
+  command trace now write to stderr, so `bash .codex/bin/action.sh frontier ...
+  --json` (and `audit --json`) emit valid JSON on stdout for schema/digest
+  consumers.
+
 
 <!-- BEGIN #39 -->
 ### Detect mixed-version manifest/run_results pairs (feat, issue #39)

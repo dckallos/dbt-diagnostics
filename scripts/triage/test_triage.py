@@ -1823,3 +1823,34 @@ def test_metadata_mutation_allowlist_is_exact_and_body_updates_are_forbidden() -
     }
     assert "issue.body.update" in triage.FORBIDDEN_OPERATION_KINDS
     assert "issue.title.update" in triage.FORBIDDEN_OPERATION_KINDS
+
+
+def test_audit_coverage_gap_detects_partial_audit() -> None:
+    snap = snapshot([issue(1), issue(2)])
+    partial = {"issues": [{"issue_number": 1}]}
+    # No filter: frontier ranks the whole snapshot, so the uncovered issue 2
+    # must be reported (this is the bug the coverage gate prevents).
+    assert triage.audit_coverage_gap(partial, snap, None) == [2]
+    # A filter matching the audit scope is covered.
+    assert triage.audit_coverage_gap(partial, snap, {1}) == []
+    # An explicit empty selection requires no coverage.
+    assert triage.audit_coverage_gap(partial, snap, set()) == []
+    # A full audit covers the whole snapshot.
+    full = {"issues": [{"issue_number": 1}, {"issue_number": 2}]}
+    assert triage.audit_coverage_gap(full, snap, None) == []
+
+
+def test_make_readiness_audit_records_scope(tmp_path: Path) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = write_cli_offline_inputs(
+        tmp_path
+    )
+    policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    full = triage.make_readiness_audit(
+        saved_snapshot, policy, semantic_evidence=semantic
+    )
+    partial = triage.make_readiness_audit(
+        saved_snapshot, policy, semantic_evidence=semantic, issue_filter={101}
+    )
+    assert full["audit_scope"] is None
+    assert partial["audit_scope"] == [101]

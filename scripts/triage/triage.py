@@ -3099,6 +3099,11 @@ def make_readiness_audit(
         ]
     readiness["metadata_findings"] = metadata_findings
     readiness["metadata_finding_count"] = len(metadata_findings)
+    # Record the scope this audit was built with so consumers can detect a
+    # partial audit; null means the full snapshot was audited.
+    readiness["audit_scope"] = (
+        sorted(issue_filter) if issue_filter is not None else None
+    )
     readiness["audit_digest"] = governance_common.sha256_json(
         {key: item for key, item in readiness.items() if key != "audit_digest"}
     )
@@ -3150,6 +3155,30 @@ def validate_readiness_audit(
     )
     if audit.get("audit_digest") != actual:
         raise TriageError(f"readiness audit digest mismatch: expected {actual}")
+
+
+def audit_coverage_gap(
+    audit: Mapping[str, Any],
+    snapshot: Mapping[str, Any],
+    issue_filter: set[int] | None,
+) -> list[int]:
+    """Issue numbers the frontier will rank that the audit does not cover.
+
+    With no filter the frontier ranks the whole snapshot, so the audit must
+    cover every snapshot issue. With a filter it must cover that filter. An
+    empty filter (explicit empty selection) requires no coverage.
+    """
+    audited = {
+        entry.get("issue_number")
+        for entry in audit.get("issues", [])
+        if isinstance(entry, Mapping)
+    }
+    required = (
+        issue_filter
+        if issue_filter is not None
+        else set(governance_common.issue_map(snapshot))
+    )
+    return sorted(number for number in required if number not in audited)
 
 
 def readiness_audit_has_errors(audit: Mapping[str, Any]) -> bool:
@@ -3577,6 +3606,16 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                     raise TriageError(
                         f"frontier issue filter contains unknown issue number(s): {unknown}"
                     )
+            # The frontier may only rank issues the audit actually covers. A
+            # partial (issue-filtered) audit must not be ranked as if it were the
+            # whole snapshot, or it would silently hide other ready issues.
+            uncovered = audit_coverage_gap(readiness_audit, snapshot, issue_filter)
+            if uncovered:
+                raise TriageError(
+                    "readiness audit does not cover the requested frontier issue(s): "
+                    f"{uncovered}; rerun the audit with the same --issues scope "
+                    "(or without --issues for the full snapshot)"
+                )
             coordinator = issue_frontier.build_coordinator_result(
                 args.mode,
                 snapshot,
