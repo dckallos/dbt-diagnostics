@@ -305,15 +305,16 @@ def active_pr_conflicts(issue_number: int, snapshot: Mapping[str, Any]) -> list[
     for number, pull in pull_map(snapshot).items():
         if pull.get("state") != "open":
             continue
+        head_ref = pull.get("head_ref") or ""
         text = "\n".join(
             (
                 pull.get("title") or "",
                 pull.get("body") or "",
-                pull.get("head_ref") or "",
+                head_ref,
             )
         )
         if issue_number in refs_in_text(text) or re.search(
-            rf"(?<!\d){issue_number}(?!\d)", pull.get("head_ref") or ""
+            rf"(?:^|/)(?:issue[-_/]?)?{issue_number}(?:[-_/]|$)", head_ref
         ):
             conflicts.append(number)
     return sorted(conflicts)
