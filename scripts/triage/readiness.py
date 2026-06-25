@@ -276,9 +276,23 @@ def derive_release_gate(
     )
 
 
+# Sections whose paths name intended deliverables (files the issue will create
+# or change), not references that must already exist on disk.
+DELIVERABLE_SECTION_KEYS = {"scope_files", "deliverable"}
+
+
 def missing_paths(issue: Mapping[str, Any], root: Path) -> list[str]:
+    body = issue.get("body") or ""
+    sections, _ = parse_sections(body)
+    deliverable_paths: set[str] = set()
+    for section in sections:
+        if section.key in DELIVERABLE_SECTION_KEYS:
+            deliverable_paths.update(referenced_paths(section.content))
     missing: list[str] = []
-    for path in referenced_paths(issue.get("body") or ""):
+    for path in referenced_paths(body):
+        # Paths listed only as intended deliverables are not stale references.
+        if path in deliverable_paths:
+            continue
         if not (root / path).exists():
             missing.append(path)
     return missing

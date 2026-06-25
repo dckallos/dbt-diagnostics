@@ -222,12 +222,17 @@ One issue per PR.
 
 
 def test_missing_source_path_blocks_readiness(tmp_path: Path) -> None:
+    # A missing path referenced outside the deliverable section is a stale
+    # reference and must block.
     issue = {
         "number": 1,
         "state": "open",
         "title": "fix: path",
         "labels": ["bug"],
-        "body": bug_body().replace("scripts/triage/triage.py", "docs/MISSING.md"),
+        "body": bug_body().replace(
+            "Unknown state becomes a false fact.",
+            "Unknown state becomes a false fact. See docs/MISSING.md for context.",
+        ),
     }
     result = readiness.audit_all_issues(
         snapshot(issue),
@@ -238,6 +243,29 @@ def test_missing_source_path_blocks_readiness(tmp_path: Path) -> None:
     item = result["issues"][0]
     assert item["implementation_state"] == "blocked"
     assert item["missing_repository_paths"] == ["docs/MISSING.md"]
+
+
+def test_scope_named_new_deliverable_does_not_block(tmp_path: Path) -> None:
+    # A path that appears only in the Scope/deliverable section names a file the
+    # issue will create; its absence must not be treated as a stale reference.
+    issue = {
+        "number": 1,
+        "state": "open",
+        "title": "fix: ready",
+        "labels": ["bug"],
+        "body": bug_body().replace(
+            "scripts/triage/triage.py", "scripts/triage/new_module.py"
+        ),
+    }
+    result = readiness.audit_all_issues(
+        snapshot(issue),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic()},
+    )
+    item = result["issues"][0]
+    assert item["missing_repository_paths"] == []
+    assert item["implementation_state"] == "ready"
 
 
 def test_one_pr_scope_warning_is_reported(tmp_path: Path) -> None:
