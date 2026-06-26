@@ -85,6 +85,10 @@ plainly and directly.
 - I use Codex from a real git clone or Codex-created worktree. The repository's
   `.codex` environment creates an isolated `.venv` and exposes credential-free
   setup, doctor, compile, test, and check commands.
+- Codex must work only in the local checkout directory where the session
+  started. Do not create or use external worktrees, alternate clones, or
+  implementation directories outside this checkout unless I explicitly change
+  this rule in a later instruction.
 - I run `bash .codex/bin/action.sh doctor` at the start of a worktree and
   `bash .codex/bin/action.sh context <issue-number>` before issue work. The latter
   reads the live issue and local checkout without writing another stale cache.

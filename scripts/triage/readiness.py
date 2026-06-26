@@ -1012,6 +1012,14 @@ def audit_issue(
 
     checked_claims = semantic.get("source_claims_checked") or []
     tests_checked = semantic.get("tests_checked") or []
+    semantic_disposition_hypothesis = semantic.get("disposition_hypothesis")
+    if not isinstance(semantic_disposition_hypothesis, str):
+        semantic_disposition_hypothesis = None
+    semantic_disposition_evidence = [
+        item
+        for item in semantic.get("disposition_evidence") or []
+        if isinstance(item, str)
+    ]
     blockers = list(semantic.get("blockers") or [])
     if open_dependencies:
         blockers.append(
@@ -1101,6 +1109,8 @@ def audit_issue(
         "required_decisions": sorted(set(required_decisions)),
         "required_external_evidence": sorted(set(required_external)),
         "recommended_disposition": recommended_disposition,
+        "semantic_disposition_hypothesis": semantic_disposition_hypothesis,
+        "semantic_disposition_evidence": semantic_disposition_evidence,
         "confidence": semantic.get("confidence")
         or ("high" if semantic_accepted else "medium"),
         "contract_findings": contract["findings"],

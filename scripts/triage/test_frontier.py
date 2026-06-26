@@ -80,9 +80,20 @@ def entry(
         "referenced_paths": [],
         "source_claims_checked": [],
         "semantic_review_notes": [],
+        "recommended_disposition": "implement",
+        "semantic_disposition_hypothesis": None,
+        "semantic_disposition_evidence": [],
     }
     value.update(extra)
     return value
+
+
+def signals_by_type(report: dict, signal_type: str) -> list[dict]:
+    return [
+        signal
+        for signal in report["signals"]
+        if signal["signal_type"] == signal_type
+    ]
 
 
 def test_merged_pull_request_dependency_is_implementable() -> None:
@@ -489,6 +500,187 @@ def test_project_plan_validation_accepts_empty_well_formed_plan() -> None:
     assert plan["items"] == []
     assert plan["ordering_conflicts"] == []
     assert frontier.validate_project_plan(plan) == []
+
+
+def test_backlog_synthesis_reports_duplicate_pair_with_evidence() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="feat: deterministic backlog synthesis"),
+    )
+    results = audit(
+        entry(
+            1,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+        ),
+        entry(
+            2,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+        ),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    duplicates = signals_by_type(report, "likely-duplicate")
+    assert len(duplicates) == 1
+    assert duplicates[0]["issue_numbers"] == [1, 2]
+    assert duplicates[0]["confidence"] == "high"
+    assert any("shared title tokens" in item for item in duplicates[0]["evidence"])
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_avoids_unrelated_duplicate_suggestions() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="fix: pull request dependency resolution"),
+    )
+    results = audit(
+        entry(1, referenced_paths=["scripts/triage/frontier.py"]),
+        entry(2, referenced_paths=["scripts/triage/readiness.py"]),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    assert signals_by_type(report, "likely-duplicate") == []
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_reports_split_candidate_marker() -> None:
+    snap = snapshot(
+        issue(
+            1,
+            title="feat: oversized governance workflow",
+            body="This issue describes multiple coherent PRs and separable workstreams.",
+        ),
+    )
+    results = audit(entry(1))
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    splits = signals_by_type(report, "split-candidate")
+    assert len(splits) == 1
+    assert splits[0]["issue_numbers"] == [1]
+    assert any("split marker" in item for item in splits[0]["evidence"])
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_reports_dependency_inversion_signal() -> None:
+    snap = snapshot(
+        issue(10, title="feat: dependent"),
+        issue(20, title="feat: blocker"),
+    )
+    results = audit(
+        entry(10, dependencies=[20]),
+        entry(20),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    inversions = signals_by_type(report, "dependency-inversion")
+    assert inversions == [
+        {
+            "signal_type": "dependency-inversion",
+            "issue_numbers": [10, 20],
+            "confidence": "high",
+            "summary": "#10 is ordered before its dependency #20",
+            "evidence": [
+                "issue position 1 is before dependency position 2",
+                "direct dependency: #10 depends on #20",
+            ],
+            "details": {
+                "issue_number": 10,
+                "dependency_issue_number": 20,
+                "issue_position": 1,
+                "dependency_position": 2,
+            },
+        }
+    ]
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_semantic_disposition_overrides_mechanical_map() -> None:
+    snap = snapshot(issue(1, title="feat: duplicate"), issue(2, title="feat: owner"))
+    results = audit(
+        entry(
+            1,
+            recommended_disposition="implement",
+            semantic_disposition_hypothesis="likely-duplicate-of #2",
+            semantic_disposition_evidence=["semantic review points at #2 as the owner"],
+        ),
+        entry(2),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    first = next(
+        item for item in report["issue_dispositions"] if item["issue_number"] == 1
+    )
+    assert first["mechanical_disposition"] == "implement"
+    assert first["semantic_hypothesis"] == "likely-duplicate-of #2"
+    assert first["recommended_disposition"] == "likely-duplicate-of #2"
+    assert first["semantic_evidence_status"] == "provided"
+    semantic = signals_by_type(report, "semantic-disposition")
+    assert semantic[0]["issue_numbers"] == [1, 2]
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_degrades_without_semantic_evidence() -> None:
+    report = frontier.build_backlog_synthesis_report(
+        snapshot(issue(1, title="feat: one")),
+        audit(entry(1)),
+    )
+
+    disposition = report["issue_dispositions"][0]
+    assert disposition["mechanical_disposition"] == "implement"
+    assert disposition["semantic_hypothesis"] is None
+    assert disposition["recommended_disposition"] == "implement"
+    assert disposition["semantic_evidence_status"] == "unknown"
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_is_read_only_and_rejects_mutation_shape(monkeypatch) -> None:
+    calls: list[object] = []
+
+    def fail(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+        raise AssertionError("side effect attempted")
+
+    monkeypatch.setattr("subprocess.run", fail)
+    report = frontier.build_backlog_synthesis_report(
+        snapshot(issue(1)),
+        audit(entry(1)),
+    )
+
+    assert report["safety"] == {
+        "read_only": True,
+        "github_api_calls": False,
+        "github_mutations": False,
+        "contains_issue_content": False,
+        "contains_state_changes": False,
+        "verdicts_are_advisory": True,
+    }
+    assert "operations" not in report
+    assert calls == []
+
+    unsafe = json.loads(json.dumps(report))
+    unsafe["operations"] = []
+    unsafe["safety"]["github_mutations"] = True
+    unsafe["signals"][0:0] = [
+        {
+            "signal_type": "unsafe",
+            "issue_numbers": [1],
+            "confidence": "high",
+            "summary": "unsafe",
+            "evidence": ["unsafe"],
+            "details": {"body": "do not ship issue content"},
+        }
+    ]
+
+    errors = frontier.validate_backlog_synthesis_report(unsafe)
+    assert "operations key is forbidden" in errors
+    assert "safety.github_mutations must be false" in errors
+    assert "signals[0].details.body is forbidden" in errors
 
 
 def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:

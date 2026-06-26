@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/backlog-synthesis-signals-schema-v1.json",
+  "title": "dbt-diagnostics backlog synthesis signals",
+  "type": "object",
+  "additionalProperties": true,
+  "not": {"required": ["operations"]},
+  "required": [
+    "schema_version",
+    "repository",
+    "generated_at",
+    "snapshot_digest",
+    "audit_digest",
+    "issue_dispositions",
+    "signals",
+    "safety",
+    "backlog_synthesis_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "generated_at": {"type": "string"},
+    "snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "audit_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "issue_dispositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["body"]},
+            {"required": ["state"]}
+          ]
+        },
+        "required": [
+          "issue_number",
+          "mechanical_disposition",
+          "semantic_hypothesis",
+          "recommended_disposition",
+          "semantic_evidence_status",
+          "evidence"
+        ],
+        "properties": {
+          "issue_number": {"type": "integer", "minimum": 1},
+          "mechanical_disposition": {"type": "string", "minLength": 1},
+          "semantic_hypothesis": {"type": ["string", "null"]},
+          "recommended_disposition": {"type": "string", "minLength": 1},
+          "semantic_evidence_status": {
+            "enum": ["provided", "unknown"]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["body"]},
+            {"required": ["state"]}
+          ]
+        },
+        "required": [
+          "signal_type",
+          "issue_numbers",
+          "confidence",
+          "summary",
+          "evidence",
+          "details"
+        ],
+        "properties": {
+          "signal_type": {"type": "string", "minLength": 1},
+          "issue_numbers": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "confidence": {"enum": ["low", "medium", "high"]},
+          "summary": {"type": "string", "minLength": 1},
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {"required": ["body"]},
+                {"required": ["state"]}
+              ]
+            }
+          }
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "read_only",
+        "github_api_calls",
+        "github_mutations",
+        "contains_issue_content",
+        "contains_state_changes",
+        "verdicts_are_advisory"
+      ],
+      "properties": {
+        "read_only": {"const": true},
+        "github_api_calls": {"const": false},
+        "github_mutations": {"const": false},
+        "contains_issue_content": {"const": false},
+        "contains_state_changes": {"const": false},
+        "verdicts_are_advisory": {"const": true}
+      }
+    },
+    "backlog_synthesis_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Plan and audit GitHub issue governance with explicit approval gates.
 
-Snapshot, audit, plan, project-plan, contract, review-packet, standardize, and
-frontier do not mutate GitHub. Apply performs a live preflight before any
-selected operation. A real metadata write additionally requires --execute, an
-exact repository confirmation, and TRIAGE_ENABLE_GITHUB_WRITES=1.
+Snapshot, audit, plan, project-plan, backlog-synthesis, contract,
+review-packet, standardize, and frontier do not mutate GitHub. Apply performs a
+live preflight before any selected operation. A real metadata write additionally
+requires --execute, an exact repository confirmation, and
+TRIAGE_ENABLE_GITHUB_WRITES=1.
 """
 
 from __future__ import annotations
@@ -3468,6 +3469,34 @@ def build_parser() -> argparse.ArgumentParser:
     project_plan.add_argument("--json", action="store_true", help="emit plan JSON")
     project_plan.add_argument("--output", type=Path, help="write plan JSON locally")
 
+    backlog_synthesis = subparsers.add_parser(
+        "backlog-synthesis",
+        help="emit read-only backlog-level synthesis candidate signals",
+    )
+    backlog_synthesis.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        help="use an existing snapshot without GitHub reads",
+    )
+    backlog_synthesis_audit_source = backlog_synthesis.add_mutually_exclusive_group()
+    backlog_synthesis_audit_source.add_argument(
+        "--audit-file",
+        type=Path,
+        help="consume an existing readiness audit JSON",
+    )
+    backlog_synthesis_audit_source.add_argument(
+        "--semantic-evidence",
+        type=Path,
+        help="optional local semantic-review evidence JSON when auditing",
+    )
+    backlog_synthesis.add_argument(
+        "--json", action="store_true", help="emit synthesis JSON"
+    )
+    backlog_synthesis.add_argument(
+        "--output", type=Path, help="write synthesis JSON locally"
+    )
+
     apply = subparsers.add_parser(
         "apply",
         help="preflight and optionally execute an explicitly approved plan batch",
@@ -3738,6 +3767,37 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 print(f"Selected issue: {selected}")
                 print(f"Reason: {coordinator.get('selection_reason')}")
                 print(f"Coordinator digest: {coordinator.get('coordinator_digest')}")
+            return 0
+
+        if args.command == "backlog-synthesis":
+            if args.audit_file:
+                readiness_audit = load_json_file(
+                    args.audit_file, "readiness audit JSON"
+                )
+                validate_readiness_audit(readiness_audit, snapshot)
+            else:
+                semantic = load_semantic_evidence(args.semantic_evidence)
+                readiness_audit = make_readiness_audit(
+                    snapshot, policy, semantic_evidence=semantic
+                )
+                validate_readiness_audit(readiness_audit, snapshot)
+            report = issue_frontier.build_backlog_synthesis_report(
+                snapshot, readiness_audit
+            )
+            validation_errors = issue_frontier.validate_backlog_synthesis_report(
+                report
+            )
+            if validation_errors:
+                raise TriageError(
+                    "backlog-synthesis validation failed: "
+                    + "; ".join(validation_errors)
+                )
+            status_stream = sys.stderr if args.json else sys.stdout
+            if args.output:
+                write_json(args.output, report)
+                print(f"Wrote {args.output}", file=status_stream)
+            if args.json or not args.output:
+                print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True))
             return 0
 
         semantic = load_semantic_evidence(getattr(args, "semantic_evidence", None))
