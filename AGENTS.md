@@ -55,12 +55,6 @@ Before stopping, leave the repo resumable:
 - Update `CHANGELOG.md` (under `## [Unreleased]`) in any PR that changes
   behavior.
 - `--json` `schema_version` is additive-only (see CONTRIBUTING.md).
-- For nontrivial Python changes, especially validators, planners, JSON
-  artifacts, command handlers, or compatibility-sensitive code, read
-  `docs/CODE_STANDARDS.md` before editing. Prefer typed domain objects and
-  small validator/builder classes for stable artifact shapes; keep raw
-  `dict[str, Any]` handling at IO boundaries and prove public JSON compatibility
-  with tests.
 - **Docs follow code, never lead it.** Design docs describe the target state
   and are annotated as such (e.g. "to be removed, tracked by #N") until the
   corresponding PR merges. `PROGRESS_LOG.md` is updated only after a PR
@@ -125,8 +119,13 @@ live here even when no skill is invoked:
   audit, score, draft, and plan; they never create, edit, close, label,
   milestone, or move a GitHub item, and no plan or allowlist may add an
   issue-body write. The maintainer applies any change by hand.
-- Work **one issue at a time**. Cross-issue judgment (deduplication, splitting,
-  ordering, project structure) is not done in a per-issue run.
+- Per-issue runs handle **one issue at a time**; the per-issue `issue-governance`
+  skill never reasons across issues. Cross-issue judgment (deduplication,
+  splitting, merging, ordering, project structure) is performed only by the
+  dedicated, read-only cross-issue synthesis pass and the `backlog-synthesis`
+  skill, which emit candidate verdicts with evidence for the maintainer. Like the
+  rest of the toolchain they never create, edit, close, label, milestone, or move
+  a GitHub item; the maintainer applies any verdict by hand.
 - Every source claim in issue text or evidence carries a content anchor
   (`path:symbol` or `path "snippet"`), never a bare `path:line`. Do not invent a
   symbol, line, or snippet to satisfy a section.
