@@ -125,8 +125,15 @@ live here even when no skill is invoked:
   audit, score, draft, and plan; they never create, edit, close, label,
   milestone, or move a GitHub item, and no plan or allowlist may add an
   issue-body write. The maintainer applies any change by hand.
-- Work **one issue at a time**. Cross-issue judgment (deduplication, splitting,
-  ordering, project structure) is not done in a per-issue run.
+- Per-issue runs handle **one issue at a time**; the per-issue `issue-governance`
+  skill never reasons across issues. Cross-issue judgment (deduplication,
+  splitting, merging, ordering, project structure) is reserved for a dedicated,
+  read-only cross-issue synthesis pass that emits candidate verdicts with
+  evidence for the maintainer to act on. Today that pass is the maintainer; a
+  planned `backlog-synthesis` skill (target state, tracked by #81 under epic #85)
+  will perform it once it lands. Like the rest of the toolchain it never creates,
+  edits, closes, labels, milestones, or moves a GitHub item; the maintainer
+  applies any verdict by hand.
 - Every source claim in issue text or evidence carries a content anchor
   (`path:symbol` or `path "snippet"`), never a bare `path:line`. Do not invent a
   symbol, line, or snippet to satisfy a section.
