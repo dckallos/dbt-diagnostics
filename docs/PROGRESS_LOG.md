@@ -828,3 +828,54 @@ End of session -- 2026-06-26 issue 78 branch pushed and draft PR opened
   force abstractions into tiny one-off glue.
 
 End of session -- 2026-06-26 code standards documented
+
+---
+
+## 2026-06-26 -- issue 80 governance kind PR opened
+
+**What changed**
+- Implemented the #80 decision by adding a `governance` issue kind to the
+  issue contract and a `governance:` title prefix to triage policy.
+- Gave governance issues a reduced decision section set: Summary, Evidence and
+  confidence, Acceptance criteria or Decision criteria, Explicit non-goals, and
+  Dependencies and traceability.
+- Kept product-test sections out of the governance kind by default, including
+  the normalized proposed-body skeleton path.
+- Updated focused regression tests, `docs/ISSUE_CONTRACT_V1.md`, and
+  `CHANGELOG.md`.
+- Opened draft PR #88 into `donkey-kong-sandbox`:
+  https://github.com/dckallos/dbt-diagnostics/pull/88.
+
+**Validation**
+- `pytest -q scripts/triage/test_contract.py` passed: 30 passed.
+- `pytest -q scripts/triage/test_triage.py` passed: 60 passed.
+- `python -m compileall -q scripts/triage` passed.
+- `python .codex/scripts/anchor_check.py output/triage/issues/80/proposed-body.md`
+  passed: anchored refs 3, unresolved 0, past EOF 0.
+- `python scripts/triage/triage.py standardize --issue 80 --proposed-body
+  output/triage/issues/80/proposed-body.md --output-dir
+  output/triage/issues/80` passed.
+- `bash .codex/bin/action.sh check` passed after rerunning unsandboxed because
+  the sandbox could not write `.codex/scripts/__pycache__`: 611 passed, 2
+  skipped, 20 deselected, 1 warning; compatibility schema gate skipped as
+  expected.
+
+**Current state**
+- Branch `feat/80-governance-issue-kind` is pushed and PR #88 is open as a
+  draft.
+- Implementation commit: `bb2ee56 feat: add governance issue kind`.
+- Local `output/triage/issues/78/` and `output/triage/issues/80/` artifacts
+  remain untracked and excluded from the PR.
+
+**Next steps**
+- Review PR #88, with special attention to the reduced governance section set,
+  the normalizer path, and whether a live `governance` label should be created
+  separately later.
+
+**Be careful**
+- The PR adds only the `governance:` policy prefix. It does not add a desired
+  label operation or mutate GitHub metadata.
+- The #80 standardized proposed body is a local artifact only; it was not
+  applied to the closed issue.
+
+End of session -- 2026-06-26 issue 80 governance kind PR opened
