@@ -466,3 +466,43 @@ def test_configured_docs_type_label_infers_docs_kind() -> None:
     assert (
         contract.infer_issue_kind("housekeeping", ["chore"]) == "docs_chore_release"
     )
+
+
+_REDUNDANT_COVERAGE_SECTION = "Negative, degradation, and regression coverage"
+
+
+def test_redundant_coverage_recommendation_suppressed_when_coverage_present() -> None:
+    # common_body() demonstrates negative/degradation/regression coverage in its
+    # acceptance and test sections but has no separate edge_cases heading. The
+    # named coverage recommendation is then redundant and must be suppressed.
+    result = contract.audit_contract(
+        {
+            "title": "test: dogfood the governance lifecycle",
+            "body": common_body(),
+            "labels": [{"name": "test"}],
+            "milestone": None,
+        }
+    )
+    coverage = result["acceptance_coverage"]
+    assert all(coverage[name] for name in ("negative", "degradation", "regression"))
+    assert _REDUNDANT_COVERAGE_SECTION not in result["missing_recommended_sections"]
+    assert not any(
+        finding.get("code") == "missing-recommended-section"
+        and finding.get("message", "").endswith(_REDUNDANT_COVERAGE_SECTION)
+        for finding in result["findings"]
+    )
+
+
+def test_redundant_coverage_recommendation_kept_when_coverage_absent() -> None:
+    # A body with no coverage language must still be reminded of the section.
+    result = contract.audit_contract(
+        {
+            "title": "test: thin fixture",
+            "body": "## Summary\n\nA bare summary with no coverage language.\n",
+            "labels": [{"name": "test"}],
+            "milestone": None,
+        }
+    )
+    coverage = result["acceptance_coverage"]
+    assert not any(coverage[name] for name in ("negative", "degradation", "regression"))
+    assert _REDUNDANT_COVERAGE_SECTION in result["missing_recommended_sections"]

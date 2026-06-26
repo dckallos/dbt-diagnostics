@@ -255,6 +255,46 @@ def render_issue_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def issue_from_snapshot_file(path: Path, issue_number: int) -> dict[str, Any]:
+    """Return one raw issue object from a tracker snapshot JSON.
+
+    The snapshot is the read-only artifact produced by the triage toolchain;
+    its ``issues`` list holds raw GitHub issue objects keyed by ``number``. This
+    is the offline fallback when gh is unavailable or unauthenticated.
+    """
+
+    if not path.is_file():
+        raise ContextError(f"snapshot not found: {path}")
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ContextError(f"invalid snapshot JSON: {path}: {exc}") from exc
+    issues = snapshot.get("issues") if isinstance(snapshot, dict) else None
+    if not isinstance(issues, list):
+        raise ContextError(f"snapshot has no issues list: {path}")
+    for raw in issues:
+        if isinstance(raw, dict) and raw.get("number") == issue_number:
+            return raw
+    raise ContextError(f"issue #{issue_number} not present in snapshot: {path}")
+
+
+def default_snapshot_path(root: Path) -> Path:
+    """Conventional snapshot location the triage toolchain writes and reads."""
+
+    return root / "output" / "triage" / "snapshot.json"
+
+
+def resolve_snapshot_path(explicit: Path | None, root: Path) -> Path | None:
+    """Pick the snapshot to use: an explicit --snapshot wins; otherwise fall back
+    to the conventional path only when it exists."""
+
+    if explicit is not None:
+        return explicit
+    candidate = default_snapshot_path(root)
+    return candidate if candidate.is_file() else None
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("issue", nargs="?", type=int, help="GitHub issue number")
@@ -265,6 +305,14 @@ def main() -> int:
         help="include the five most recent comments",
     )
     parser.add_argument("--json", action="store_true", help="emit JSON")
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        help=(
+            "read the issue from a tracker snapshot JSON when gh is unavailable "
+            "or unauthenticated (read-only offline fallback)"
+        ),
+    )
     args = parser.parse_args()
 
     root = Path(os.environ.get("CODEX_REPO_ROOT", Path.cwd())).resolve()
@@ -288,38 +336,72 @@ def main() -> int:
             print(render_local_markdown(local), end="")
         return 0
 
-    if shutil.which("gh") is None:
-        print("ERROR: gh is required; install it and run gh auth login", file=sys.stderr)
-        return 2
+    snapshot_path = resolve_snapshot_path(args.snapshot, root)
+    gh_available = shutil.which("gh") is not None
 
-    auth = subprocess.run(
-        ["gh", "auth", "status"],
-        cwd=root,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    if auth.returncode != 0:
-        print("ERROR: gh is not authenticated; run gh auth login", file=sys.stderr)
-        return 2
+    issue: dict[str, Any] | None = None
+    repository: str | None = None
+    source: str | None = None
+    live_error: Exception | None = None
 
-    try:
-        repository = discover_repository(root, args.repo)
-        issue = issue_payload(
-            root=root,
-            issue_number=int(issue_number),
-            repository=repository,
-            include_comments=args.comments,
-        )
-        payload = {
-            "repository": repository,
-            "issue": issue,
-            "local": local,
-            "referenced_paths": referenced_paths(issue.get("body") or "", root),
-        }
-    except (ContextError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    # Attempt the live read first whenever gh is present. gh authentication is
+    # not pre-gated: gh can read a public issue even when `gh auth status` is
+    # imperfect, so try the read and fall back only if it actually fails. This
+    # mirrors scripts/triage/triage.py, which has no auth pre-gate.
+    if gh_available:
+        try:
+            repository = discover_repository(root, args.repo)
+            issue = issue_payload(
+                root=root,
+                issue_number=int(issue_number),
+                repository=repository,
+                include_comments=args.comments,
+            )
+            source = "live"
+        except (ContextError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+            live_error = exc
+
+    if issue is None:
+        if snapshot_path is not None:
+            try:
+                issue = issue_from_snapshot_file(snapshot_path, int(issue_number))
+            except (ContextError, json.JSONDecodeError) as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
+            repository = args.repo or issue.get("repository") or "unknown/unknown"
+            source = "snapshot"
+            note = (
+                "gh unavailable"
+                if not gh_available
+                else f"live gh read failed ({live_error})"
+            )
+            print(
+                f"WARNING: {note}; read issue #{issue_number} from snapshot "
+                f"{snapshot_path} (offline, read-only).",
+                file=sys.stderr,
+            )
+        else:
+            reason = (
+                "gh is unavailable"
+                if not gh_available
+                else f"live gh read failed: {live_error}"
+            )
+            print(
+                f"ERROR: {reason}; no snapshot at {default_snapshot_path(root)} and "
+                "none passed via --snapshot. Generate one with 'python "
+                "scripts/triage/triage.py snapshot --output "
+                "output/triage/snapshot.json' or pass --snapshot PATH.",
+                file=sys.stderr,
+            )
+            return 2
+
+    payload = {
+        "repository": repository,
+        "issue": issue,
+        "local": local,
+        "source": source,
+        "referenced_paths": referenced_paths(issue.get("body") or "", root),
+    }
 
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

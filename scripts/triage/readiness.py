@@ -299,6 +299,24 @@ def missing_paths(issue: Mapping[str, Any], root: Path) -> list[str]:
     return missing
 
 
+def _is_prose_path_concatenation(path: str, root: Path) -> bool:
+    """True when a missing path is two or more existing top-level directory
+    names joined together.
+
+    For example ``.agents/.codex`` written in prose means the ``.agents`` and
+    ``.codex`` directories, not a nested file; both segments resolve to real
+    top-level directories, so the token is shorthand rather than a stale
+    reference and should warn instead of block. A genuine stale path keeps
+    blocking: ``docs/MISSING.md`` and ``scripts/triage/ghost.py`` both contain a
+    segment that is not an existing top-level directory.
+    """
+
+    segments = path.split("/")
+    return len(segments) >= 2 and all(
+        (root / segment).is_dir() for segment in segments
+    )
+
+
 def _deliverable_reference_paths(sections: Iterable[Any]) -> set[str]:
     paths: set[str] = set()
     for section in sections:
@@ -666,7 +684,11 @@ def audit_issue(
     contract = audit_contract(normalized)
     body = normalized.get("body") or ""
     relationships = parse_relationships(body)
-    missing = missing_paths(normalized, root)
+    missing_all = missing_paths(normalized, root)
+    prose_path_references = [
+        path for path in missing_all if _is_prose_path_concatenation(path, root)
+    ]
+    missing = [path for path in missing_all if path not in prose_path_references]
     audit_cfg = policy.get("audit") if isinstance(policy.get("audit"), Mapping) else {}
     check_citations = (
         audit_cfg.get("check_unanchored_citations", True)
@@ -841,6 +863,19 @@ def audit_issue(
                 "code": "missing-repo-path",
                 "message": "one or more referenced repository paths do not exist",
                 "data": missing,
+            }
+        )
+    if prose_path_references:
+        tracker_findings.append(
+            {
+                "level": "warning",
+                "code": "prose-path-shorthand",
+                "message": (
+                    "one or more citations join existing top-level directory names "
+                    "into a single path (prose shorthand); cite each path "
+                    "separately. This warns but does not block."
+                ),
+                "data": prose_path_references,
             }
         )
     if unanchored:
@@ -1047,6 +1082,7 @@ def audit_issue(
         "milestone_drift": milestone_drift,
         "stale_checklist_references": stale_checklists,
         "missing_repository_paths": missing,
+        "prose_path_references": prose_path_references,
         "unanchored_file_citations": unanchored,
         "unresolved_file_anchors": unresolved_anchors,
         "line_citations_past_eof": past_eof_citations,

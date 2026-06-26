@@ -990,3 +990,35 @@ def test_missing_path_not_double_reported_as_stale_anchor(tmp_path: Path) -> Non
     )["issues"][0]
     assert item["missing_repository_paths"] == ["scripts/triage/ghost.py"]
     assert item["unresolved_file_anchors"] == []
+
+
+def test_prose_path_shorthand_warns_but_does_not_block(tmp_path: Path) -> None:
+    # ".agents/.codex" is prose shorthand for two real top-level directories,
+    # not a nested file. It must be a non-blocking warning, kept out of the
+    # blocking missing-path list, while a genuine stale path still blocks.
+    (tmp_path / ".agents").mkdir()
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / "scripts/triage").mkdir(parents=True)
+    (tmp_path / "scripts/triage/triage.py").write_text("", encoding="ascii")
+    body = bug_body().replace(
+        "A boolean collapses multiple outcomes.",
+        "A boolean collapses multiple outcomes. Exercise the .agents/.codex "
+        "skills and also see docs/MISSING.md here.",
+    )
+    item = readiness.audit_all_issues(
+        snapshot(_refs_issue(body)),
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: accepted_semantic()},
+    )["issues"][0]
+    # Prose shorthand is segregated and does not block.
+    assert item["prose_path_references"] == [".agents/.codex"]
+    assert ".agents/.codex" not in item["missing_repository_paths"]
+    # The genuine stale path still blocks.
+    assert item["missing_repository_paths"] == ["docs/MISSING.md"]
+    codes = {finding["code"] for finding in item["tracker_findings"]}
+    assert "prose-path-shorthand" in codes
+    levels = {
+        finding["code"]: finding["level"] for finding in item["tracker_findings"]
+    }
+    assert levels["prose-path-shorthand"] == "warning"

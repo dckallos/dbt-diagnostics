@@ -84,6 +84,11 @@ plainly and directly.
 - The default setup installs only development dependencies. I set
   `CODEX_INSTALL_LIVE=1` only for explicitly approved Snowflake work, and I do
   not run a live test merely because the connector is installed.
+- I use the single controlled `.venv` that the `.codex` environment builds at
+  the repository root. I do not point `CODEX_VENV_DIR` at an alternate or
+  temporary virtual environment, and I do not spin up ad-hoc venvs to test other
+  Python versions. Local runs use that one `.venv`; multi-version (3.11/3.12)
+  coverage is CI's responsibility, not a local Codex action.
 - I treat GitHub metadata commands as read-only unless the task explicitly
   authorizes mutations. One metadata-writer session owns an approved batch.
 - Local Codex can edit workflow files in the checkout, but workflow, secret,
@@ -104,6 +109,24 @@ plainly and directly.
   into code files. This repo's voice rule forbids it, so the agent strips the
   marker before pushing. The CI guard rejects the marker on
   `*.py`/`*.sql`/`*.ipynb` as a backstop.
+
+## Issue governance (read-only; pointer)
+
+This is the only file Codex always loads, so the non-negotiable governance rules
+live here even when no skill is invoked:
+
+- The triage toolchain (`scripts/triage/`) and its skills are **read-only**. They
+  audit, score, draft, and plan; they never create, edit, close, label,
+  milestone, or move a GitHub item, and no plan or allowlist may add an
+  issue-body write. The maintainer applies any change by hand.
+- Work **one issue at a time**. Cross-issue judgment (deduplication, splitting,
+  ordering, project structure) is not done in a per-issue run.
+- Every source claim in issue text or evidence carries a content anchor
+  (`path:symbol` or `path "snippet"`), never a bare `path:line`. Do not invent a
+  symbol, line, or snippet to satisfy a section.
+- For the full lifecycle use the `issue-governance` skill and
+  `docs/ISSUE_GOVERNANCE.md` / `docs/ISSUE_CONTRACT_V1.md`. These are loaded on
+  demand, not automatically.
 
 ## Scope guard (the project thesis)
 

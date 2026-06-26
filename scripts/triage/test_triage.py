@@ -1679,6 +1679,83 @@ def test_offline_contract_review_and_standardize_are_local_only(
     assert runner.calls == []
 
 
+def test_standardize_rejects_unresolved_content_anchor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A fabricated or stale content anchor in an otherwise conformant body must
+    # block standardize acceptance, so a fake quote or symbol cannot reach the
+    # tracker even when every required section is present.
+    policy_path, snapshot_path, semantic_path, _saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    runner = QueueRunner([])
+    output_dir = tmp_path / "issue-101"
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "review-packet",
+                "--issue",
+                "101",
+                "--snapshot",
+                str(snapshot_path),
+                "--semantic-evidence",
+                str(semantic_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    capsys.readouterr()
+    proposed_path = output_dir / "proposed-body.md"
+
+    def run_standardize() -> int:
+        return triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "standardize",
+                "--issue",
+                "101",
+                "--snapshot",
+                str(snapshot_path),
+                "--proposed-body",
+                str(proposed_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+
+    # Control: the conformant body with resolving anchors is accepted.
+    assert run_standardize() == 0
+    control = json.loads(capsys.readouterr().out)
+    assert control["anchors_resolved"] is True
+    assert control["accepted"] is True
+
+    # Inject a fabricated symbol anchor against a real repository file.
+    base = proposed_path.read_text(encoding="ascii")
+    proposed_path.write_text(
+        base + "\nSee scripts/triage/contract.py:totally_fake_symbol_xyz here.\n",
+        encoding="ascii",
+    )
+    assert run_standardize() == 1
+    rejected = json.loads(capsys.readouterr().out)
+    assert rejected["anchors_resolved"] is False
+    assert rejected["accepted"] is False
+    assert any(
+        anchor["path"] == "scripts/triage/contract.py"
+        and anchor["anchor"] == "totally_fake_symbol_xyz"
+        for anchor in rejected["unresolved_file_anchors"]
+    )
+    assert runner.calls == []
+
+
 def test_audit_plan_and_frontier_compose_offline_deterministically(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
