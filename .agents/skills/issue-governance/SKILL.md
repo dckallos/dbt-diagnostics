@@ -57,11 +57,13 @@ content anchor (`path:symbol` or `path "snippet"`), never a bare `path:line`.
    `python scripts/triage/triage.py review-packet --issue <issue>`.
 2. Revise `proposed-body.md` locally, drafting ONLY missing or placeholder
    sections. Do not rewrite sections that already conform.
-3. Self-verify anchors as a fast pre-check. Run the draft anchor checker over
-   your proposed body:
+3. Optional fast pre-check. The authoritative anchor gate is `standardize`
+   (step 4): it resolves every `path:symbol` / `path "snippet"` in the proposed
+   body and blocks acceptance on an unresolved or past-EOF anchor, so a separate
+   manual anchor check is no longer required. For a quicker local loop you may
+   still run the focused draft checker first:
    `python .codex/scripts/anchor_check.py output/triage/issues/<issue>/proposed-body.md`
-   It must report `0 unresolved` and `0 past EOF`. Never invent a symbol, line,
-   or snippet to satisfy a section.
+   Never invent a symbol, line, or snippet to satisfy a section.
 4. Validate with the deterministic gate. `standardize` checks sections,
    coverage, title AND content anchors; it returns exit 0 only when the contract
    is accepted and every `path:symbol` / `path "snippet"` resolves (an
