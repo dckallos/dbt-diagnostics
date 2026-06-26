@@ -2,11 +2,24 @@
 
 ## [Unreleased]
 
+### Add read-only GitHub Project desired-state planning
+
+- I added a `project-plan` governance command that emits a deterministic
+  desired GitHub Project layout from an existing snapshot and readiness audit.
+  It assigns audit-state columns, issue placement, and ordering without reading
+  GitHub.
+- I added dependency-inversion warnings when the planned order puts an issue
+  before one of its direct dependencies.
+- The emitted Project plan is not an approval bundle and contains no metadata
+  operations, issue bodies, or state changes. Project and metadata writes remain
+  unsupported by this planner.
+
 ### Add issue contract, readiness audit, and read-only relay coordination
 
 - I added the versioned issue contract and separate governance/readiness states.
-- I exposed all eight documented commands: `snapshot`, `audit`, `plan`, `apply`,
-  `contract`, `review-packet`, `standardize`, and `frontier`.
+- I exposed all nine documented commands: `snapshot`, `audit`, `plan`,
+  `project-plan`, `apply`, `contract`, `review-packet`, `standardize`, and
+  `frontier`.
 - I made audit output directly consumable by deterministic audit and
   implementation frontier selection, including explicit empty selection and
   bounded coordinator/worker-packet validation.

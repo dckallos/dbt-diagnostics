@@ -18,6 +18,7 @@ from scripts.triage.contract import parse_sections
 
 COORDINATOR_SCHEMA_VERSION = 1
 WORKER_PACKET_SCHEMA_VERSION = 1
+PROJECT_PLAN_SCHEMA_VERSION = 1
 MAX_WORKER_ISSUE_BODY_CHARS = 30000
 MAX_PROGRESS_CONTEXT_CHARS = 4000
 
@@ -33,6 +34,19 @@ AUDIT_STATE_PRIORITY = {
     "ready": 0,
     "superseded": -100,
 }
+
+PROJECT_PLAN_COLUMNS = (
+    ("ready", "Ready"),
+    ("needs_semantic_review", "Needs semantic review"),
+    ("needs_contract_revision", "Needs contract revision"),
+    ("needs_decision", "Needs decision"),
+    ("blocked", "Blocked"),
+    ("stale", "Stale"),
+    ("overlapping", "Overlapping"),
+    ("unsafe", "Unsafe"),
+    ("superseded", "Superseded"),
+    ("unknown", "Unknown"),
+)
 
 
 def _priority_label_score(labels: list[str]) -> int:
@@ -102,6 +116,161 @@ def audit_frontier_candidates(
             }
         )
     return sorted(candidates, key=lambda item: (-item["score"], item["issue_number"]))
+
+
+def _positive_ints(values: Any) -> list[int]:
+    if not isinstance(values, list):
+        return []
+    return sorted(
+        {
+            item
+            for item in values
+            if isinstance(item, int) and not isinstance(item, bool) and item > 0
+        }
+    )
+
+
+def _column_name(column_id: str) -> str:
+    return " ".join(part for part in column_id.replace("_", " ").split()).capitalize()
+
+
+def _project_policy(policy: Mapping[str, Any] | None) -> dict[str, Any]:
+    project = policy.get("project", {}) if isinstance(policy, Mapping) else {}
+    if not isinstance(project, Mapping):
+        project = {}
+    result: dict[str, Any] = {"enabled": bool(project.get("enabled", False))}
+    for key in ("owner_type", "owner", "number"):
+        value = project.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool):
+            result[key] = value
+    return result
+
+
+def _project_plan_without_digest(plan: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in plan.items() if key != "project_plan_digest"}
+
+
+def build_project_plan(
+    snapshot: Mapping[str, Any],
+    audit: Mapping[str, Any],
+    *,
+    policy: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a read-only desired GitHub Project layout from a readiness audit."""
+
+    issues = issue_map(snapshot)
+    entries = _issue_entries(audit)
+    configured_columns = list(PROJECT_PLAN_COLUMNS)
+    known_column_ids = {column_id for column_id, _name in configured_columns}
+    extra_column_ids = sorted(
+        {
+            str(entry.get("implementation_state") or "unknown")
+            for entry in entries.values()
+            if str(entry.get("implementation_state") or "unknown")
+            not in known_column_ids
+        }
+    )
+    column_defs = configured_columns + [
+        (column_id, _column_name(column_id)) for column_id in extra_column_ids
+    ]
+    column_rank = {
+        column_id: index for index, (column_id, _name) in enumerate(column_defs)
+    }
+    columns = [
+        {"id": column_id, "name": name, "position": index + 1}
+        for index, (column_id, name) in enumerate(column_defs)
+    ]
+
+    pending_items: list[dict[str, Any]] = []
+    for number in sorted(entries):
+        issue = issues.get(number)
+        if issue is None:
+            continue
+        entry = entries[number]
+        column_id = str(entry.get("implementation_state") or "unknown")
+        if column_id not in column_rank:
+            column_id = "unknown"
+        pending_items.append(
+            {
+                "issue_number": number,
+                "title": entry.get("title") or issue.get("title"),
+                "url": entry.get("url") or issue.get("html_url"),
+                "column_id": column_id,
+                "direct_dependencies": _positive_ints(
+                    entry.get("direct_dependencies")
+                ),
+                "parent_epics": _positive_ints(entry.get("parent_epics")),
+                "release_gate": bool(entry.get("release_gate")),
+                "dependency_impact": int(entry.get("dependency_impact") or 0),
+            }
+        )
+    pending_items.sort(
+        key=lambda item: (
+            column_rank.get(str(item["column_id"]), 999),
+            item["issue_number"],
+        )
+    )
+
+    column_positions: dict[str, int] = {}
+    items: list[dict[str, Any]] = []
+    for index, item in enumerate(pending_items, start=1):
+        column_id = str(item["column_id"])
+        column_positions[column_id] = column_positions.get(column_id, 0) + 1
+        items.append(
+            {
+                **item,
+                "position": index,
+                "column_position": column_positions[column_id],
+            }
+        )
+
+    position_by_issue = {
+        int(item["issue_number"]): int(item["position"]) for item in items
+    }
+    conflicts: list[dict[str, Any]] = []
+    for item in items:
+        issue_number = int(item["issue_number"])
+        issue_position = int(item["position"])
+        for dependency in item["direct_dependencies"]:
+            dependency_position = position_by_issue.get(dependency)
+            if dependency_position is None or issue_position > dependency_position:
+                continue
+            conflicts.append(
+                {
+                    "code": "dependency-inversion",
+                    "issue_number": issue_number,
+                    "dependency_issue_number": dependency,
+                    "issue_position": issue_position,
+                    "dependency_position": dependency_position,
+                    "message": (
+                        f"#{issue_number} is ordered before its dependency "
+                        f"#{dependency}"
+                    ),
+                }
+            )
+
+    plan: dict[str, Any] = {
+        "schema_version": PROJECT_PLAN_SCHEMA_VERSION,
+        "repository": repository_name(snapshot),
+        "generated_at": snapshot.get("generated_at") or "unknown",
+        "snapshot_digest": snapshot_digest(snapshot),
+        "audit_digest": audit.get("audit_digest"),
+        "project": _project_policy(policy),
+        "columns": columns,
+        "items": items,
+        "ordering_conflicts": conflicts,
+        "safety": {
+            "read_only": True,
+            "github_api_calls": False,
+            "github_mutations": False,
+            "project_writes_supported": False,
+            "metadata_operations_supported": False,
+            "contains_issue_content": False,
+            "contains_state_changes": False,
+        },
+    }
+    plan["project_plan_digest"] = sha256_json(_project_plan_without_digest(plan))
+    return plan
 
 
 def _dependency_is_closed(

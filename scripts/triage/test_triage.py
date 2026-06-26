@@ -1524,7 +1524,7 @@ def write_cli_offline_inputs(
     return policy_path, snapshot_path, semantic_path, saved_snapshot
 
 
-def test_help_lists_and_parses_all_eight_commands(
+def test_help_lists_and_parses_all_nine_commands(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     expected = {
@@ -1536,6 +1536,7 @@ def test_help_lists_and_parses_all_eight_commands(
         "review-packet",
         "standardize",
         "frontier",
+        "project-plan",
     }
     parser = triage.build_parser()
     top_help = parser.format_help()
@@ -1913,6 +1914,48 @@ def test_audit_plan_and_frontier_compose_offline_deterministically(
     assert runner.calls == []
 
 
+def test_project_plan_cli_emits_json_without_github_calls(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+    )
+    audit_path = tmp_path / "audit.json"
+    write_json(audit_path, readiness)
+    runner = QueueRunner([])
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "project-plan",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--json",
+        ],
+        runner=runner,
+    )
+
+    assert code == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["schema_version"] == triage.issue_frontier.PROJECT_PLAN_SCHEMA_VERSION
+    assert plan["project"]["enabled"] is False
+    assert plan["safety"]["github_api_calls"] is False
+    assert plan["safety"]["github_mutations"] is False
+    assert "operations" not in plan
+    assert all("body" not in item and "state" not in item for item in plan["items"])
+    assert runner.calls == []
+
+
 def test_frontier_rejects_conflicting_audit_sources() -> None:
     parser = triage.build_parser()
     with pytest.raises(SystemExit) as exc:
@@ -1937,8 +1980,12 @@ def test_metadata_mutation_allowlist_is_exact_and_body_updates_are_forbidden() -
         "issue.milestone.set",
         "issue.milestone.clear",
     }
+    assert all(
+        not kind.startswith("project.") for kind in triage.SUPPORTED_OPERATION_KINDS
+    )
     assert "issue.body.update" in triage.FORBIDDEN_OPERATION_KINDS
     assert "issue.title.update" in triage.FORBIDDEN_OPERATION_KINDS
+    assert "project.create" in triage.FORBIDDEN_OPERATION_KINDS
 
 
 def test_audit_coverage_gap_detects_partial_audit() -> None:
