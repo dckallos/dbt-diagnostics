@@ -140,7 +140,7 @@ metadata changes. State the expected documentation and CHANGELOG update.
 
 ## Issue kinds
 
-The deterministic tool infers one of seven kinds from the title and type label.
+The deterministic tool infers one of eight kinds from the title and type label.
 A maintainer can correct an inference by fixing the title or label; the body is
 not given a hidden type marker.
 
@@ -231,6 +231,25 @@ Forbidden:
 
 A spike ends with a recorded go/no-go or bounded architecture decision. It does
 not ship runtime behavior.
+
+## Governance or process
+
+Required for governance issues:
+
+- `Summary`
+- `Evidence and confidence`
+- `Acceptance criteria` or `Decision criteria`
+- `Explicit non-goals`
+- `Dependencies and traceability`
+
+Recommended:
+
+- `Current wrong behavior or gap`
+
+A governance issue records process, contract, or tracker decisions. It does not
+inherit product-test sections such as `Focused test plan`, live/offline fixture
+requirements, or product verification coverage unless a separate conditional
+risk makes those sections relevant.
 
 ## Epic
 

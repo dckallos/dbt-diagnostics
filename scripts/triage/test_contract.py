@@ -141,6 +141,15 @@ Choose only when evidence establishes value.
             "spike_decision",
         ),
         (
+            "governance: choose issue contract shape",
+            ["governance"],
+            """## Decision criteria
+
+The selected issue kind must drive the required section set.
+""",
+            "governance",
+        ),
+        (
             "[Epic] Release correctness",
             ["epic"],
             """## Thesis or decision
@@ -221,6 +230,44 @@ def test_required_section_is_error() -> None:
     assert any(
         item["code"] == "missing-required-section" for item in result["findings"]
     )
+
+
+def test_governance_contract_accepts_decision_body_without_product_test_sections() -> None:
+    issue = {
+        "number": 80,
+        "title": "governance: add issue-kind decision",
+        "labels": ["governance"],
+        "body": """## Summary
+
+I will record one governance decision.
+
+## Evidence and confidence
+
+The contract rules define a governance issue kind. Confidence is high.
+
+## Decision criteria
+
+The issue kind must select the correct required section set.
+
+## Explicit non-goals
+
+- No product issue-kind behavior changes beyond additive classification.
+
+## Dependencies and traceability
+
+- Parent epic: #85.
+""",
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert result["issue_kind"] == "governance"
+    assert result["governance_state"] == "conformant", result["findings"]
+    assert "Focused test plan" not in result["missing_required_sections"]
+    assert "Scope and likely files" not in result["missing_required_sections"]
+    assert "External evidence, permissions, credentials, or fixtures" not in result[
+        "missing_required_sections"
+    ]
 
 
 def test_live_conditional_sections_are_required() -> None:
@@ -408,6 +455,23 @@ def test_proposed_body_is_conformant_once_placeholders_are_resolved() -> None:
     assert result["governance_state"] == "conformant"
 
 
+def test_governance_proposed_body_uses_reduced_section_set() -> None:
+    issue = {
+        "number": 80,
+        "title": "governance: normalize this",
+        "labels": ["governance"],
+        "body": "## Summary\n\nCurrent text.",
+    }
+
+    proposed = contract.propose_normalized_body(issue)
+
+    assert "## Acceptance criteria" in proposed
+    assert "## Explicit non-goals" in proposed
+    assert "## Dependencies and traceability" in proposed
+    assert "## Focused test plan" not in proposed
+    assert "## Scope and likely files" not in proposed
+
+
 def test_contract_output_is_ascii() -> None:
     issue = {
         "number": 5,
@@ -449,6 +513,25 @@ def test_scoped_conventional_commit_prefixes_infer_kind_without_label() -> None:
     )
     # Unscoped conventional-commit prefixes still classify correctly.
     assert contract.infer_issue_kind("fix: resolve crash", []) == "bug_fix"
+
+
+@pytest.mark.parametrize(
+    ("title", "labels", "expected_kind"),
+    [
+        ("governance: decide tracker shape", [], "governance"),
+        ("test: verify live evidence", [], "test_verification"),
+        ("test(triage): keep product-test classification", [], "test_verification"),
+        ("spike: choose identity attestation", [], "spike_decision"),
+        ("feat: add packet", [], "feature_enhancement"),
+        ("fix(cli): resolve crash", [], "bug_fix"),
+    ],
+)
+def test_infer_issue_kind_governance_and_existing_prefix_regressions(
+    title: str,
+    labels: list[str],
+    expected_kind: str,
+) -> None:
+    assert contract.infer_issue_kind(title, labels) == expected_kind
 
 
 def test_configured_docs_type_label_infers_docs_kind() -> None:

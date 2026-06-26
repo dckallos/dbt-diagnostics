@@ -25,6 +25,7 @@ ISSUE_KINDS = (
     "refactor_architecture",
     "test_verification",
     "spike_decision",
+    "governance",
     "epic",
     "docs_chore_release",
 )
@@ -496,6 +497,8 @@ def infer_issue_kind(title: str, labels: Iterable[str] = ()) -> str:
         return "test_verification"
     if prefix in {"spike", "decision", "research"} or "spike" in label_set:
         return "spike_decision"
+    if prefix == "governance" or "governance" in label_set:
+        return "governance"
     if prefix in {"docs", "documentation", "chore", "release", "build", "ci"}:
         return "docs_chore_release"
     if label_set & {"docs", "documentation", "chore", "release"}:
@@ -526,6 +529,26 @@ COMMON_REQUIREMENTS = (
     Requirement.one_of(
         "dependencies_traceability",
         rationale="Dependencies, parent work, and related ownership must be explicit.",
+    ),
+)
+
+GOVERNANCE_REQUIREMENTS = (
+    Requirement.one_of("summary", rationale="Every issue needs a bounded summary."),
+    Requirement.one_of(
+        "evidence_confidence",
+        rationale="Governance decisions must cite evidence and confidence.",
+    ),
+    Requirement.one_of(
+        "acceptance_criteria",
+        "decision_criteria",
+        rationale="A governance issue must state the decision or acceptance rule.",
+    ),
+    Requirement.one_of(
+        "non_goals", rationale="The governance boundary must be explicit."
+    ),
+    Requirement.one_of(
+        "dependencies_traceability",
+        rationale="Governance dependencies and parent work must be explicit.",
     ),
 )
 
@@ -612,6 +635,7 @@ KIND_REQUIREMENTS: dict[str, tuple[Requirement, ...]] = {
             "non_goals", rationale="A spike must forbid premature implementation."
         ),
     ),
+    "governance": (),
     "epic": (
         Requirement.one_of("thesis", rationale="An epic needs a decision or thesis."),
         Requirement.one_of(
@@ -695,6 +719,13 @@ RECOMMENDED: dict[str, tuple[Requirement, ...]] = {
         Requirement.one_of(
             "external_requirements",
             rationale="Required evidence sources should be named.",
+            level="recommended",
+        ),
+    ),
+    "governance": (
+        Requirement.one_of(
+            "current_behavior",
+            rationale="Current governance behavior or gap should be explicit.",
             level="recommended",
         ),
     ),
@@ -866,6 +897,7 @@ def title_label_findings(
         "refactor_architecture": {"architecture"},
         "test_verification": {"test"},
         "spike_decision": {"spike"},
+        "governance": {"governance"},
         "epic": {"epic"},
         "docs_chore_release": {"documentation", "chore"},
     }[kind]
@@ -959,6 +991,8 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
     if kind == "epic":
         # Epics use their own small contract instead of the implementation core.
         requirements = [COMMON_REQUIREMENTS[0], COMMON_REQUIREMENTS[1]]
+    elif kind == "governance":
+        requirements = list(GOVERNANCE_REQUIREMENTS)
     requirements.extend(KIND_REQUIREMENTS[kind])
     requirements.extend(conditional_requirements(kind, labels, body, milestone))
     recommendations = list(RECOMMENDED[kind])
@@ -1020,6 +1054,7 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
         "refactor_architecture": ("positive", "negative", "degradation", "regression"),
         "test_verification": ("positive", "negative", "degradation", "regression"),
         "spike_decision": ("positive", "negative"),
+        "governance": (),
         "epic": (),
         "docs_chore_release": ("positive", "regression"),
     }[kind]
@@ -1151,6 +1186,17 @@ def preferred_section_order(kind: str) -> list[str]:
             "non_goals",
             "dependencies_traceability",
         ]
+    if kind == "governance":
+        return [
+            "summary",
+            "evidence_confidence",
+            "current_behavior",
+            "decision_criteria",
+            "acceptance_criteria",
+            "non_goals",
+            "dependencies_traceability",
+            "decisions_blockers",
+        ]
     if kind == "epic":
         return [
             "summary",
@@ -1178,6 +1224,8 @@ def propose_normalized_body(issue: Mapping[str, Any]) -> str:
     requirements = list(
         COMMON_REQUIREMENTS if kind != "epic" else COMMON_REQUIREMENTS[:2]
     )
+    if kind == "governance":
+        requirements = list(GOVERNANCE_REQUIREMENTS)
     requirements.extend(KIND_REQUIREMENTS[kind])
     requirements.extend(
         conditional_requirements(kind, labels, body, issue.get("milestone"))

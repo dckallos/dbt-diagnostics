@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Add governance issue-kind classification
+
+- I added a dedicated `governance` issue kind for process and tracker-contract
+  decisions so they no longer have to masquerade as product test-verification
+  work.
+- I added the `governance:` title prefix to triage policy and kept genuine
+  `test:` issues classified as `test_verification`.
+- Governance issues require the reduced decision section set and do not require
+  product-test sections by kind.
+
 ### Add read-only GitHub Project desired-state planning
 
 - I added a `project-plan` governance command that emits a deterministic
