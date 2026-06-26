@@ -879,3 +879,127 @@ End of session -- 2026-06-26 code standards documented
   applied to the closed issue.
 
 End of session -- 2026-06-26 issue 80 governance kind PR opened
+
+---
+
+## 2026-06-26 -- issue 81 proposed body drafted
+
+**What changed**
+- Generated a bounded local review packet for issue #81 under
+  `output/triage/issues/81/`.
+- Recorded the local disposition hypothesis as `keep` in
+  `output/triage/issues/81/semantic-evidence.json`.
+- Drafted the missing contract sections in
+  `output/triage/issues/81/proposed-body.md` and made #85/#88 traceability
+  explicit.
+
+**Validation**
+- `python .codex/scripts/anchor_check.py output/triage/issues/81/proposed-body.md`
+  passed: anchored refs 9, unresolved 0, past EOF 0.
+- `python scripts/triage/triage.py standardize --issue 81 --proposed-body
+  output/triage/issues/81/proposed-body.md --output-dir
+  output/triage/issues/81 --json` passed with only the recommended
+  `Offline behavior` warning.
+
+**Current state**
+- No GitHub tracker mutation was made.
+- The proposed #81 body is local and ready for maintainer review.
+- Branch `feat/80-governance-issue-kind` still carries the #80 PR work; issue
+  #81 now records #88 as the implementation prerequisite in the proposed body.
+
+**Next steps**
+- Review the proposed #81 body and apply it manually if accepted.
+- After #88 merges, refresh issue #81 readiness before implementation work.
+
+**Be careful**
+- The drafted sections keep the machine-authored review marker.
+- Do not implement #81 before the #80 governance-kind PR lands.
+
+End of session -- 2026-06-26 issue 81 proposed body drafted
+
+---
+
+## 2026-06-26 -- issue 81 body applied and ready
+
+**What changed**
+- Applied `output/triage/issues/81/proposed-body.md` to live GitHub issue #81
+  with `gh issue edit 81 --body-file output/triage/issues/81/proposed-body.md`.
+- Verified PR #88 is merged into `donkey-kong-sandbox` at
+  `51cf0f311ade5a7008896b13e5b726a9bf1d02d8`.
+- Refreshed local issue #81 semantic evidence so the #88 dependency is recorded
+  as merged instead of blocked.
+
+**Validation**
+- Live `python scripts/triage/triage.py contract --issue 81 --json --output
+  output/triage/issues/81/post-apply-contract.json` passed.
+- Focused readiness audit with
+  `output/triage/issues/81/semantic-evidence.json` reports
+  `implementation_state: ready` and `recommended_disposition: implement`.
+- Live body digest:
+  `3a1701ae933f0f5897b2b2fe3418d9053ab14530a12da3f975d0c60e75121cf9`.
+
+**Current state**
+- GitHub issue #81 has been updated and is ready for implementation work.
+- Local output artifacts for #81 remain untracked.
+- The current checkout is still on `feat/80-governance-issue-kind`; start #81
+  work from fresh `donkey-kong-sandbox` state.
+
+**Next steps**
+- Use the `issue-work` skill for issue #81.
+
+**Be careful**
+- The issue body still has the expected recommended `Offline behavior` warning;
+  the standardization gate accepts it.
+- Keep the #81 implementation read-only. Do not add tracker mutation or expand
+  the per-issue governance skill's scope.
+
+End of session -- 2026-06-26 issue 81 body applied and ready
+
+---
+
+## 2026-06-26 -- issue 81 backlog synthesis implemented
+
+**What changed**
+- Implemented the read-only `backlog-synthesis` command and
+  `frontier.build_backlog_synthesis_report()` signal artifact.
+- Added deterministic candidate signals for semantic disposition hypotheses,
+  explicit overlap, likely duplicates, split markers, and dependency-order
+  inversions.
+- Kept readiness `recommended_disposition` mechanical and added only additive
+  semantic-disposition passthrough fields.
+- Added the `backlog-synthesis` skill, signal schema docs, machine schema,
+  changelog entry, and governance docs.
+- Recorded the local-checkout-only Codex rule in `AGENTS.md`.
+
+**Validation**
+- `python -m compileall -q scripts/triage` passed.
+- `pytest -q scripts/triage/test_frontier.py scripts/triage/test_triage.py
+  scripts/triage/test_readiness.py` passed: 129 passed.
+- `python .codex/scripts/check_ascii.py` passed.
+- `python -m json.tool docs/backlog-synthesis-signals-schema-v1.json
+  >/dev/null` passed.
+- `git diff --check` passed.
+- `PYTHONPYCACHEPREFIX=.venv/pycache bash .codex/bin/action.sh check` passed:
+  621 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema gate
+  skipped as expected.
+
+**Current state**
+- Work is on local branch `feat/81-backlog-synthesis-local`, based on
+  `origin/donkey-kong-sandbox`.
+- `.gitignore` has an unrelated local change for `/output/triage`; do not stage
+  it for the #81 PR.
+- Local `output/triage/issues/` artifacts remain untracked and should stay out
+  of the PR.
+
+**Next steps**
+- Stage only the #81 implementation/docs/skill files plus `AGENTS.md` and this
+  progress entry.
+- Commit, push, and open a draft PR into `donkey-kong-sandbox`.
+
+**Be careful**
+- The deterministic layer emits candidate signals only. Duplicate, obsolete,
+  split, merge, and ordering verdicts remain AI/human/maintainer judgments.
+- Use `PYTHONPYCACHEPREFIX=.venv/pycache` for the full local gate if sandboxed
+  `.codex/scripts/__pycache__` writes fail.
+
+End of session -- 2026-06-26 issue 81 backlog synthesis implemented

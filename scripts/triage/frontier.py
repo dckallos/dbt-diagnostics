@@ -20,6 +20,7 @@ from scripts.triage.contract import parse_sections
 COORDINATOR_SCHEMA_VERSION = 1
 WORKER_PACKET_SCHEMA_VERSION = 1
 PROJECT_PLAN_SCHEMA_VERSION = 1
+BACKLOG_SYNTHESIS_SCHEMA_VERSION = 1
 MAX_WORKER_ISSUE_BODY_CHARS = 30000
 MAX_PROGRESS_CONTEXT_CHARS = 4000
 
@@ -48,6 +49,41 @@ PROJECT_PLAN_COLUMNS = (
     ("superseded", "Superseded"),
     ("unknown", "Unknown"),
 )
+
+TITLE_STOPWORDS = {
+    "a",
+    "and",
+    "as",
+    "for",
+    "in",
+    "issue",
+    "of",
+    "or",
+    "the",
+    "to",
+    "with",
+}
+
+SPLIT_MARKERS = (
+    "split candidate",
+    "separate pr",
+    "separate prs",
+    "multiple coherent pr",
+    "multiple coherent prs",
+    "more than one coherent pr",
+    "separable deliverable",
+    "separable deliverables",
+    "separable workstream",
+    "separable workstreams",
+)
+
+SIGNAL_SORT_ORDER = {
+    "semantic-disposition": 10,
+    "explicit-overlap": 20,
+    "likely-duplicate": 30,
+    "split-candidate": 40,
+    "dependency-inversion": 50,
+}
 
 
 def _priority_label_score(labels: list[str]) -> int:
@@ -137,6 +173,14 @@ def _column_name(column_id: str) -> str:
 
 def _project_plan_without_digest(plan: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in plan.items() if key != "project_plan_digest"}
+
+
+def _backlog_synthesis_without_digest(report: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in report.items()
+        if key != "backlog_synthesis_digest"
+    }
 
 
 @dataclass(frozen=True)
@@ -324,6 +368,127 @@ class ProjectPlan:
         }
         plan["project_plan_digest"] = sha256_json(_project_plan_without_digest(plan))
         return plan
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisSafety:
+    read_only: bool
+    github_api_calls: bool
+    github_mutations: bool
+    contains_issue_content: bool
+    contains_state_changes: bool
+    verdicts_are_advisory: bool
+
+    @classmethod
+    def read_only_contract(cls) -> BacklogSynthesisSafety:
+        return cls(
+            read_only=True,
+            github_api_calls=False,
+            github_mutations=False,
+            contains_issue_content=False,
+            contains_state_changes=False,
+            verdicts_are_advisory=True,
+        )
+
+    def to_json(self) -> dict[str, bool]:
+        return {
+            "read_only": self.read_only,
+            "github_api_calls": self.github_api_calls,
+            "github_mutations": self.github_mutations,
+            "contains_issue_content": self.contains_issue_content,
+            "contains_state_changes": self.contains_state_changes,
+            "verdicts_are_advisory": self.verdicts_are_advisory,
+        }
+
+
+@dataclass(frozen=True)
+class BacklogIssueDisposition:
+    issue_number: int
+    mechanical_disposition: str
+    semantic_hypothesis: str | None
+    recommended_disposition: str
+    semantic_evidence_status: str
+    evidence: tuple[str, ...]
+
+    @classmethod
+    def from_entry(cls, entry: Mapping[str, Any]) -> BacklogIssueDisposition:
+        issue_number = int(entry["issue_number"])
+        mechanical = str(entry.get("recommended_disposition") or "unknown")
+        raw_hypothesis = entry.get("semantic_disposition_hypothesis")
+        hypothesis = raw_hypothesis if isinstance(raw_hypothesis, str) else None
+        evidence = tuple(
+            item
+            for item in entry.get("semantic_disposition_evidence") or []
+            if isinstance(item, str)
+        )
+        return cls(
+            issue_number=issue_number,
+            mechanical_disposition=mechanical,
+            semantic_hypothesis=hypothesis,
+            recommended_disposition=hypothesis or mechanical,
+            semantic_evidence_status="provided" if hypothesis else "unknown",
+            evidence=evidence,
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "issue_number": self.issue_number,
+            "mechanical_disposition": self.mechanical_disposition,
+            "semantic_hypothesis": self.semantic_hypothesis,
+            "recommended_disposition": self.recommended_disposition,
+            "semantic_evidence_status": self.semantic_evidence_status,
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisSignal:
+    signal_type: str
+    issue_numbers: tuple[int, ...]
+    confidence: str
+    summary: str
+    evidence: tuple[str, ...]
+    details: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "signal_type": self.signal_type,
+            "issue_numbers": list(self.issue_numbers),
+            "confidence": self.confidence,
+            "summary": self.summary,
+            "evidence": list(self.evidence),
+            "details": dict(self.details),
+        }
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisReport:
+    repository: str
+    generated_at: str
+    snapshot_digest: str
+    audit_digest: str
+    issue_dispositions: tuple[BacklogIssueDisposition, ...]
+    signals: tuple[BacklogSynthesisSignal, ...]
+    safety: BacklogSynthesisSafety = BacklogSynthesisSafety.read_only_contract()
+    schema_version: int = BACKLOG_SYNTHESIS_SCHEMA_VERSION
+
+    def to_json(self) -> dict[str, Any]:
+        report: dict[str, Any] = {
+            "schema_version": self.schema_version,
+            "repository": self.repository,
+            "generated_at": self.generated_at,
+            "snapshot_digest": self.snapshot_digest,
+            "audit_digest": self.audit_digest,
+            "issue_dispositions": [
+                item.to_json() for item in self.issue_dispositions
+            ],
+            "signals": [signal.to_json() for signal in self.signals],
+            "safety": self.safety.to_json(),
+        }
+        report["backlog_synthesis_digest"] = sha256_json(
+            _backlog_synthesis_without_digest(report)
+        )
+        return report
 
 
 def _is_positive_int(value: Any) -> bool:
@@ -607,6 +772,168 @@ class ProjectPlanValidator:
         ProjectPlanSafetyShape(safety).validate(context)
 
 
+@dataclass(frozen=True)
+class BacklogSynthesisSafetyShape:
+    value: Mapping[str, Any]
+
+    EXPECTED: ClassVar[dict[str, bool]] = {
+        "read_only": True,
+        "github_api_calls": False,
+        "github_mutations": False,
+        "contains_issue_content": False,
+        "contains_state_changes": False,
+        "verdicts_are_advisory": True,
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        for key, expected in self.EXPECTED.items():
+            if self.value.get(key) is not expected:
+                context.errors.append(f"safety.{key} must be {str(expected).lower()}")
+
+
+@dataclass(frozen=True)
+class BacklogIssueDispositionShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"issue_dispositions[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        if "body" in self.value:
+            context.errors.append(f"{self.path}.body is forbidden")
+        if "state" in self.value:
+            context.errors.append(f"{self.path}.state is forbidden")
+        context.require_positive_int(
+            self.value.get("issue_number"), name=f"{self.path}.issue_number"
+        )
+        for key in ("mechanical_disposition", "recommended_disposition"):
+            context.require_non_empty_string(
+                self.value.get(key), name=f"{self.path}.{key}"
+            )
+        context.require_string_or_null(
+            self.value.get("semantic_hypothesis"),
+            name=f"{self.path}.semantic_hypothesis",
+        )
+        if self.value.get("semantic_evidence_status") not in {"provided", "unknown"}:
+            context.errors.append(
+                f"{self.path}.semantic_evidence_status must be provided or unknown"
+            )
+        context.require_string_list(
+            self.value.get("evidence"), name=f"{self.path}.evidence"
+        )
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisSignalShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"signals[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        if "body" in self.value:
+            context.errors.append(f"{self.path}.body is forbidden")
+        if "state" in self.value:
+            context.errors.append(f"{self.path}.state is forbidden")
+        context.require_non_empty_string(
+            self.value.get("signal_type"), name=f"{self.path}.signal_type"
+        )
+        context.require_positive_int_list(
+            self.value.get("issue_numbers"), name=f"{self.path}.issue_numbers"
+        )
+        issue_numbers = self.value.get("issue_numbers")
+        if (
+            isinstance(issue_numbers, list)
+            and all(_is_positive_int(item) for item in issue_numbers)
+            and issue_numbers != sorted(set(issue_numbers))
+        ):
+            context.errors.append(f"{self.path}.issue_numbers must be sorted and unique")
+        if self.value.get("confidence") not in {"low", "medium", "high"}:
+            context.errors.append(f"{self.path}.confidence must be low, medium, or high")
+        context.require_non_empty_string(
+            self.value.get("summary"), name=f"{self.path}.summary"
+        )
+        context.require_string_list(
+            self.value.get("evidence"), name=f"{self.path}.evidence"
+        )
+        details = self.value.get("details")
+        if not isinstance(details, Mapping):
+            context.errors.append(f"{self.path}.details must be an object")
+            return
+        for forbidden in ("body", "state"):
+            if forbidden in details:
+                context.errors.append(f"{self.path}.details.{forbidden} is forbidden")
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisReportValidator:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "schema_version",
+        "repository",
+        "generated_at",
+        "snapshot_digest",
+        "audit_digest",
+        "issue_dispositions",
+        "signals",
+        "safety",
+        "backlog_synthesis_digest",
+    }
+
+    def validate(self) -> list[str]:
+        context = ValidationContext()
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        if "operations" in self.value:
+            context.errors.append("operations key is forbidden")
+        if self.value.get("schema_version") != BACKLOG_SYNTHESIS_SCHEMA_VERSION:
+            context.errors.append("unsupported schema_version")
+        context.require_repository(self.value.get("repository"))
+        context.require_string(self.value.get("generated_at"), name="generated_at")
+        for key in ("snapshot_digest", "audit_digest", "backlog_synthesis_digest"):
+            context.require_digest(self.value.get(key), name=key)
+        self._validate_issue_dispositions(context)
+        self._validate_signals(context)
+        self._validate_safety(context)
+        actual_digest = sha256_json(_backlog_synthesis_without_digest(self.value))
+        if self.value.get("backlog_synthesis_digest") != actual_digest:
+            context.errors.append("backlog_synthesis_digest mismatch")
+        return context.errors
+
+    def _validate_issue_dispositions(self, context: ValidationContext) -> None:
+        dispositions = self.value.get("issue_dispositions")
+        if not isinstance(dispositions, list):
+            context.errors.append("issue_dispositions must be an array")
+            return
+        for index, disposition in enumerate(dispositions):
+            if not isinstance(disposition, Mapping):
+                context.errors.append(f"issue_dispositions[{index}] must be an object")
+                continue
+            BacklogIssueDispositionShape(index, disposition).validate(context)
+
+    def _validate_signals(self, context: ValidationContext) -> None:
+        signals = self.value.get("signals")
+        if not isinstance(signals, list):
+            context.errors.append("signals must be an array")
+            return
+        for index, signal in enumerate(signals):
+            if not isinstance(signal, Mapping):
+                context.errors.append(f"signals[{index}] must be an object")
+                continue
+            BacklogSynthesisSignalShape(index, signal).validate(context)
+
+    def _validate_safety(self, context: ValidationContext) -> None:
+        safety = self.value.get("safety")
+        if not isinstance(safety, Mapping):
+            context.errors.append("safety must be an object")
+            return
+        BacklogSynthesisSafetyShape(safety).validate(context)
+
+
 def build_project_plan(
     snapshot: Mapping[str, Any],
     audit: Mapping[str, Any],
@@ -712,6 +1039,324 @@ def validate_project_plan(value: Mapping[str, Any]) -> list[str]:
     """Validate the read-only project-plan envelope and its digest."""
 
     return ProjectPlanValidator(value).validate()
+
+
+def _title_tokens(title: Any) -> tuple[str, ...]:
+    if not isinstance(title, str):
+        return ()
+    cleaned = re.sub(
+        r"^(?:\[[^]]+\]\s*)?(?:[a-z]+)(?:\([^)]*\))?:\s*",
+        "",
+        title,
+        flags=re.I,
+    )
+    return tuple(
+        sorted(
+            {
+                token
+                for token in re.findall(r"[a-z0-9]+", cleaned.lower())
+                if token not in TITLE_STOPWORDS and not token.isdigit()
+            }
+        )
+    )
+
+
+def _jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _claim_path(value: str) -> str | None:
+    candidate = value.split(" ", 1)[0].split(":", 1)[0]
+    if "/" not in candidate and "." not in candidate:
+        return None
+    return candidate
+
+
+def _entry_paths(entry: Mapping[str, Any]) -> set[str]:
+    paths = {
+        item
+        for item in entry.get("referenced_paths") or []
+        if isinstance(item, str)
+    }
+    for claim in entry.get("source_claims_checked") or []:
+        if not isinstance(claim, str):
+            continue
+        path = _claim_path(claim)
+        if path:
+            paths.add(path)
+    return paths
+
+
+def _shared_duplicate_evidence(
+    left: Mapping[str, Any], right: Mapping[str, Any]
+) -> tuple[list[str], dict[str, Any]]:
+    evidence: list[str] = []
+    details: dict[str, Any] = {}
+    left_tokens = set(_title_tokens(left.get("title")))
+    right_tokens = set(_title_tokens(right.get("title")))
+    shared_tokens = sorted(left_tokens & right_tokens)
+    score = _jaccard(left_tokens, right_tokens)
+    details["title_similarity"] = round(score, 3)
+    if shared_tokens:
+        evidence.append("shared title tokens: " + ", ".join(shared_tokens))
+        details["shared_title_tokens"] = shared_tokens
+    shared_paths = sorted(_entry_paths(left) & _entry_paths(right))
+    if shared_paths:
+        evidence.append("shared referenced paths: " + ", ".join(shared_paths))
+        details["shared_paths"] = shared_paths
+    shared_parents = sorted(
+        set(_positive_ints(left.get("parent_epics")))
+        & set(_positive_ints(right.get("parent_epics")))
+    )
+    if shared_parents:
+        evidence.append(
+            "shared parent epics: " + ", ".join(f"#{item}" for item in shared_parents)
+        )
+        details["shared_parent_epics"] = shared_parents
+    if left.get("issue_kind") == right.get("issue_kind") and left.get("issue_kind"):
+        evidence.append(f"shared issue kind: {left.get('issue_kind')}")
+        details["shared_issue_kind"] = left.get("issue_kind")
+    return evidence, details
+
+
+def _duplicate_signals(
+    entries: Mapping[int, Mapping[str, Any]],
+    issues: Mapping[int, Mapping[str, Any]],
+    open_issue_numbers: set[int],
+) -> list[BacklogSynthesisSignal]:
+    signals: list[BacklogSynthesisSignal] = []
+    numbers = sorted(number for number in entries if number in open_issue_numbers)
+    for left_index, left_number in enumerate(numbers):
+        for right_number in numbers[left_index + 1 :]:
+            left = {
+                **entries[left_number],
+                "title": issues[left_number].get("title")
+                or entries[left_number].get("title"),
+            }
+            right = {
+                **entries[right_number],
+                "title": issues[right_number].get("title")
+                or entries[right_number].get("title"),
+            }
+            left_tokens = set(_title_tokens(left.get("title")))
+            right_tokens = set(_title_tokens(right.get("title")))
+            score = _jaccard(left_tokens, right_tokens)
+            evidence, details = _shared_duplicate_evidence(left, right)
+            has_context = any(
+                key in details
+                for key in ("shared_paths", "shared_parent_epics", "shared_issue_kind")
+            )
+            if score < 0.8 or not has_context:
+                continue
+            confidence = "high" if score == 1.0 else "medium"
+            signals.append(
+                BacklogSynthesisSignal(
+                    signal_type="likely-duplicate",
+                    issue_numbers=(left_number, right_number),
+                    confidence=confidence,
+                    summary=(
+                        f"#{left_number} and #{right_number} have highly similar "
+                        "titles and shared audit context"
+                    ),
+                    evidence=tuple(evidence),
+                    details=details,
+                )
+            )
+    return signals
+
+
+def _explicit_overlap_signals(
+    entries: Mapping[int, Mapping[str, Any]],
+    open_issue_numbers: set[int],
+) -> list[BacklogSynthesisSignal]:
+    signals: list[BacklogSynthesisSignal] = []
+    seen: set[tuple[int, ...]] = set()
+    for number in sorted(entries):
+        if number not in open_issue_numbers:
+            continue
+        conflicts = entries[number].get("overlap_conflicts") or []
+        for conflict in conflicts:
+            other = None
+            if isinstance(conflict, Mapping):
+                raw = conflict.get("issue_number") or conflict.get("number")
+                if _is_positive_int(raw):
+                    other = int(raw)
+            if other is None or other not in open_issue_numbers:
+                continue
+            issue_numbers = tuple(sorted({number, other}))
+            if issue_numbers in seen:
+                continue
+            seen.add(issue_numbers)
+            signals.append(
+                BacklogSynthesisSignal(
+                    signal_type="explicit-overlap",
+                    issue_numbers=issue_numbers,
+                    confidence="high",
+                    summary=(
+                        f"#{issue_numbers[0]} and #{issue_numbers[1]} declare "
+                        "overlapping ownership"
+                    ),
+                    evidence=("readiness audit reported explicit overlap",),
+                    details={"source_issue_number": number},
+                )
+            )
+    return signals
+
+
+def _split_candidate_signals(
+    snapshot: Mapping[str, Any],
+    entries: Mapping[int, Mapping[str, Any]],
+    open_issue_numbers: set[int],
+) -> list[BacklogSynthesisSignal]:
+    issues = issue_map(snapshot, include_closed=False)
+    signals: list[BacklogSynthesisSignal] = []
+    for number in sorted(entries):
+        if number not in open_issue_numbers:
+            continue
+        body = str(issues.get(number, {}).get("body") or "").lower()
+        if not any(marker in body for marker in SPLIT_MARKERS):
+            continue
+        signals.append(
+            BacklogSynthesisSignal(
+                signal_type="split-candidate",
+                issue_numbers=(number,),
+                confidence="medium",
+                summary=f"#{number} contains language that suggests separable work",
+                evidence=("issue body contains a split marker",),
+                details={"matched_marker_count": 1},
+            )
+        )
+    return signals
+
+
+def _dependency_inversion_signals(
+    snapshot: Mapping[str, Any], audit: Mapping[str, Any]
+) -> list[BacklogSynthesisSignal]:
+    plan = build_project_plan(snapshot, audit, policy={"project": {"enabled": False}})
+    signals: list[BacklogSynthesisSignal] = []
+    for conflict in plan.get("ordering_conflicts") or []:
+        if not isinstance(conflict, Mapping):
+            continue
+        issue_number = conflict.get("issue_number")
+        dependency = conflict.get("dependency_issue_number")
+        issue_position = conflict.get("issue_position")
+        dependency_position = conflict.get("dependency_position")
+        if not (_is_positive_int(issue_number) and _is_positive_int(dependency)):
+            continue
+        signals.append(
+            BacklogSynthesisSignal(
+                signal_type="dependency-inversion",
+                issue_numbers=(int(issue_number), int(dependency)),
+                confidence="high",
+                summary=str(conflict.get("message") or ""),
+                evidence=(
+                    f"issue position {issue_position} is before dependency position "
+                    f"{dependency_position}",
+                    f"direct dependency: #{issue_number} depends on #{dependency}",
+                ),
+                details={
+                    "issue_number": int(issue_number),
+                    "dependency_issue_number": int(dependency),
+                    "issue_position": int(issue_position),
+                    "dependency_position": int(dependency_position),
+                },
+            )
+        )
+    return signals
+
+
+def _refs_in_text(value: str) -> list[int]:
+    return sorted(
+        {
+            int(match.group("number"))
+            for match in re.finditer(r"#(?P<number>[1-9][0-9]*)", value)
+        }
+    )
+
+
+def _semantic_disposition_signals(
+    dispositions: tuple[BacklogIssueDisposition, ...]
+) -> list[BacklogSynthesisSignal]:
+    signals: list[BacklogSynthesisSignal] = []
+    for disposition in dispositions:
+        hypothesis = disposition.semantic_hypothesis
+        if not hypothesis:
+            continue
+        issue_numbers = tuple(
+            sorted({disposition.issue_number, *_refs_in_text(hypothesis)})
+        )
+        signals.append(
+            BacklogSynthesisSignal(
+                signal_type="semantic-disposition",
+                issue_numbers=issue_numbers,
+                confidence="high" if disposition.evidence else "medium",
+                summary=(
+                    f"#{disposition.issue_number} semantic disposition hypothesis: "
+                    f"{hypothesis}"
+                ),
+                evidence=disposition.evidence
+                or ("semantic disposition hypothesis supplied",),
+                details={
+                    "issue_number": disposition.issue_number,
+                    "mechanical_disposition": disposition.mechanical_disposition,
+                    "semantic_hypothesis": hypothesis,
+                    "recommended_disposition": disposition.recommended_disposition,
+                },
+            )
+        )
+    return signals
+
+
+def _sort_signals(
+    signals: list[BacklogSynthesisSignal],
+) -> tuple[BacklogSynthesisSignal, ...]:
+    return tuple(
+        sorted(
+            signals,
+            key=lambda item: (
+                SIGNAL_SORT_ORDER.get(item.signal_type, 999),
+                item.issue_numbers,
+                item.summary,
+            ),
+        )
+    )
+
+
+def build_backlog_synthesis_report(
+    snapshot: Mapping[str, Any], audit: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Build read-only candidate signals for backlog-level synthesis."""
+
+    entries = _issue_entries(audit)
+    issues = issue_map(snapshot, include_closed=False)
+    open_issue_numbers = set(issues)
+    dispositions = tuple(
+        BacklogIssueDisposition.from_entry(entries[number])
+        for number in sorted(entries)
+        if number in issues
+    )
+    signals: list[BacklogSynthesisSignal] = []
+    signals.extend(_semantic_disposition_signals(dispositions))
+    signals.extend(_explicit_overlap_signals(entries, open_issue_numbers))
+    signals.extend(_duplicate_signals(entries, issues, open_issue_numbers))
+    signals.extend(_split_candidate_signals(snapshot, entries, open_issue_numbers))
+    signals.extend(_dependency_inversion_signals(snapshot, audit))
+    return BacklogSynthesisReport(
+        repository=repository_name(snapshot),
+        generated_at=snapshot.get("generated_at") or "unknown",
+        snapshot_digest=snapshot_digest(snapshot),
+        audit_digest=str(audit.get("audit_digest") or ""),
+        issue_dispositions=dispositions,
+        signals=_sort_signals(signals),
+    ).to_json()
+
+
+def validate_backlog_synthesis_report(value: Mapping[str, Any]) -> list[str]:
+    """Validate the read-only backlog-synthesis signal envelope and digest."""
+
+    return BacklogSynthesisReportValidator(value).validate()
 
 
 def _dependency_is_closed(

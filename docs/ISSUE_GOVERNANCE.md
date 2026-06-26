@@ -14,6 +14,10 @@ python scripts/triage/triage.py review-packet --issue 54 \
 python scripts/triage/triage.py standardize --issue 54 \
   --proposed-body output/triage/issues/54/proposed-body.md \
   --output-dir output/triage/issues/54
+python scripts/triage/triage.py backlog-synthesis \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --output output/triage/backlog-synthesis.json
 python scripts/triage/triage.py plan --output-dir output/triage
 python scripts/triage/triage.py frontier --mode audit --json
 python scripts/triage/triage.py frontier --mode implement --json
@@ -278,6 +282,26 @@ coordinator result, and no worker packet is written for an empty frontier.
 The coordinator and optional worker packet are digest-validated before they are
 written. The frontier command never creates a branch, worktree, Codex thread,
 or GitHub mutation.
+
+### Backlog synthesis
+
+```bash
+python scripts/triage/triage.py backlog-synthesis \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --output output/triage/backlog-synthesis.json
+```
+
+`backlog-synthesis` emits a read-only candidate-signal report for cross-issue
+maintainer review. It consumes a snapshot plus readiness audit, surfaces
+semantic disposition hypotheses when present, and emits deterministic signals
+for likely duplicates, explicit overlap, split candidates, and dependency-order
+inversions.
+
+The command writes only a local artifact and validates the artifact before
+printing or writing it. The report has no `operations` payload, no issue bodies,
+no tracker state changes, and no GitHub mutation path. Its contract is
+documented in `docs/BACKLOG_SYNTHESIS_SIGNALS_SCHEMA_V1.md`.
 
 ### Offline forms
 

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Add read-only backlog synthesis signals
+
+- I added a `backlog-synthesis` governance command that emits deterministic
+  candidate signals for likely duplicates, explicit overlap, split candidates,
+  semantic disposition hypotheses, and dependency-order inversions.
+- I kept the existing readiness `recommended_disposition` map mechanical while
+  surfacing semantic disposition hypotheses as additive audit fields and as a
+  local synthesis override.
+- I added the `backlog-synthesis` skill so cross-issue verdicts are proposed
+  from the bounded signal artifact for maintainer review, with no tracker
+  mutation path.
+- I documented and validated the backlog-synthesis signal contract in
+  `docs/BACKLOG_SYNTHESIS_SIGNALS_SCHEMA_V1.md` and
+  `docs/backlog-synthesis-signals-schema-v1.json`.
+
 ### Add governance issue-kind classification
 
 - I added a dedicated `governance` issue kind for process and tracker-contract
@@ -31,7 +46,7 @@
 ### Add issue contract, readiness audit, and read-only relay coordination
 
 - I added the versioned issue contract and separate governance/readiness states.
-- I exposed all nine documented commands: `snapshot`, `audit`, `plan`,
+- I exposed the documented command surface: `snapshot`, `audit`, `plan`,
   `project-plan`, `apply`, `contract`, `review-packet`, `standardize`, and
   `frontier`.
 - I made audit output directly consumable by deterministic audit and

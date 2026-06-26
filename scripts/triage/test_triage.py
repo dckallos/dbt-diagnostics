@@ -1524,7 +1524,7 @@ def write_cli_offline_inputs(
     return policy_path, snapshot_path, semantic_path, saved_snapshot
 
 
-def test_help_lists_and_parses_all_nine_commands(
+def test_help_lists_and_parses_all_ten_commands(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     expected = {
@@ -1537,6 +1537,7 @@ def test_help_lists_and_parses_all_nine_commands(
         "standardize",
         "frontier",
         "project-plan",
+        "backlog-synthesis",
     }
     parser = triage.build_parser()
     top_help = parser.format_help()
@@ -2000,6 +2001,98 @@ def test_project_plan_cli_rejects_invalid_self_check(
     captured = capsys.readouterr()
     assert code == 2
     assert "project-plan validation failed: broken shape" in captured.err
+    assert not output_path.exists()
+    assert runner.calls == []
+
+
+def test_backlog_synthesis_cli_emits_json_without_github_calls(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+    )
+    audit_path = tmp_path / "audit.json"
+    write_json(audit_path, readiness)
+    runner = QueueRunner([])
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-synthesis",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--json",
+        ],
+        runner=runner,
+    )
+
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (
+        report["schema_version"]
+        == triage.issue_frontier.BACKLOG_SYNTHESIS_SCHEMA_VERSION
+    )
+    assert report["safety"]["github_api_calls"] is False
+    assert report["safety"]["github_mutations"] is False
+    assert "operations" not in report
+    assert "body" not in json.dumps(report, sort_keys=True)
+    assert runner.calls == []
+
+
+def test_backlog_synthesis_cli_rejects_invalid_self_check(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+    )
+    audit_path = tmp_path / "audit.json"
+    write_json(audit_path, readiness)
+    output_path = tmp_path / "backlog-synthesis.json"
+    runner = QueueRunner([])
+
+    monkeypatch.setattr(
+        triage.issue_frontier,
+        "validate_backlog_synthesis_report",
+        lambda _report: ["broken shape"],
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-synthesis",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--output",
+            str(output_path),
+        ],
+        runner=runner,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "backlog-synthesis validation failed: broken shape" in captured.err
     assert not output_path.exists()
     assert runner.calls == []
 

@@ -167,6 +167,39 @@ def test_closed_duplicate_issue_is_superseded(tmp_path: Path) -> None:
     assert result["issues"][0]["implementation_state"] == "superseded"
 
 
+def test_semantic_disposition_hypothesis_is_read_only_passthrough(
+    tmp_path: Path,
+) -> None:
+    snap = snapshot(
+        {
+            "number": 1,
+            "state": "open",
+            "title": "fix: one",
+            "labels": ["bug"],
+            "body": bug_body(),
+        }
+    )
+    semantic = accepted_semantic(
+        disposition_hypothesis="likely-duplicate-of #2",
+        disposition_evidence=["semantic review points at #2 as the owner"],
+    )
+
+    result = readiness.audit_all_issues(
+        snap,
+        policy(),
+        root=tmp_path,
+        semantic_evidence={1: semantic},
+    )
+
+    issue = result["issues"][0]
+    assert issue["implementation_state"] == "ready"
+    assert issue["recommended_disposition"] == "implement"
+    assert issue["semantic_disposition_hypothesis"] == "likely-duplicate-of #2"
+    assert issue["semantic_disposition_evidence"] == [
+        "semantic review points at #2 as the owner"
+    ]
+
+
 def test_release_gate_milestone_drift(tmp_path: Path) -> None:
     epic_body = """## Summary
 
