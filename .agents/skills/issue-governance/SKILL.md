@@ -57,16 +57,22 @@ content anchor (`path:symbol` or `path "snippet"`), never a bare `path:line`.
    `python scripts/triage/triage.py review-packet --issue <issue>`.
 2. Revise `proposed-body.md` locally, drafting ONLY missing or placeholder
    sections. Do not rewrite sections that already conform.
-3. Self-verify anchors before invoking the gate. Run the draft anchor checker
-   over your proposed body:
+3. Self-verify anchors as a fast pre-check. Run the draft anchor checker over
+   your proposed body:
    `python .codex/scripts/anchor_check.py output/triage/issues/<issue>/proposed-body.md`
-   It must report `0 unresolved` and `0 past EOF`. Fix or hypothesis-label any it
-   flags. Never invent a symbol, line, or snippet to satisfy a section.
-4. Validate the contract with the deterministic gate (sections, coverage, title;
-   exit 0 accepted, 1 not):
+   It must report `0 unresolved` and `0 past EOF`. Never invent a symbol, line,
+   or snippet to satisfy a section.
+4. Validate with the deterministic gate. `standardize` checks sections,
+   coverage, title AND content anchors; it returns exit 0 only when the contract
+   is accepted and every `path:symbol` / `path "snippet"` resolves (an
+   unresolved or past-EOF anchor blocks acceptance):
    `python scripts/triage/triage.py standardize --issue <issue> --proposed-body <path>`.
 5. Repair loop: if the gate reports errors, read the findings, repair the draft,
-   and repeat from step 3. Bound this to 3 iterations.
+   and repeat from step 3. Bound this to 3 iterations. The gate is the oracle:
+   the LAST thing you run before declaring success or handing off must be a
+   passing `standardize` on the FINAL body. If you edit the body after a passing
+   run, you must re-run `standardize`; never present or apply a body that has
+   changed since its last green gate.
 
 ## 5. Stop conditions and escalation
 
