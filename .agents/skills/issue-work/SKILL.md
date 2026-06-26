@@ -9,9 +9,22 @@ Input: exactly one GitHub issue number.
    - `bash .codex/bin/action.sh doctor`
    - `bash .codex/bin/action.sh context <issue> --comments`
 
-2. Treat the live issue as the current task specification.
+2. Gate on contract conformance before implementing. Run the deterministic
+   contract audit on this issue:
+   `python scripts/triage/triage.py contract --issue <issue>`
+   (add `--snapshot output/triage/snapshot.json` when offline). If the contract
+   is already accepted, the issue is standardized; continue. If it is NOT
+   accepted, STOP issue-work and run the `issue-governance` skill on this same
+   issue first. Resume issue-work only once
+   `python scripts/triage/triage.py standardize --issue <issue> --proposed-body <path>`
+   returns exit 0 on the final body. Escalate instead of implementing when
+   `issue-governance` stops for a disposition other than `keep`, or for a
+   section that cannot be grounded. Never implement against a non-conformant
+   spec, and never loosen the contract to pass this gate.
 
-3. Read only:
+3. Treat the live, standardized issue as the current task specification.
+
+4. Read only:
    - `AGENTS.md`;
    - the issue packet;
    - its parent epic summary;
@@ -19,36 +32,36 @@ Input: exactly one GitHub issue number.
    - repository paths named by the issue;
    - direct callers, imports, and tests discovered from those paths.
 
-4. Do not read every open issue or preload the whole repository.
+5. Do not read every open issue or preload the whole repository.
 
-5. Before editing, print:
+6. Before editing, print:
    - acceptance criteria;
    - non-goals;
    - blockers;
    - intended files;
    - intended tests.
 
-6. Stop without editing if:
+7. Stop without editing if:
    - a dependency is open;
    - a required decision is unresolved;
    - the issue contradicts the current source;
    - the work cannot fit one coherent PR.
 
-7. Add or update a failing test first where practical.
+8. Add or update a failing test first where practical.
 
-8. Implement only the issue scope.
+9. Implement only the issue scope.
 
-9. Run:
-   - focused tests;
-   - `bash .codex/bin/action.sh check`;
-   - any issue-specific verification.
+10. Run:
+    - focused tests;
+    - `bash .codex/bin/action.sh check`;
+    - any issue-specific verification.
 
-10. Report:
+11. Report:
     - changed files;
     - tests and exact results;
     - acceptance criteria satisfied;
     - remaining uncertainty;
     - suggested review focus.
 
-11. Do not push, merge, or mutate GitHub metadata unless the current task
+12. Do not push, merge, or mutate GitHub metadata unless the current task
     explicitly authorizes it.

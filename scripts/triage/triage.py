@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Plan and audit GitHub issue governance with explicit approval gates.
 
-Snapshot, audit, plan, contract, review-packet, standardize, and frontier do
-not mutate GitHub. Apply performs a live preflight before any selected operation.
-A real metadata write additionally requires --execute, an exact repository
-confirmation, and TRIAGE_ENABLE_GITHUB_WRITES=1.
+Snapshot, audit, plan, project-plan, contract, review-packet, standardize, and
+frontier do not mutate GitHub. Apply performs a live preflight before any
+selected operation. A real metadata write additionally requires --execute, an
+exact repository confirmation, and TRIAGE_ENABLE_GITHUB_WRITES=1.
 """
 
 from __future__ import annotations
@@ -3448,6 +3448,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional caller-supplied historical progress excerpt",
     )
 
+    project_plan = subparsers.add_parser(
+        "project-plan",
+        help="emit a read-only desired GitHub Project layout from an audit",
+    )
+    project_plan.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        required=True,
+        help="use an existing snapshot without GitHub reads",
+    )
+    project_plan.add_argument(
+        "--audit-file",
+        type=Path,
+        required=True,
+        help="consume an existing readiness audit JSON",
+    )
+    project_plan.add_argument("--json", action="store_true", help="emit plan JSON")
+    project_plan.add_argument("--output", type=Path, help="write plan JSON locally")
+
     apply = subparsers.add_parser(
         "apply",
         help="preflight and optionally execute an explicitly approved plan batch",
@@ -3487,6 +3507,29 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
         repo = validate_repo_name(args.repo or policy_repo(policy) or DEFAULT_REPO)
         if args.command == "apply":
             return apply_plan(args, runner=active_runner, expected_repo=repo)
+        if args.command == "project-plan":
+            snapshot = load_json_file(args.snapshot_file, "snapshot JSON")
+            validate_snapshot(
+                snapshot,
+                repository=repo,
+                policy_sha256=sha256_json(policy),
+            )
+            readiness_audit = load_json_file(
+                args.audit_file, "readiness audit JSON"
+            )
+            validate_readiness_audit(readiness_audit, snapshot)
+            plan = issue_frontier.build_project_plan(
+                snapshot,
+                readiness_audit,
+                policy=policy,
+            )
+            status_stream = sys.stderr if args.json else sys.stdout
+            if args.output:
+                write_json(args.output, plan)
+                print(f"Wrote {args.output}", file=status_stream)
+            if args.json or not args.output:
+                print(json.dumps(plan, indent=2, sort_keys=True, ensure_ascii=True))
+            return 0
 
         snapshot = resolve_snapshot(
             args, runner=active_runner, repo=repo, policy=policy

@@ -560,3 +560,51 @@ End of session -- 2026-06-26 issue 74 governance lifecycle rerun
 - The `.agents/.codex` shorthand remains a warning in audit output.
 
 End of session -- 2026-06-26 issue 74 applied body and production-readiness decision
+
+---
+
+## 2026-06-26 -- issue 75 read-only Project planner
+
+**What changed**
+- On branch `feat/75-github-projects-order-of-ops-planner`, implemented #75's
+  read-only GitHub Project desired-state planner.
+- Added `frontier.build_project_plan()`, which emits deterministic Project
+  columns, issue placement, ordering, and dependency-inversion warnings from an
+  existing snapshot plus readiness audit.
+- Added the offline-only `project-plan` CLI command. It requires `--snapshot`
+  and `--audit-file`, emits JSON, and does not call the GitHub runner.
+- Kept the mutation surface unchanged: no Project operation is supported, no
+  approval bundle is emitted, and issue bodies/state changes are omitted from
+  plan items.
+- Updated `CHANGELOG.md` under `[Unreleased]`.
+
+**Validation**
+- Wrote the failing planner test first:
+  `scripts/triage/test_frontier.py::test_project_plan_is_read_only_and_flags_dependency_inversion`.
+- `pytest scripts/triage/test_frontier.py::test_project_plan_is_read_only_and_flags_dependency_inversion -q`
+  passed after implementation.
+- `pytest scripts/triage/test_triage.py::test_project_plan_cli_emits_json_without_github_calls -q`
+  passed.
+- `pytest scripts/triage/test_frontier.py scripts/triage/test_triage.py -q`:
+  79 passed.
+- `pytest scripts/triage -q`: 141 passed.
+- `bash .codex/bin/action.sh check` passed after rerunning unsandboxed because
+  the sandbox could not write `.codex/scripts/__pycache__`.
+
+**Current state**
+- Branch `feat/75-github-projects-order-of-ops-planner` is pushed to origin and
+  PR #77 is open against `donkey-kong-sandbox`.
+- No GitHub issue or Project metadata was mutated by the planner.
+- `gh` remains unauthenticated locally; live issue #75 was read through the
+  read-only GitHub connector.
+
+**Next steps**
+- Review PR #77 and merge it when the Project-plan shape is accepted.
+
+**Be careful**
+- Keep `project-plan` snapshot/audit-file driven. Do not add a fallback that
+  collects live GitHub metadata.
+- Do not add any Project operation kind, `gh project` command, issue-body write,
+  or state-change path.
+
+End of session -- 2026-06-26 issue 75 read-only Project planner
