@@ -13,6 +13,10 @@
 - The emitted Project plan is not an approval bundle and contains no metadata
   operations, issue bodies, or state changes. Project and metadata writes remain
   unsupported by this planner.
+- I added `validate_project_plan()` and a CLI self-check so malformed, stale,
+  or mutation-shaped Project plans are rejected before they are emitted.
+- I documented the Project plan contract in `docs/PROJECT_PLAN_SCHEMA_V1.md`
+  and added the matching machine schema at `docs/project-plan-schema-v1.json`.
 
 ### Add issue contract, readiness audit, and read-only relay coordination
 

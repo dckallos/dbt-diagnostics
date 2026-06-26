@@ -3523,6 +3523,11 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 readiness_audit,
                 policy=policy,
             )
+            plan_errors = issue_frontier.validate_project_plan(plan)
+            if plan_errors:
+                raise TriageError(
+                    "project-plan validation failed: " + "; ".join(plan_errors)
+                )
             status_stream = sys.stderr if args.json else sys.stdout
             if args.output:
                 write_json(args.output, plan)

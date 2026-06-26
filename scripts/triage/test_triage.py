@@ -1956,6 +1956,54 @@ def test_project_plan_cli_emits_json_without_github_calls(
     assert runner.calls == []
 
 
+def test_project_plan_cli_rejects_invalid_self_check(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+    )
+    audit_path = tmp_path / "audit.json"
+    write_json(audit_path, readiness)
+    output_path = tmp_path / "project-plan.json"
+    runner = QueueRunner([])
+
+    monkeypatch.setattr(
+        triage.issue_frontier,
+        "validate_project_plan",
+        lambda _plan: ["broken shape"],
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "project-plan",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--output",
+            str(output_path),
+        ],
+        runner=runner,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "project-plan validation failed: broken shape" in captured.err
+    assert not output_path.exists()
+    assert runner.calls == []
+
+
 def test_frontier_rejects_conflicting_audit_sources() -> None:
     parser = triage.build_parser()
     with pytest.raises(SystemExit) as exc:

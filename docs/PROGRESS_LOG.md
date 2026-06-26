@@ -608,3 +608,150 @@ End of session -- 2026-06-26 issue 74 applied body and production-readiness deci
   or state-change path.
 
 End of session -- 2026-06-26 issue 75 read-only Project planner
+
+---
+
+## 2026-06-26 -- issue 78 project-plan validator and schema
+
+**What changed**
+- On branch `feat/78-validate_project_plan-and-a-project-plan-schema-doc`, first
+  ran the issue-work gate for #78. The live body failed contract because it was
+  missing `Compatibility and canonical JSON implications`.
+- Ran the read-only issue-governance path locally, recorded a `keep`
+  disposition, generated `output/triage/issues/78/`, drafted only missing
+  sections in `proposed-body.md`, and validated the proposed body.
+- Added `frontier.validate_project_plan()`, wired `project-plan` to self-check
+  before emitting output, and kept `build_project_plan()` output shape
+  unchanged.
+- Added `docs/PROJECT_PLAN_SCHEMA_V1.md` and
+  `docs/project-plan-schema-v1.json`.
+- Updated `CHANGELOG.md` under `[Unreleased]`.
+
+**Validation**
+- `python .codex/scripts/anchor_check.py output/triage/issues/78/proposed-body.md`
+  passed: 16 anchored refs, 0 unresolved, 0 past EOF.
+- `python scripts/triage/triage.py standardize --issue 78 --proposed-body
+  output/triage/issues/78/proposed-body.md --output-dir output/triage/issues/78
+  --json` passed. Proposed body digest:
+  `4e61441e5563161c330c28b707c129f7995282bac7aa8bd0e22e2d9de07e4fa3`;
+  standardization digest:
+  `88f471a3f9605c1551e914cd8b9f6371df8d5809fba15437df1cfe643243d10d`.
+- The new validator tests failed first with missing `validate_project_plan`,
+  then passed after implementation.
+- `pytest scripts/triage/test_frontier.py scripts/triage/test_triage.py -q`:
+  85 passed.
+- `bash .codex/bin/action.sh check` passed after rerunning unsandboxed because
+  the sandbox could not write `.codex/scripts/__pycache__`: 602 passed, 2
+  skipped, 20 deselected, 1 warning; compatibility schema gate skipped as
+  expected.
+
+**Current state**
+- `origin/donkey-kong-sandbox` and `HEAD` match at `f2b7110`.
+- The branch is one commit ahead of `origin/feat/78-validate_project_plan-and-a-project-plan-schema-doc`
+  because it was fast-forwarded to current `origin/donkey-kong-sandbox` before
+  work began.
+- Worktree changes are uncommitted and include code, tests, docs, changelog,
+  this progress-log entry, and local #78 governance artifacts.
+- No GitHub metadata was mutated and nothing was pushed.
+
+**Next steps**
+- Review the code/docs diff and decide whether to include the local
+  `output/triage/issues/78/` artifacts in the PR.
+- Commit this issue branch and open one PR into `donkey-kong-sandbox`.
+- If desired, apply `output/triage/issues/78/proposed-body.md` to GitHub by hand
+  so the live issue contract matches the implementation-ready local body.
+
+**Be careful**
+- The live #78 issue body is still nonconformant until the proposed body is
+  applied manually; the implementation proceeded only after local
+  `standardize` accepted that final body.
+- Keep the project-plan artifact read-only: no `operations`, no issue bodies,
+  no item `state`, no GitHub calls, and no apply path.
+
+End of session -- 2026-06-26 issue 78 project-plan validator and schema
+
+---
+
+## 2026-06-26 -- issue 78 dataclass validation refactor
+
+**What changed**
+- Refactored the project-plan implementation away from ad hoc dict assembly and
+  procedural validation.
+- Added dataclass-backed domain objects for `ProjectPlan`, `ProjectPlanItem`,
+  `ProjectPlanColumn`, `ProjectPlanOrderingConflict`, `ProjectPlanSafety`, and
+  `ProjectPolicy`.
+- Added dataclass-backed validators for the project plan, coordinator result,
+  and worker packet, sharing one validation context while preserving the public
+  `validate_*` function APIs and error strings.
+- Kept the emitted project-plan JSON shape unchanged.
+
+**Validation**
+- `pytest scripts/triage/test_frontier.py scripts/triage/test_triage.py -q`:
+  85 passed.
+- `bash .codex/bin/action.sh check` passed after rerunning unsandboxed because
+  the sandbox could not write `.codex/scripts/__pycache__`: 602 passed, 2
+  skipped, 20 deselected, 1 warning; compatibility schema gate skipped as
+  expected.
+- In-memory regression comparison against `HEAD:scripts/triage/frontier.py`
+  confirmed old and new `build_project_plan()` canonical JSON match for the
+  crafted dependency-inversion fixture.
+- `python .codex/scripts/anchor_check.py output/triage/issues/78/proposed-body.md`
+  passed: 16 anchored refs, 0 unresolved, 0 past EOF.
+- `python scripts/triage/triage.py standardize --issue 78 --proposed-body
+  output/triage/issues/78/proposed-body.md --output-dir output/triage/issues/78
+  --json` passed with the same proposed body digest
+  `4e61441e5563161c330c28b707c129f7995282bac7aa8bd0e22e2d9de07e4fa3`.
+
+**Current state**
+- Worktree changes remain uncommitted and include code, tests, docs, changelog,
+  progress-log entries, and local #78 governance artifacts.
+- No GitHub metadata was mutated and nothing was pushed.
+
+**Next steps**
+- Review the larger `scripts/triage/frontier.py` diff with attention to the new
+  dataclass boundaries and unchanged JSON/error contracts.
+- Commit this issue branch and open one PR into `donkey-kong-sandbox`.
+
+**Be careful**
+- The dataclasses are internal builders and validators. The public artifact is
+  still the same canonical JSON object, and `schema_version` remains `1`.
+- The live #78 issue body is still nonconformant until the local proposed body
+  is applied manually.
+
+End of session -- 2026-06-26 issue 78 dataclass validation refactor
+
+---
+
+## 2026-06-26 -- issue 78 proposed body applied
+
+**What changed**
+- Applied `output/triage/issues/78/proposed-body.md` to live GitHub issue #78
+  with `gh issue edit 78 --body-file output/triage/issues/78/proposed-body.md`.
+- Verified the live issue body with the contract gate and wrote
+  `output/triage/issues/78/post-apply-contract.json`.
+
+**Validation**
+- Pre-apply `standardize` passed on the exact proposed body.
+- Post-apply `python scripts/triage/triage.py contract --issue 78 --json
+  --output output/triage/issues/78/post-apply-contract.json` passed.
+- Live body digest:
+  `4e61441e5563161c330c28b707c129f7995282bac7aa8bd0e22e2d9de07e4fa3`.
+- Governance state is now `conformant`; no contract findings remain.
+
+**Current state**
+- GitHub issue #78 has been updated.
+- Worktree changes remain uncommitted and include implementation code, docs,
+  changelog, progress-log entries, and local #78 governance artifacts.
+- Nothing was committed or pushed to the remote branch in this step.
+
+**Next steps**
+- Commit this issue branch and open one PR into `donkey-kong-sandbox`.
+- Decide whether to include the local `output/triage/issues/78/` artifacts in
+  the PR.
+
+**Be careful**
+- The live issue now includes draft markers for the locally drafted sections.
+  That matched the accepted proposed body, but the maintainer may still want a
+  final wording pass before merge.
+
+End of session -- 2026-06-26 issue 78 proposed body applied

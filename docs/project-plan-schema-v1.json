@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/project-plan-schema-v1.json",
+  "title": "dbt-diagnostics project plan",
+  "type": "object",
+  "additionalProperties": true,
+  "not": {"required": ["operations"]},
+  "required": [
+    "schema_version",
+    "repository",
+    "generated_at",
+    "snapshot_digest",
+    "audit_digest",
+    "project",
+    "columns",
+    "items",
+    "ordering_conflicts",
+    "safety",
+    "project_plan_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "generated_at": {"type": "string"},
+    "snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "audit_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "project": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "owner_type": {"type": ["string", "integer"]},
+        "owner": {"type": ["string", "integer"]},
+        "number": {"type": ["string", "integer"]}
+      }
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "name", "position"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "position": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["body"]},
+            {"required": ["state"]}
+          ]
+        },
+        "required": [
+          "issue_number",
+          "title",
+          "url",
+          "column_id",
+          "direct_dependencies",
+          "parent_epics",
+          "release_gate",
+          "dependency_impact",
+          "position",
+          "column_position"
+        ],
+        "properties": {
+          "issue_number": {"type": "integer", "minimum": 1},
+          "title": {"type": ["string", "null"]},
+          "url": {"type": ["string", "null"]},
+          "column_id": {"type": "string", "minLength": 1},
+          "direct_dependencies": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "parent_epics": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "release_gate": {"type": "boolean"},
+          "dependency_impact": {"type": "integer", "minimum": 0},
+          "position": {"type": "integer", "minimum": 1},
+          "column_position": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "ordering_conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "code",
+          "issue_number",
+          "dependency_issue_number",
+          "issue_position",
+          "dependency_position",
+          "message"
+        ],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "issue_number": {"type": "integer", "minimum": 1},
+          "dependency_issue_number": {"type": "integer", "minimum": 1},
+          "issue_position": {"type": "integer", "minimum": 1},
+          "dependency_position": {"type": "integer", "minimum": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "read_only",
+        "github_api_calls",
+        "github_mutations",
+        "project_writes_supported",
+        "metadata_operations_supported",
+        "contains_issue_content",
+        "contains_state_changes"
+      ],
+      "properties": {
+        "read_only": {"const": true},
+        "github_api_calls": {"const": false},
+        "github_mutations": {"const": false},
+        "project_writes_supported": {"const": false},
+        "metadata_operations_supported": {"const": false},
+        "contains_issue_content": {"const": false},
+        "contains_state_changes": {"const": false}
+      }
+    },
+    "project_plan_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

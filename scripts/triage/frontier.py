@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, ClassVar, Mapping
 
 from scripts.triage.common import (
     issue_map,
@@ -134,20 +135,476 @@ def _column_name(column_id: str) -> str:
     return " ".join(part for part in column_id.replace("_", " ").split()).capitalize()
 
 
-def _project_policy(policy: Mapping[str, Any] | None) -> dict[str, Any]:
-    project = policy.get("project", {}) if isinstance(policy, Mapping) else {}
-    if not isinstance(project, Mapping):
-        project = {}
-    result: dict[str, Any] = {"enabled": bool(project.get("enabled", False))}
-    for key in ("owner_type", "owner", "number"):
-        value = project.get(key)
-        if isinstance(value, (str, int)) and not isinstance(value, bool):
-            result[key] = value
-    return result
-
-
 def _project_plan_without_digest(plan: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in plan.items() if key != "project_plan_digest"}
+
+
+@dataclass(frozen=True)
+class ProjectPolicy:
+    enabled: bool
+    owner_type: str | int | None = None
+    owner: str | int | None = None
+    number: str | int | None = None
+
+    @classmethod
+    def from_policy(cls, policy: Mapping[str, Any] | None) -> ProjectPolicy:
+        project = policy.get("project", {}) if isinstance(policy, Mapping) else {}
+        if not isinstance(project, Mapping):
+            project = {}
+        values: dict[str, Any] = {"enabled": bool(project.get("enabled", False))}
+        for key in ("owner_type", "owner", "number"):
+            value = project.get(key)
+            if isinstance(value, (str, int)) and not isinstance(value, bool):
+                values[key] = value
+        return cls(**values)
+
+    def to_json(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"enabled": self.enabled}
+        for key in ("owner_type", "owner", "number"):
+            value = getattr(self, key)
+            if value is not None:
+                result[key] = value
+        return result
+
+
+@dataclass(frozen=True)
+class ProjectPlanColumn:
+    id: str
+    name: str
+    position: int
+
+    def to_json(self) -> dict[str, Any]:
+        return {"id": self.id, "name": self.name, "position": self.position}
+
+
+@dataclass(frozen=True)
+class ProjectPlanItem:
+    issue_number: int
+    title: str | None
+    url: str | None
+    column_id: str
+    direct_dependencies: tuple[int, ...]
+    parent_epics: tuple[int, ...]
+    release_gate: bool
+    dependency_impact: int
+    position: int = 0
+    column_position: int = 0
+
+    def with_positions(self, *, position: int, column_position: int) -> ProjectPlanItem:
+        return ProjectPlanItem(
+            issue_number=self.issue_number,
+            title=self.title,
+            url=self.url,
+            column_id=self.column_id,
+            direct_dependencies=self.direct_dependencies,
+            parent_epics=self.parent_epics,
+            release_gate=self.release_gate,
+            dependency_impact=self.dependency_impact,
+            position=position,
+            column_position=column_position,
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "issue_number": self.issue_number,
+            "title": self.title,
+            "url": self.url,
+            "column_id": self.column_id,
+            "direct_dependencies": list(self.direct_dependencies),
+            "parent_epics": list(self.parent_epics),
+            "release_gate": self.release_gate,
+            "dependency_impact": self.dependency_impact,
+            "position": self.position,
+            "column_position": self.column_position,
+        }
+
+
+@dataclass(frozen=True)
+class ProjectPlanOrderingConflict:
+    code: str
+    issue_number: int
+    dependency_issue_number: int
+    issue_position: int
+    dependency_position: int
+    message: str
+
+    @classmethod
+    def dependency_inversion(
+        cls,
+        *,
+        issue_number: int,
+        dependency_issue_number: int,
+        issue_position: int,
+        dependency_position: int,
+    ) -> ProjectPlanOrderingConflict:
+        return cls(
+            code="dependency-inversion",
+            issue_number=issue_number,
+            dependency_issue_number=dependency_issue_number,
+            issue_position=issue_position,
+            dependency_position=dependency_position,
+            message=(
+                f"#{issue_number} is ordered before its dependency "
+                f"#{dependency_issue_number}"
+            ),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "issue_number": self.issue_number,
+            "dependency_issue_number": self.dependency_issue_number,
+            "issue_position": self.issue_position,
+            "dependency_position": self.dependency_position,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class ProjectPlanSafety:
+    read_only: bool
+    github_api_calls: bool
+    github_mutations: bool
+    project_writes_supported: bool
+    metadata_operations_supported: bool
+    contains_issue_content: bool
+    contains_state_changes: bool
+
+    @classmethod
+    def read_only_contract(cls) -> ProjectPlanSafety:
+        return cls(
+            read_only=True,
+            github_api_calls=False,
+            github_mutations=False,
+            project_writes_supported=False,
+            metadata_operations_supported=False,
+            contains_issue_content=False,
+            contains_state_changes=False,
+        )
+
+    def to_json(self) -> dict[str, bool]:
+        return {
+            "read_only": self.read_only,
+            "github_api_calls": self.github_api_calls,
+            "github_mutations": self.github_mutations,
+            "project_writes_supported": self.project_writes_supported,
+            "metadata_operations_supported": self.metadata_operations_supported,
+            "contains_issue_content": self.contains_issue_content,
+            "contains_state_changes": self.contains_state_changes,
+        }
+
+
+@dataclass(frozen=True)
+class ProjectPlan:
+    repository: str
+    generated_at: str
+    snapshot_digest: str
+    audit_digest: str | None
+    project: ProjectPolicy
+    columns: tuple[ProjectPlanColumn, ...]
+    items: tuple[ProjectPlanItem, ...]
+    ordering_conflicts: tuple[ProjectPlanOrderingConflict, ...]
+    safety: ProjectPlanSafety = ProjectPlanSafety.read_only_contract()
+    schema_version: int = PROJECT_PLAN_SCHEMA_VERSION
+
+    def to_json(self) -> dict[str, Any]:
+        plan: dict[str, Any] = {
+            "schema_version": self.schema_version,
+            "repository": self.repository,
+            "generated_at": self.generated_at,
+            "snapshot_digest": self.snapshot_digest,
+            "audit_digest": self.audit_digest,
+            "project": self.project.to_json(),
+            "columns": [column.to_json() for column in self.columns],
+            "items": [item.to_json() for item in self.items],
+            "ordering_conflicts": [
+                conflict.to_json() for conflict in self.ordering_conflicts
+            ],
+            "safety": self.safety.to_json(),
+        }
+        plan["project_plan_digest"] = sha256_json(_project_plan_without_digest(plan))
+        return plan
+
+
+def _is_positive_int(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and value > 0
+
+
+def _is_non_negative_int(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+@dataclass
+class ValidationContext:
+    errors: list[str] = field(default_factory=list)
+
+    def require_keys(self, value: Mapping[str, Any], required: set[str]) -> None:
+        missing = sorted(required - set(value))
+        if missing:
+            self.errors.append("missing keys: " + ", ".join(missing))
+
+    def require_repository(self, value: Any, *, name: str = "repository") -> None:
+        if not isinstance(value, str) or not re.fullmatch(r"[^/]+/[^/]+", value):
+            self.errors.append(f"{name} must be owner/name")
+
+    def require_string(self, value: Any, *, name: str) -> None:
+        if not isinstance(value, str):
+            self.errors.append(f"{name} must be a string")
+
+    def require_non_empty_string(self, value: Any, *, name: str) -> None:
+        if not isinstance(value, str) or not value:
+            self.errors.append(f"{name} must be a non-empty string")
+
+    def require_string_or_null(self, value: Any, *, name: str) -> None:
+        if value is not None and not isinstance(value, str):
+            self.errors.append(f"{name} must be a string or null")
+
+    def require_string_list(self, value: Any, *, name: str) -> None:
+        values = value if isinstance(value, list) else []
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) for item in values
+        ):
+            self.errors.append(f"{name} must be an array of strings")
+
+    def require_digest(self, value: Any, *, name: str) -> None:
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+            self.errors.append(f"{name} must be a lowercase SHA-256 digest")
+
+    def require_bool(self, value: Any, *, name: str) -> None:
+        if not isinstance(value, bool):
+            self.errors.append(f"{name} must be boolean")
+
+    def require_positive_int(self, value: Any, *, name: str) -> None:
+        if not _is_positive_int(value):
+            self.errors.append(f"{name} must be a positive integer")
+
+    def require_positive_int_or_null(self, value: Any, *, name: str) -> None:
+        if value is not None and not _is_positive_int(value):
+            self.errors.append(f"{name} must be a positive integer or null")
+
+    def require_non_negative_int(self, value: Any, *, name: str) -> None:
+        if not _is_non_negative_int(value):
+            self.errors.append(f"{name} must be a non-negative integer")
+
+    def require_int_or_null(self, value: Any, *, name: str) -> None:
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int)
+        ):
+            self.errors.append(f"{name} must be an integer when present")
+
+    def require_positive_int_list(self, value: Any, *, name: str) -> None:
+        values = value if isinstance(value, list) else []
+        if not isinstance(value, list) or any(
+            not _is_positive_int(item) for item in values
+        ):
+            self.errors.append(f"{name} must be an array of positive integers")
+
+
+@dataclass(frozen=True)
+class ProjectPolicyShape:
+    value: Mapping[str, Any]
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_bool(self.value.get("enabled"), name="project.enabled")
+        for key in ("owner_type", "owner", "number"):
+            item = self.value.get(key)
+            if item is not None and (
+                isinstance(item, bool) or not isinstance(item, (str, int))
+            ):
+                context.errors.append(f"project.{key} must be a string or integer")
+
+
+@dataclass(frozen=True)
+class ProjectPlanColumnShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"columns[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_non_empty_string(self.value.get("id"), name=f"{self.path}.id")
+        context.require_non_empty_string(
+            self.value.get("name"), name=f"{self.path}.name"
+        )
+        context.require_positive_int(
+            self.value.get("position"), name=f"{self.path}.position"
+        )
+
+
+@dataclass(frozen=True)
+class ProjectPlanItemShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"items[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        if "body" in self.value:
+            context.errors.append(f"{self.path}.body is forbidden")
+        if "state" in self.value:
+            context.errors.append(f"{self.path}.state is forbidden")
+        context.require_positive_int(
+            self.value.get("issue_number"), name=f"{self.path}.issue_number"
+        )
+        context.require_string_or_null(
+            self.value.get("title"), name=f"{self.path}.title"
+        )
+        context.require_string_or_null(self.value.get("url"), name=f"{self.path}.url")
+        context.require_non_empty_string(
+            self.value.get("column_id"), name=f"{self.path}.column_id"
+        )
+        context.require_positive_int_list(
+            self.value.get("direct_dependencies"),
+            name=f"{self.path}.direct_dependencies",
+        )
+        context.require_positive_int_list(
+            self.value.get("parent_epics"), name=f"{self.path}.parent_epics"
+        )
+        context.require_bool(
+            self.value.get("release_gate"), name=f"{self.path}.release_gate"
+        )
+        context.require_non_negative_int(
+            self.value.get("dependency_impact"),
+            name=f"{self.path}.dependency_impact",
+        )
+        for key in ("position", "column_position"):
+            context.require_positive_int(self.value.get(key), name=f"{self.path}.{key}")
+
+
+@dataclass(frozen=True)
+class ProjectPlanOrderingConflictShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"ordering_conflicts[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_non_empty_string(
+            self.value.get("code"), name=f"{self.path}.code"
+        )
+        for key in (
+            "issue_number",
+            "dependency_issue_number",
+            "issue_position",
+            "dependency_position",
+        ):
+            context.require_positive_int(self.value.get(key), name=f"{self.path}.{key}")
+        context.require_non_empty_string(
+            self.value.get("message"), name=f"{self.path}.message"
+        )
+
+
+@dataclass(frozen=True)
+class ProjectPlanSafetyShape:
+    value: Mapping[str, Any]
+
+    EXPECTED: ClassVar[dict[str, bool]] = {
+        "read_only": True,
+        "github_api_calls": False,
+        "github_mutations": False,
+        "project_writes_supported": False,
+        "metadata_operations_supported": False,
+        "contains_issue_content": False,
+        "contains_state_changes": False,
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        for key, expected in self.EXPECTED.items():
+            if self.value.get(key) is not expected:
+                context.errors.append(f"safety.{key} must be {str(expected).lower()}")
+
+
+@dataclass(frozen=True)
+class ProjectPlanValidator:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "schema_version",
+        "repository",
+        "generated_at",
+        "snapshot_digest",
+        "audit_digest",
+        "project",
+        "columns",
+        "items",
+        "ordering_conflicts",
+        "safety",
+        "project_plan_digest",
+    }
+
+    def validate(self) -> list[str]:
+        context = ValidationContext()
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        if "operations" in self.value:
+            context.errors.append("operations key is forbidden")
+        if self.value.get("schema_version") != PROJECT_PLAN_SCHEMA_VERSION:
+            context.errors.append("unsupported schema_version")
+        context.require_repository(self.value.get("repository"))
+        context.require_string(self.value.get("generated_at"), name="generated_at")
+        for key in ("snapshot_digest", "audit_digest", "project_plan_digest"):
+            context.require_digest(self.value.get(key), name=key)
+        self._validate_project(context)
+        self._validate_columns(context)
+        self._validate_items(context)
+        self._validate_ordering_conflicts(context)
+        self._validate_safety(context)
+        actual_digest = sha256_json(_project_plan_without_digest(self.value))
+        if self.value.get("project_plan_digest") != actual_digest:
+            context.errors.append("project_plan_digest mismatch")
+        return context.errors
+
+    def _validate_project(self, context: ValidationContext) -> None:
+        project = self.value.get("project")
+        if not isinstance(project, Mapping):
+            context.errors.append("project must be an object")
+            return
+        ProjectPolicyShape(project).validate(context)
+
+    def _validate_columns(self, context: ValidationContext) -> None:
+        columns = self.value.get("columns")
+        if not isinstance(columns, list):
+            context.errors.append("columns must be an array")
+            return
+        for index, column in enumerate(columns):
+            if not isinstance(column, Mapping):
+                context.errors.append(f"columns[{index}] must be an object")
+                continue
+            ProjectPlanColumnShape(index, column).validate(context)
+
+    def _validate_items(self, context: ValidationContext) -> None:
+        items = self.value.get("items")
+        if not isinstance(items, list):
+            context.errors.append("items must be an array")
+            return
+        for index, item in enumerate(items):
+            if not isinstance(item, Mapping):
+                context.errors.append(f"items[{index}] must be an object")
+                continue
+            ProjectPlanItemShape(index, item).validate(context)
+
+    def _validate_ordering_conflicts(self, context: ValidationContext) -> None:
+        ordering_conflicts = self.value.get("ordering_conflicts")
+        if not isinstance(ordering_conflicts, list):
+            context.errors.append("ordering_conflicts must be an array")
+            return
+        for index, conflict in enumerate(ordering_conflicts):
+            if not isinstance(conflict, Mapping):
+                context.errors.append(f"ordering_conflicts[{index}] must be an object")
+                continue
+            ProjectPlanOrderingConflictShape(index, conflict).validate(context)
+
+    def _validate_safety(self, context: ValidationContext) -> None:
+        safety = self.value.get("safety")
+        if not isinstance(safety, Mapping):
+            context.errors.append("safety must be an object")
+            return
+        ProjectPlanSafetyShape(safety).validate(context)
 
 
 def build_project_plan(
@@ -176,12 +633,12 @@ def build_project_plan(
     column_rank = {
         column_id: index for index, (column_id, _name) in enumerate(column_defs)
     }
-    columns = [
-        {"id": column_id, "name": name, "position": index + 1}
+    columns = tuple(
+        ProjectPlanColumn(id=column_id, name=name, position=index + 1)
         for index, (column_id, name) in enumerate(column_defs)
-    ]
+    )
 
-    pending_items: list[dict[str, Any]] = []
+    pending_items: list[ProjectPlanItem] = []
     for number in sorted(entries):
         issue = issues.get(number)
         if issue is None:
@@ -191,86 +648,70 @@ def build_project_plan(
         if column_id not in column_rank:
             column_id = "unknown"
         pending_items.append(
-            {
-                "issue_number": number,
-                "title": entry.get("title") or issue.get("title"),
-                "url": entry.get("url") or issue.get("html_url"),
-                "column_id": column_id,
-                "direct_dependencies": _positive_ints(
-                    entry.get("direct_dependencies")
+            ProjectPlanItem(
+                issue_number=number,
+                title=entry.get("title") or issue.get("title"),
+                url=entry.get("url") or issue.get("html_url"),
+                column_id=column_id,
+                direct_dependencies=tuple(
+                    _positive_ints(entry.get("direct_dependencies"))
                 ),
-                "parent_epics": _positive_ints(entry.get("parent_epics")),
-                "release_gate": bool(entry.get("release_gate")),
-                "dependency_impact": int(entry.get("dependency_impact") or 0),
-            }
+                parent_epics=tuple(_positive_ints(entry.get("parent_epics"))),
+                release_gate=bool(entry.get("release_gate")),
+                dependency_impact=int(entry.get("dependency_impact") or 0),
+            )
         )
     pending_items.sort(
         key=lambda item: (
-            column_rank.get(str(item["column_id"]), 999),
-            item["issue_number"],
+            column_rank.get(item.column_id, 999),
+            item.issue_number,
         )
     )
 
     column_positions: dict[str, int] = {}
-    items: list[dict[str, Any]] = []
+    items: list[ProjectPlanItem] = []
     for index, item in enumerate(pending_items, start=1):
-        column_id = str(item["column_id"])
+        column_id = item.column_id
         column_positions[column_id] = column_positions.get(column_id, 0) + 1
         items.append(
-            {
-                **item,
-                "position": index,
-                "column_position": column_positions[column_id],
-            }
+            item.with_positions(
+                position=index,
+                column_position=column_positions[column_id],
+            )
         )
 
-    position_by_issue = {
-        int(item["issue_number"]): int(item["position"]) for item in items
-    }
-    conflicts: list[dict[str, Any]] = []
+    position_by_issue = {item.issue_number: item.position for item in items}
+    conflicts: list[ProjectPlanOrderingConflict] = []
     for item in items:
-        issue_number = int(item["issue_number"])
-        issue_position = int(item["position"])
-        for dependency in item["direct_dependencies"]:
+        for dependency in item.direct_dependencies:
             dependency_position = position_by_issue.get(dependency)
-            if dependency_position is None or issue_position > dependency_position:
+            if dependency_position is None or item.position > dependency_position:
                 continue
             conflicts.append(
-                {
-                    "code": "dependency-inversion",
-                    "issue_number": issue_number,
-                    "dependency_issue_number": dependency,
-                    "issue_position": issue_position,
-                    "dependency_position": dependency_position,
-                    "message": (
-                        f"#{issue_number} is ordered before its dependency "
-                        f"#{dependency}"
-                    ),
-                }
+                ProjectPlanOrderingConflict.dependency_inversion(
+                    issue_number=item.issue_number,
+                    dependency_issue_number=dependency,
+                    issue_position=item.position,
+                    dependency_position=dependency_position,
+                )
             )
 
-    plan: dict[str, Any] = {
-        "schema_version": PROJECT_PLAN_SCHEMA_VERSION,
-        "repository": repository_name(snapshot),
-        "generated_at": snapshot.get("generated_at") or "unknown",
-        "snapshot_digest": snapshot_digest(snapshot),
-        "audit_digest": audit.get("audit_digest"),
-        "project": _project_policy(policy),
-        "columns": columns,
-        "items": items,
-        "ordering_conflicts": conflicts,
-        "safety": {
-            "read_only": True,
-            "github_api_calls": False,
-            "github_mutations": False,
-            "project_writes_supported": False,
-            "metadata_operations_supported": False,
-            "contains_issue_content": False,
-            "contains_state_changes": False,
-        },
-    }
-    plan["project_plan_digest"] = sha256_json(_project_plan_without_digest(plan))
-    return plan
+    return ProjectPlan(
+        repository=repository_name(snapshot),
+        generated_at=snapshot.get("generated_at") or "unknown",
+        snapshot_digest=snapshot_digest(snapshot),
+        audit_digest=audit.get("audit_digest"),
+        project=ProjectPolicy.from_policy(policy),
+        columns=columns,
+        items=tuple(items),
+        ordering_conflicts=tuple(conflicts),
+    ).to_json()
+
+
+def validate_project_plan(value: Mapping[str, Any]) -> list[str]:
+    """Validate the read-only project-plan envelope and its digest."""
+
+    return ProjectPlanValidator(value).validate()
 
 
 def _dependency_is_closed(
@@ -496,9 +937,11 @@ def build_coordinator_result(
     return base
 
 
-def validate_coordinator_result(value: Mapping[str, Any]) -> list[str]:
-    errors: list[str] = []
-    required = {
+@dataclass(frozen=True)
+class CoordinatorResultValidator:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
         "schema_version",
         "mode",
         "repository",
@@ -522,97 +965,96 @@ def validate_coordinator_result(value: Mapping[str, Any]) -> list[str]:
         "rejected_count",
         "coordinator_digest",
     }
-    missing = sorted(required - set(value))
-    if missing:
-        errors.append("missing keys: " + ", ".join(missing))
-    if value.get("schema_version") != COORDINATOR_SCHEMA_VERSION:
-        errors.append("unsupported schema_version")
-    if value.get("mode") not in {"audit", "implement"}:
-        errors.append("invalid mode")
-    repository = value.get("repository")
-    if not isinstance(repository, str) or not re.fullmatch(r"[^/]+/[^/]+", repository):
-        errors.append("repository must be owner/name")
-    if not isinstance(value.get("generated_at"), str):
-        errors.append("generated_at must be a string")
-    for key in ("snapshot_digest", "audit_digest", "coordinator_digest"):
-        digest = value.get(key)
-        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-            errors.append(f"{key} must be a lowercase SHA-256 digest")
-    selected = value.get("selected_issue")
-    if selected is not None and (
-        isinstance(selected, bool) or not isinstance(selected, int) or selected <= 0
-    ):
-        errors.append("selected_issue must be a positive integer or null")
-    for key in ("issue_contract_digest", "governance_state", "implementation_state"):
-        item = value.get(key)
-        if item is not None and not isinstance(item, str):
-            errors.append(f"{key} must be a string or null")
-    if not isinstance(value.get("selection_reason"), str):
-        errors.append("selection_reason must be a string")
-    for key in ("parent_epics", "direct_dependencies"):
-        items = value.get(key)
-        if not isinstance(items, list) or any(
-            isinstance(item, bool) or not isinstance(item, int) or item <= 0
-            for item in (items if isinstance(items, list) else [])
-        ):
-            errors.append(f"{key} must be an array of positive integers")
-    for key in (
-        "blockers",
-        "required_decisions",
-        "required_external_evidence",
-        "referenced_paths",
-    ):
-        items = value.get(key)
-        if not isinstance(items, list) or any(
-            not isinstance(item, str)
-            for item in (items if isinstance(items, list) else [])
-        ):
-            errors.append(f"{key} must be an array of strings")
-    for key in ("suggested_branch", "suggested_next_command"):
-        item = value.get(key)
-        if item is not None and not isinstance(item, str):
-            errors.append(f"{key} must be a string or null")
-    for key in ("candidate_count", "rejected_count"):
-        item = value.get(key)
-        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
-            errors.append(f"{key} must be a non-negative integer")
-    if selected is None:
-        for key in (
-            "issue_contract_digest",
-            "governance_state",
-            "implementation_state",
-            "suggested_branch",
-            "suggested_next_command",
-        ):
-            if value.get(key) is not None:
-                errors.append(f"{key} must be null for an empty frontier")
-    elif value.get("issue_contract_digest") is None:
-        errors.append("issue_contract_digest is required for a selected issue")
-    score = value.get("score")
-    if score is not None and (isinstance(score, bool) or not isinstance(score, int)):
-        errors.append("score must be an integer when present")
-    components = value.get("score_components")
-    if components is not None and (
-        not isinstance(components, Mapping)
-        or any(
-            not isinstance(key, str)
-            or isinstance(item, bool)
-            or not isinstance(item, int)
-            for key, item in (
-                components.items() if isinstance(components, Mapping) else []
-            )
+
+    def validate(self) -> list[str]:
+        context = ValidationContext()
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        if self.value.get("schema_version") != COORDINATOR_SCHEMA_VERSION:
+            context.errors.append("unsupported schema_version")
+        if self.value.get("mode") not in {"audit", "implement"}:
+            context.errors.append("invalid mode")
+        context.require_repository(self.value.get("repository"))
+        context.require_string(self.value.get("generated_at"), name="generated_at")
+        for key in ("snapshot_digest", "audit_digest", "coordinator_digest"):
+            context.require_digest(self.value.get(key), name=key)
+        context.require_positive_int_or_null(
+            self.value.get("selected_issue"), name="selected_issue"
         )
-    ):
-        errors.append("score_components must map strings to integers")
-    preview = value.get("rejected_preview")
-    if preview is not None and (not isinstance(preview, list) or len(preview) > 20):
-        errors.append("rejected_preview must be an array of at most 20 items")
-    actual_digest = sha256_json(
-        {key: item for key, item in value.items() if key != "coordinator_digest"}
-    )
-    if value.get("coordinator_digest") != actual_digest:
-        errors.append("coordinator_digest mismatch")
-    return errors
+        self._validate_selected_issue_fields(context)
+        self._validate_collections(context)
+        self._validate_candidate_metadata(context)
+        actual_digest = sha256_json(
+            {
+                key: item
+                for key, item in self.value.items()
+                if key != "coordinator_digest"
+            }
+        )
+        if self.value.get("coordinator_digest") != actual_digest:
+            context.errors.append("coordinator_digest mismatch")
+        return context.errors
+
+    def _validate_selected_issue_fields(self, context: ValidationContext) -> None:
+        for key in ("issue_contract_digest", "governance_state", "implementation_state"):
+            context.require_string_or_null(self.value.get(key), name=key)
+        context.require_string(
+            self.value.get("selection_reason"), name="selection_reason"
+        )
+        for key in ("suggested_branch", "suggested_next_command"):
+            context.require_string_or_null(self.value.get(key), name=key)
+        selected = self.value.get("selected_issue")
+        if selected is None:
+            for key in (
+                "issue_contract_digest",
+                "governance_state",
+                "implementation_state",
+                "suggested_branch",
+                "suggested_next_command",
+            ):
+                if self.value.get(key) is not None:
+                    context.errors.append(f"{key} must be null for an empty frontier")
+        elif self.value.get("issue_contract_digest") is None:
+            context.errors.append(
+                "issue_contract_digest is required for a selected issue"
+            )
+
+    def _validate_collections(self, context: ValidationContext) -> None:
+        for key in ("parent_epics", "direct_dependencies"):
+            context.require_positive_int_list(self.value.get(key), name=key)
+        for key in (
+            "blockers",
+            "required_decisions",
+            "required_external_evidence",
+            "referenced_paths",
+        ):
+            context.require_string_list(self.value.get(key), name=key)
+
+    def _validate_candidate_metadata(self, context: ValidationContext) -> None:
+        for key in ("candidate_count", "rejected_count"):
+            context.require_non_negative_int(self.value.get(key), name=key)
+        context.require_int_or_null(self.value.get("score"), name="score")
+        components = self.value.get("score_components")
+        if components is not None and (
+            not isinstance(components, Mapping)
+            or any(
+                not isinstance(key, str)
+                or isinstance(item, bool)
+                or not isinstance(item, int)
+                for key, item in (
+                    components.items() if isinstance(components, Mapping) else []
+                )
+            )
+        ):
+            context.errors.append("score_components must map strings to integers")
+        preview = self.value.get("rejected_preview")
+        if preview is not None and (
+            not isinstance(preview, list) or len(preview) > 20
+        ):
+            context.errors.append("rejected_preview must be an array of at most 20 items")
+
+
+def validate_coordinator_result(value: Mapping[str, Any]) -> list[str]:
+    return CoordinatorResultValidator(value).validate()
 
 
 def _extract_section(issue: Mapping[str, Any], keys: set[str]) -> str | None:
@@ -746,11 +1188,11 @@ def build_worker_packet(
     return packet
 
 
-def validate_worker_packet(value: Mapping[str, Any]) -> list[str]:
-    """Validate the bounded worker-packet envelope and its digest."""
+@dataclass(frozen=True)
+class WorkerPacketValidator:
+    value: Mapping[str, Any]
 
-    errors: list[str] = []
-    required = {
+    REQUIRED_KEYS: ClassVar[set[str]] = {
         "schema_version",
         "repository",
         "generated_at",
@@ -772,63 +1214,81 @@ def validate_worker_packet(value: Mapping[str, Any]) -> list[str]:
         "historical_progress_is_authoritative",
         "packet_digest",
     }
-    missing = sorted(required - set(value))
-    if missing:
-        errors.append("missing keys: " + ", ".join(missing))
-    if value.get("schema_version") != WORKER_PACKET_SCHEMA_VERSION:
-        errors.append("unsupported schema_version")
-    repository = value.get("repository")
-    if not isinstance(repository, str) or not re.fullmatch(r"[^/]+/[^/]+", repository):
-        errors.append("repository must be owner/name")
-    if not isinstance(value.get("generated_at"), str):
-        errors.append("generated_at must be a string")
-    for key in ("snapshot_digest", "audit_digest", "packet_digest"):
-        digest = value.get(key)
-        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-            errors.append(f"{key} must be a lowercase SHA-256 digest")
-    issue = value.get("issue")
-    if not isinstance(issue, Mapping):
-        errors.append("issue must be an object")
-    else:
-        number = issue.get("number")
-        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
-            errors.append("issue.number must be a positive integer")
+
+    def validate(self) -> list[str]:
+        context = ValidationContext()
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        if self.value.get("schema_version") != WORKER_PACKET_SCHEMA_VERSION:
+            context.errors.append("unsupported schema_version")
+        context.require_repository(self.value.get("repository"))
+        context.require_string(self.value.get("generated_at"), name="generated_at")
+        for key in ("snapshot_digest", "audit_digest", "packet_digest"):
+            context.require_digest(self.value.get(key), name=key)
+        self._validate_issue(context)
+        self._validate_contract_and_sections(context)
+        self._validate_arrays(context)
+        self._validate_context_objects(context)
+        self._validate_progress_context(context)
+        actual_digest = sha256_json(
+            {key: item for key, item in self.value.items() if key != "packet_digest"}
+        )
+        if self.value.get("packet_digest") != actual_digest:
+            context.errors.append("packet_digest mismatch")
+        return context.errors
+
+    def _validate_issue(self, context: ValidationContext) -> None:
+        issue = self.value.get("issue")
+        if not isinstance(issue, Mapping):
+            context.errors.append("issue must be an object")
+            return
+        context.require_positive_int(issue.get("number"), name="issue.number")
         body = issue.get("body")
         if not isinstance(body, str) or len(body) > MAX_WORKER_ISSUE_BODY_CHARS:
-            errors.append("issue.body exceeds the worker-packet bound")
-        if not isinstance(issue.get("body_truncated"), bool):
-            errors.append("issue.body_truncated must be boolean")
-    if not isinstance(value.get("contract"), Mapping):
-        errors.append("contract must be an object")
-    for key in ("acceptance_criteria", "non_goals"):
-        item = value.get(key)
-        if item is not None and not isinstance(item, str):
-            errors.append(f"{key} must be a string or null")
-    for key in (
-        "dependencies",
-        "parent_epics",
-        "referenced_paths",
-        "likely_entry_points",
-        "required_verification_commands",
-    ):
-        if not isinstance(value.get(key), list):
-            errors.append(f"{key} must be an array")
-    if not isinstance(value.get("uncertainty"), Mapping):
-        errors.append("uncertainty must be an object")
-    if not isinstance(value.get("branch_worktree_state"), Mapping):
-        errors.append("branch_worktree_state must be an object")
-    progress = value.get("historical_progress_context")
-    if progress is not None and (
-        not isinstance(progress, str) or len(progress) > MAX_PROGRESS_CONTEXT_CHARS
-    ):
-        errors.append("historical_progress_context exceeds the worker-packet bound")
-    if not isinstance(value.get("historical_progress_truncated"), bool):
-        errors.append("historical_progress_truncated must be boolean")
-    if value.get("historical_progress_is_authoritative") is not False:
-        errors.append("historical progress must be marked non-authoritative")
-    actual_digest = sha256_json(
-        {key: item for key, item in value.items() if key != "packet_digest"}
-    )
-    if value.get("packet_digest") != actual_digest:
-        errors.append("packet_digest mismatch")
-    return errors
+            context.errors.append("issue.body exceeds the worker-packet bound")
+        context.require_bool(
+            issue.get("body_truncated"), name="issue.body_truncated"
+        )
+
+    def _validate_contract_and_sections(self, context: ValidationContext) -> None:
+        if not isinstance(self.value.get("contract"), Mapping):
+            context.errors.append("contract must be an object")
+        for key in ("acceptance_criteria", "non_goals"):
+            context.require_string_or_null(self.value.get(key), name=key)
+
+    def _validate_arrays(self, context: ValidationContext) -> None:
+        for key in (
+            "dependencies",
+            "parent_epics",
+            "referenced_paths",
+            "likely_entry_points",
+            "required_verification_commands",
+        ):
+            if not isinstance(self.value.get(key), list):
+                context.errors.append(f"{key} must be an array")
+
+    def _validate_context_objects(self, context: ValidationContext) -> None:
+        if not isinstance(self.value.get("uncertainty"), Mapping):
+            context.errors.append("uncertainty must be an object")
+        if not isinstance(self.value.get("branch_worktree_state"), Mapping):
+            context.errors.append("branch_worktree_state must be an object")
+
+    def _validate_progress_context(self, context: ValidationContext) -> None:
+        progress = self.value.get("historical_progress_context")
+        if progress is not None and (
+            not isinstance(progress, str) or len(progress) > MAX_PROGRESS_CONTEXT_CHARS
+        ):
+            context.errors.append(
+                "historical_progress_context exceeds the worker-packet bound"
+            )
+        context.require_bool(
+            self.value.get("historical_progress_truncated"),
+            name="historical_progress_truncated",
+        )
+        if self.value.get("historical_progress_is_authoritative") is not False:
+            context.errors.append("historical progress must be marked non-authoritative")
+
+
+def validate_worker_packet(value: Mapping[str, Any]) -> list[str]:
+    """Validate the bounded worker-packet envelope and its digest."""
+
+    return WorkerPacketValidator(value).validate()
