@@ -3554,6 +3554,16 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             proposed_issue = dict(issue)
             proposed_issue["body"] = proposed_body
             result = contract_result(proposed_issue)
+            # Bind content-anchor verification to standardize so a fabricated or
+            # stale quote/symbol cannot pass the gate the agent trusts. Every
+            # path:symbol and path "snippet" in the proposed body must resolve in
+            # the current files; an unresolved anchor or a past-EOF line citation
+            # blocks acceptance just like a missing contract section.
+            anchor_report = issue_readiness.verify_file_anchors(proposed_issue, ROOT)
+            unresolved_anchors = anchor_report["unresolved_anchors"]
+            past_eof_citations = anchor_report["line_citations_past_eof"]
+            anchors_resolved = not unresolved_anchors and not past_eof_citations
+            accepted = bool(result.get("contract_accepted")) and anchors_resolved
             payload = {
                 "schema_version": 1,
                 "repository": governance_common.repository_name(snapshot),
@@ -3565,6 +3575,10 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 "local_only": True,
                 "github_mutation": False,
                 "contract": result,
+                "unresolved_file_anchors": unresolved_anchors,
+                "line_citations_past_eof": past_eof_citations,
+                "anchors_resolved": anchors_resolved,
+                "accepted": accepted,
             }
             payload["standardization_digest"] = governance_common.sha256_json(payload)
             output_dir = issue_output_dir(args.issue, args.output_dir)
@@ -3573,9 +3587,21 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             status_stream = sys.stderr if args.json else sys.stdout
             print(f"Wrote {output_dir / 'proposed-body.md'}", file=status_stream)
             print(f"Wrote {output_dir / 'standardization.json'}", file=status_stream)
+            for item in unresolved_anchors:
+                print(
+                    f"unresolved anchor: {item['path']} :: {item['anchor']} "
+                    f"({item['anchor_type']})",
+                    file=sys.stderr,
+                )
+            for item in past_eof_citations:
+                print(
+                    f"line citation past EOF: {item['path']}:{item['line']} "
+                    f"(file has {item['line_count']} lines)",
+                    file=sys.stderr,
+                )
             if args.json:
                 print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True))
-            return 0 if result.get("contract_accepted") else 1
+            return 0 if accepted else 1
 
         if args.command == "frontier":
             if args.audit_file:
