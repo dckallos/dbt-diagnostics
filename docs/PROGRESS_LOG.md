@@ -755,3 +755,39 @@ End of session -- 2026-06-26 issue 78 dataclass validation refactor
   final wording pass before merge.
 
 End of session -- 2026-06-26 issue 78 proposed body applied
+
+---
+
+## 2026-06-26 -- issue 78 branch pushed and draft PR opened
+
+**What changed**
+- Committed the non-output issue #78 implementation/docs changes with:
+  `c9b4d38 feat: validate project plan artifacts`.
+- Pushed branch `feat/78-validate_project_plan-and-a-project-plan-schema-doc`
+  to `origin`.
+- Opened draft PR #79 into `donkey-kong-sandbox`:
+  https://github.com/dckallos/dbt-diagnostics/pull/79.
+
+**Validation**
+- Before commit/push, the staged set excluded `output/`.
+- Previous full gate still applies to the committed code:
+  `bash .codex/bin/action.sh check` passed with 602 passed, 2 skipped, 20
+  deselected, 1 warning; compatibility schema gate skipped as expected.
+- `git diff --cached --check` passed before the implementation commit.
+
+**Current state**
+- PR #79 is open as a draft.
+- Local `output/triage/issues/78/` artifacts remain untracked and excluded from
+  the branch.
+- The branch includes the implementation commit plus this doc-only PR handoff
+  entry.
+
+**Next steps**
+- Review PR #79, then mark it ready when the schema and dataclass boundaries are
+  accepted.
+
+**Be careful**
+- Do not add `output/triage/issues/78/` to PR #79 unless that is explicitly
+  requested later.
+
+End of session -- 2026-06-26 issue 78 branch pushed and draft PR opened
