@@ -6,7 +6,7 @@ guide. It exists to make code durable across Codex sessions, maintainer review,
 and future compatibility work.
 
 The short rule: model stable concepts explicitly, validate them deliberately,
-and keep loose dictionaries at the edges.
+keep loose dictionaries at the edges, and keep domain logic independent of IO.
 
 ## When this applies
 
@@ -15,6 +15,7 @@ Read this document before editing Python code that touches any of these areas:
 - validators, planners, selectors, or scoring logic;
 - JSON artifacts, schemas, digests, or `--json` output;
 - command handlers or CLI output paths;
+- new modules, module boundaries, or service/builder extraction;
 - compatibility behavior or migration code;
 - code that is likely to grow across more than one issue;
 - code where a future maintainer must reason about invariants, not just syntax.
@@ -40,6 +41,62 @@ the smallest clear implementation that preserves the local pattern.
   defaults, digest exclusions, and null-vs-empty behavior explicit.
 - Let tests prove compatibility. If internals change under a stable artifact,
   add regression coverage for canonical JSON, digests, or error contracts.
+
+## Architecture
+
+Default to a simple layered shape for nontrivial Python changes:
+
+1. CLI command handlers parse arguments, load files, call a service or builder,
+   validate output, and write or print results.
+2. Application services and builders coordinate workflow: they combine policy,
+   snapshots, audit results, validators, and domain objects.
+3. Domain objects and validators encode durable concepts, invariants, ordering,
+   and compatibility rules.
+4. Adapters own IO: GitHub calls, filesystem reads/writes, subprocesses,
+   environment access, warehouse access, and raw JSON decoding.
+
+Dependencies point inward. Domain objects and validators must not import CLI
+parsers, GitHub clients, subprocess helpers, filesystem writers, or environment
+state. CLI code may depend on services. Services may depend on domain types and
+explicit adapters. Adapters should return data that is immediately translated
+into typed objects or validated at the boundary.
+
+Keep side effects visible:
+
+- Builders should not write files, call GitHub, spawn subprocesses, or read
+  environment variables.
+- Validators should be pure: same input, same error list, no mutation outside
+  the provided validation context.
+- Read-only commands should use names and types that make their advisory nature
+  obvious, such as `Plan`, `Packet`, `Snapshot`, `Audit`, or `Report`, not
+  `Operation` or `Executor`.
+- Mutation-capable commands must keep the write path explicit and narrow. Do
+  not hide writes behind a helper that also serves read-only code.
+- Pass policy, snapshots, clients, and clock-like values as parameters or
+  fields. Avoid mutable module globals and implicit singleton state.
+
+Module boundaries should follow ownership, not file size alone:
+
+- Extract a class or module when a concept has durable invariants, multiple
+  call sites, an artifact contract, or independent tests.
+- Keep related domain objects, builders, and validators close enough that a
+  reviewer can follow the contract without jumping across unrelated modules.
+- Do not create a new abstraction only to rename one function call.
+- If a module begins to mix CLI parsing, IO, domain decisions, and artifact
+  serialization, split by responsibility before adding more behavior.
+- Prefer dependency injection by constructor or function parameter for clients
+  and adapters. Do not patch global clients into domain code.
+
+Compatibility-sensitive architecture needs an explicit boundary:
+
+- Public functions that existing tests, scripts, or users call should remain as
+  thin wrappers when internals move behind classes.
+- Keep wire-format construction in one place, usually `to_json()` on a domain
+  object or one dedicated serializer.
+- Keep digest calculation next to the canonical serialization rules it depends
+  on.
+- When replacing procedural code with objects, prove that the public artifact
+  or command behavior is preserved.
 
 ## Python object model
 
@@ -146,6 +203,10 @@ Do not bury artifact construction or validation logic inside the CLI command
 branch. Put reusable behavior in named functions or classes that tests can call
 without invoking a subprocess.
 
+Command handlers are allowed to know about argument names and exit behavior.
+They should not own ordering rules, digest exclusions, issue readiness logic,
+status mapping, or compatibility decisions.
+
 For read-only commands, tests should prove no GitHub call, subprocess, or
 network path is used when that is part of the safety contract.
 
@@ -183,6 +244,10 @@ Before handing off nontrivial Python work, check:
 
 - Stable shapes have named domain objects or a clear reason not to.
 - Raw dict handling is limited to input/output boundaries.
+- Dependency direction is clean: CLI and adapters depend on services/domain,
+  while domain code does not depend on IO, subprocesses, GitHub, or CLI parsing.
+- Side effects are explicit and confined to adapter or command boundaries.
+- Services/builders coordinate workflow without hiding writes or global state.
 - Validators are class-based or otherwise decomposed by concern.
 - Public JSON keys, ordering, null-vs-empty behavior, schema version, and digest
   rules are preserved or explicitly changed.
