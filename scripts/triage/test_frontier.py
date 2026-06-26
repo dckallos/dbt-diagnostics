@@ -424,6 +424,73 @@ def test_project_plan_json_and_digest_are_deterministic() -> None:
     assert changed["project_plan_digest"] != first["project_plan_digest"]
 
 
+def test_project_plan_validation_accepts_built_plan_without_side_effects(
+    monkeypatch,
+) -> None:
+    calls: list[object] = []
+
+    def fail(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+        raise AssertionError("side effect attempted")
+
+    monkeypatch.setattr("subprocess.run", fail)
+    plan = frontier.build_project_plan(
+        snapshot(issue(10)),
+        audit(entry(10)),
+        policy={"project": {"enabled": False}},
+    )
+
+    assert frontier.validate_project_plan(plan) == []
+    assert calls == []
+
+
+def test_project_plan_validation_rejects_integrity_errors() -> None:
+    plan = frontier.build_project_plan(
+        snapshot(issue(10)),
+        audit(entry(10)),
+        policy={"project": {"enabled": False}},
+    )
+
+    missing_key = json.loads(json.dumps(plan))
+    missing_key.pop("repository")
+    assert "missing keys: repository" in frontier.validate_project_plan(missing_key)
+
+    tampered = json.loads(json.dumps(plan))
+    tampered["items"][0]["title"] = "tampered"
+    assert "project_plan_digest mismatch" in frontier.validate_project_plan(tampered)
+
+
+def test_project_plan_validation_rejects_mutation_shape() -> None:
+    plan = frontier.build_project_plan(
+        snapshot(issue(10)),
+        audit(entry(10)),
+        policy={"project": {"enabled": False}},
+    )
+
+    unsafe = json.loads(json.dumps(plan))
+    unsafe["operations"] = []
+    unsafe["items"][0]["body"] = "do not ship issue content"
+    unsafe["items"][0]["state"] = "closed"
+
+    errors = frontier.validate_project_plan(unsafe)
+
+    assert "operations key is forbidden" in errors
+    assert "items[0].body is forbidden" in errors
+    assert "items[0].state is forbidden" in errors
+
+
+def test_project_plan_validation_accepts_empty_well_formed_plan() -> None:
+    plan = frontier.build_project_plan(
+        snapshot(),
+        audit(),
+        policy={"project": {"enabled": False}},
+    )
+
+    assert plan["items"] == []
+    assert plan["ordering_conflicts"] == []
+    assert frontier.validate_project_plan(plan) == []
+
+
 def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:
     snap = snapshot(issue(1))
     snap.pop("snapshot_digest")
