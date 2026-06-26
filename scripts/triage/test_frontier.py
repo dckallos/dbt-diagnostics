@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from scripts.triage import frontier
@@ -387,6 +388,40 @@ def test_project_plan_is_read_only_and_flags_dependency_inversion(
     assert "operations" not in plan
     assert all("body" not in item and "state" not in item for item in plan["items"])
     assert calls == []
+
+
+def test_project_plan_json_and_digest_are_deterministic() -> None:
+    snap = snapshot(
+        issue(10, title="feat: dependent"),
+        issue(20, title="feat: blocker"),
+    )
+    results = audit(
+        entry(10, dependencies=[20]),
+        entry(20),
+    )
+
+    first = frontier.build_project_plan(
+        snap,
+        results,
+        policy={"project": {"enabled": False}},
+    )
+    second = frontier.build_project_plan(
+        snap,
+        results,
+        policy={"project": {"enabled": False}},
+    )
+
+    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+
+    changed_results = json.loads(json.dumps(results))
+    changed_results["issues"][0]["dependency_impact"] = 1
+    changed = frontier.build_project_plan(
+        snap,
+        changed_results,
+        policy={"project": {"enabled": False}},
+    )
+
+    assert changed["project_plan_digest"] != first["project_plan_digest"]
 
 
 def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:

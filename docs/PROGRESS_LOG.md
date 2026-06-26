@@ -592,17 +592,14 @@ End of session -- 2026-06-26 issue 74 applied body and production-readiness deci
   the sandbox could not write `.codex/scripts/__pycache__`.
 
 **Current state**
-- Local branch is ahead of `origin/feat/75-github-projects-order-of-ops-planner`
-  by the latest `donkey-kong-sandbox` fast-forward commit plus uncommitted #75
-  work.
-- No PR was opened, no branch was pushed, and no GitHub metadata was mutated.
+- Branch `feat/75-github-projects-order-of-ops-planner` is pushed to origin and
+  PR #77 is open against `donkey-kong-sandbox`.
+- No GitHub issue or Project metadata was mutated by the planner.
 - `gh` remains unauthenticated locally; live issue #75 was read through the
   read-only GitHub connector.
 
 **Next steps**
-- Review the JSON shape and column ordering before commit.
-- Commit this issue's changes and open one PR into `donkey-kong-sandbox` when
-  ready.
+- Review PR #77 and merge it when the Project-plan shape is accepted.
 
 **Be careful**
 - Keep `project-plan` snapshot/audit-file driven. Do not add a fallback that
