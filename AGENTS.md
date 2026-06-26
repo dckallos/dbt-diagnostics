@@ -55,6 +55,12 @@ Before stopping, leave the repo resumable:
 - Update `CHANGELOG.md` (under `## [Unreleased]`) in any PR that changes
   behavior.
 - `--json` `schema_version` is additive-only (see CONTRIBUTING.md).
+- For nontrivial Python changes, especially validators, planners, JSON
+  artifacts, command handlers, or compatibility-sensitive code, read
+  `docs/CODE_STANDARDS.md` before editing. Prefer typed domain objects and
+  small validator/builder classes for stable artifact shapes; keep raw
+  `dict[str, Any]` handling at IO boundaries and prove public JSON compatibility
+  with tests.
 - **Docs follow code, never lead it.** Design docs describe the target state
   and are annotated as such (e.g. "to be removed, tracked by #N") until the
   corresponding PR merges. `PROGRESS_LOG.md` is updated only after a PR

@@ -791,3 +791,40 @@ End of session -- 2026-06-26 issue 78 proposed body applied
   requested later.
 
 End of session -- 2026-06-26 issue 78 branch pushed and draft PR opened
+
+---
+
+## 2026-06-26 -- code standards documented
+
+**What changed**
+- Added `docs/CODE_STANDARDS.md` as the durable Python implementation standard
+  for nontrivial validators, planners, JSON artifacts, command handlers, and
+  compatibility-sensitive code.
+- Added a compact pointer in `AGENTS.md` so future Codex sessions load the
+  detailed standard before nontrivial Python edits.
+- Kept the detailed guidance out of `AGENTS.md` so the always-loaded file stays
+  small.
+
+**Validation**
+- `git diff --check` passed.
+- `python .codex/scripts/check_ascii.py` passed.
+- `bash .codex/bin/action.sh check` passed after rerunning unsandboxed because
+  the sandbox could not write `.codex/scripts/__pycache__`: 602 passed, 2
+  skipped, 20 deselected, 1 warning; compatibility schema gate skipped as
+  expected.
+
+**Current state**
+- These docs changes are included on
+  `feat/78-validate_project_plan-and-a-project-plan-schema-doc` for PR #79.
+- Local `output/triage/issues/78/` artifacts remain untracked and excluded from
+  the branch.
+
+**Next steps**
+- Review PR #79 and keep this standards guidance in mind for future nontrivial
+  Python changes.
+
+**Be careful**
+- The standard is guidance for implementation quality. It should not be used to
+  force abstractions into tiny one-off glue.
+
+End of session -- 2026-06-26 code standards documented
