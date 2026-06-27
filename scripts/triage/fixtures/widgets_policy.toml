@@ -52,7 +52,7 @@ trigger_patterns = [
   '\bgithub workflow\b',
   '\bci service\b',
 ]
-official_domains = ["docs.github.com"]
+official_domains = ["docs.github.com", "cli.github.com"]
 
 [[governance.official_docs.providers]]
 key = "python_packaging"

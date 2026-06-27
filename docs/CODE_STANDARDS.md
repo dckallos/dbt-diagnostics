@@ -269,6 +269,59 @@ Guidelines:
   expansion.
 * Validation must fail closed for safety boundaries.
 
+## Config and consumer inventory
+
+Configuration is a contract only when every consumer can honor it.
+
+Before adding, moving, or broadening a policy/config field, identify each
+consumer:
+
+* raw loader and typed policy object;
+* shell or JSON export surface;
+* shell wrappers and launchers;
+* doctor and setup checks;
+* Codex hooks and quality receipts;
+* artifact builders and validators;
+* task-context, issue-governance, and worker-packet surfaces;
+* docs and skill instructions that describe the behavior.
+
+For each consumer, do exactly one of these:
+
+* thread the configured value through and test a non-default value there;
+* reject the unsupported value at load time with a clear deferred-support error;
+* document the value as code-owned and do not expose it as config yet.
+
+Do not accept a policy field merely because the loader can parse it. A parsed
+but unsupported value is worse than a hard-coded value because it creates false
+configurability. Synthetic non-default policies should prove both portability
+and rejection behavior.
+
+## Shared safety classifiers
+
+Write-sensitive command and artifact classification must not drift.
+
+When multiple surfaces need the same safety boundary, use one shared classifier
+or one shared test table. This applies to:
+
+* GitHub mutation command detection;
+* unsafe shell command detection;
+* read-only packet and receipt forbidden-shape checks;
+* policy validation that rejects write-shaped payloads;
+* hook `PreToolUse` and `PermissionRequest` denial behavior.
+
+Command classifiers must reason about executable command segments, not arbitrary
+substrings. They should reject mutation commands embedded after shell control
+operators or shell wrappers, while allowing dangerous text passed as inert data
+to safe commands. For GitHub CLI behavior, include implicit writes such as
+`gh api` field flags that switch the request method to POST.
+
+Every shared classifier change needs paired tests:
+
+* a direct hook or wrapper denial case;
+* a policy/artifact validation rejection case;
+* a safe read-only case;
+* a safe inert-data case when the dangerous phrase can appear as data.
+
 ## Forbidden shape validation
 
 Read-only artifacts, policy files, packets, plans, reports, and receipts must
@@ -390,6 +443,10 @@ Digest-bearing artifacts must be hard to spoof accidentally.
 * Receipts that guard protected files must bind the exact normalized paths they
   cover.
 * A receipt that cannot be read, parsed, validated, or matched must fail closed.
+* A receipt field that proves freshness is not proof of semantic validation.
+  Any protected path category that can be freshness-bound must either have a
+  validator that actually checks that category or a documented reason why
+  freshness alone is sufficient.
 * When an artifact is advisory, name it as advisory and avoid fields that look
   executable.
 
@@ -578,6 +635,44 @@ Security-sensitive code should be conservative and boring.
 * Keep permissions narrow in GitHub Actions and local scripts.
 * Package artifacts must not include `.git`, `.github`, `.codex`, local output,
   credentials, triage source, caches, or virtualenvs.
+
+## Hostile portability fixtures
+
+Portability is not proven by replacing one repository name with another.
+
+Synthetic fixtures for governance, Codex, policy, packets, hooks, wrappers, and
+CLI surfaces should include adversarial-but-realistic variants when relevant:
+
+* extensionless configured files such as `Dockerfile`, `Makefile`, and
+  `CODEOWNERS`;
+* falsey malformed tables such as `compat = false` where a table is required;
+* empty optional lists that would make a command operate on an unintended
+  default surface;
+* disabled policy features with legacy sections still present;
+* unknown providers, unknown hosts, and negated criticality wording;
+* compound shell commands and shell wrappers;
+* dangerous command text passed as inert data to safe tools.
+
+If a fixture only proves that strings moved out of code, it is not sufficient
+for an adapter or reusable-boundary PR.
+
+## External semantics
+
+Do not infer third-party command behavior from names alone.
+
+Before implementing code that depends on an external CLI, hook protocol, API, or
+platform rule, verify the behavior from official documentation or local `--help`
+output and encode the semantics in tests. Examples include:
+
+* Codex hook events require event-valid JSON on stdout or another documented
+  blocking mechanism;
+* `gh api -f/--raw-field` and `-F/--field` add request parameters and imply POST
+  unless `--method GET` is explicit;
+* `python -m compileall` with no `FILE|DIR` arguments compiles `sys.path`;
+* `git push -f` is the short form of force push.
+
+When official docs and local help disagree, stop and surface the discrepancy
+instead of guessing.
 
 ## Dependencies and packaging
 

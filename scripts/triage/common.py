@@ -29,15 +29,30 @@ DEFAULT_REFERENCE_ROOTS = (
     ".codex",
     ".agents",
 )
+EXTENSIONLESS_FILE_ROOT_NAMES = frozenset(
+    {
+        ".gitignore",
+        "CODEOWNERS",
+        "Dockerfile",
+        "Gemfile",
+        "LICENSE",
+        "Makefile",
+        "NOTICE",
+        "Procfile",
+        "Rakefile",
+        "SECURITY",
+    }
+)
 URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/(?:issues|pull)/(\d+)")
 
 
 def _is_file_reference_root(root: str) -> bool:
     name = root.rsplit("/", 1)[-1]
     return (
-        name in {"LICENSE", ".gitignore"}
+        name in EXTENSIONLESS_FILE_ROOT_NAMES
         or "." in name.lstrip(".")
         or name.endswith(".md")
+        or ("/" not in root and bool(name) and name[0].isupper())
     )
 
 

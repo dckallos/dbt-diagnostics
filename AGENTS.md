@@ -68,6 +68,21 @@ Before stopping, leave the repo resumable:
 - Any PR touching Python, governance artifacts, hooks, wrappers, JSON, policy,
   or CLI output must comply with `docs/CODE_STANDARDS.md` or explicitly call out
   the exact exception in the final report.
+- For governance, Codex, hook, wrapper, policy, artifact, or CLI changes, list
+  every consumer of each changed value before editing. A configurable value must
+  either be honored by every consumer in the same PR or rejected at load time
+  with a clear deferred-support error.
+- Keep write-safety classification shared. GitHub mutation, unsafe shell, and
+  read-only artifact boundaries must use one code-owned classifier or one shared
+  test table across hooks, policy validation, packets, wrappers, and receipts.
+- Prefer structured parsing over substring checks for commands, issue sections,
+  official-doc fields, paths, URLs, and policy values. Regression tests must
+  include negated wording, falsey malformed config, compound shell commands,
+  dangerous text used as inert data, extensionless configured files, and
+  disabled-but-retained sections when those cases apply.
+- When implementation depends on third-party CLI or platform behavior, verify it
+  from official docs or local `--help` output before coding and preserve the
+  relevant semantics in tests.
 - **Docs follow code, never lead it.** Design docs describe the target state
   and are annotated as such (e.g. "to be removed, tracked by #N") until the
   corresponding PR merges. `PROGRESS_LOG.md` is updated only after a PR

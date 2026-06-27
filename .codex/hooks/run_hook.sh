@@ -46,4 +46,19 @@ if [ ! -f "$hook_path" ]; then
   fail_closed "Hook launcher failed safely: missing hook script."
 fi
 
-exec "$python_path" "$hook_path"
+stdout_path="$(mktemp)"
+stderr_path="$(mktemp)"
+cleanup() {
+  rm -f "$stdout_path" "$stderr_path"
+}
+trap cleanup EXIT
+
+if "$python_path" "$hook_path" >"$stdout_path" 2>"$stderr_path"; then
+  cat "$stdout_path"
+  exit 0
+fi
+
+if [ -s "$stderr_path" ]; then
+  cat "$stderr_path" >&2
+fi
+fail_closed "Hook launcher failed safely: hook script exited nonzero."

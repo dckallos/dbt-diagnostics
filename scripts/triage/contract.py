@@ -1099,7 +1099,9 @@ def audit_contract(
             }
         )
 
-    official_docs_section = section_map(sections).get("official_docs")
+    sections_by_key = section_map(sections)
+    official_docs_section = sections_by_key.get("official_docs")
+    decisions_blockers_section = sections_by_key.get("decisions_blockers")
     if official_docs_section is not None:
         findings.extend(
             official_docs.section_findings(
@@ -1107,6 +1109,11 @@ def audit_contract(
                 official_docs_required,
                 unresolved_placeholder=UNRESOLVED_PLACEHOLDER,
                 has_decisions_blockers="decisions_blockers" in present,
+                decisions_blockers_content=(
+                    decisions_blockers_section.content
+                    if decisions_blockers_section is not None
+                    else None
+                ),
                 official_docs_policy=active_policy.official_docs,
             )
         )

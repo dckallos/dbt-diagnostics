@@ -521,6 +521,36 @@ def test_missing_root_file_reference_is_reported(tmp_path: Path) -> None:
     assert [(item["issue"], item["data"]) for item in missing] == [(1, ["SECURITY.md"])]
 
 
+def test_missing_extensionless_configured_root_file_is_reported(
+    tmp_path: Path,
+) -> None:
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["reference_roots"] = ["Dockerfile", "Makefile"]  # type: ignore[index]
+    active_policy = repo_config.policy_from_mapping(data)
+    (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="ascii")
+    snap = snapshot(
+        [
+            issue(
+                1,
+                body="Dockerfile exists; Makefile does not.",
+                labels=["bug"],
+            )
+        ],
+        labels=["bug"],
+    )
+
+    findings = triage.audit_snapshot(
+        snap,
+        policy(),
+        root=tmp_path,
+        repo_policy=active_policy,
+    )
+
+    missing = [item for item in findings if item["code"] == "missing-repo-path"]
+    assert [(item["issue"], item["data"]) for item in missing] == [(1, ["Makefile"])]
+
+
 def test_missing_paths_use_configured_non_dbt_reference_roots(
     tmp_path: Path,
 ) -> None:

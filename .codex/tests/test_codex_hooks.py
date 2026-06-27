@@ -180,6 +180,41 @@ def test_hooks_config_git_root_failure_emits_valid_event_json(
         assert "cannot resolve git root" in decision[expected_key]
 
 
+def test_hook_launcher_child_crash_emits_valid_event_json(tmp_path: Path) -> None:
+    hooks_dir = tmp_path / ".codex" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    launcher = hooks_dir / "run_hook.sh"
+    launcher.write_text(
+        (ROOT / ".codex" / "hooks" / "run_hook.sh").read_text(encoding="ascii"),
+        encoding="ascii",
+    )
+    launcher.chmod(0o755)
+    crash_hook = hooks_dir / "pre_tool_use.py"
+    crash_hook.write_text("raise RuntimeError('boom')\n", encoding="ascii")
+    python_dir = tmp_path / ".venv" / "bin"
+    python_dir.mkdir(parents=True)
+    (python_dir / "python").symlink_to(Path(sys.executable))
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    result = subprocess.run(
+        [str(launcher), "pre_tool_use.py", "PreToolUse"],
+        cwd=tmp_path,
+        input=json.dumps(bash_payload("python -V")),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "RuntimeError" in result.stderr
+    output = json.loads(result.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["hookEventName"] == "PreToolUse"
+    assert hook_output["permissionDecision"] == "deny"
+    assert "hook script exited nonzero" in hook_output["permissionDecisionReason"]
+
+
 def test_pre_tool_use_blocks_direct_github_issue_mutation() -> None:
     output = run_hook(
         "pre_tool_use",
@@ -196,6 +231,12 @@ def test_pre_tool_use_blocks_direct_github_issue_mutation() -> None:
     "command",
     [
         "gh api graphql -f query='mutation { closeIssue(input:{issueId:\"I\"}) { clientMutationId } }'",
+        "gh api repos/dckallos/dbt-diagnostics/issues/1/comments -f body=hi",
+        "pytest -q && gh issue edit 1 --body-file proposed-body.md",
+        "bash -lc 'gh issue close 1'",
+        "env GH_REPO=dckallos/dbt-diagnostics gh repo edit --description unsafe",
+        "gh pr create --title unsafe --body unsafe",
+        "gh pr reopen 114",
         "gh pr comment 114 --body review",
         "gh pr review 114 --approve",
         "gh repo edit dckallos/dbt-diagnostics --description unsafe",
@@ -212,6 +253,15 @@ def test_pre_tool_use_blocks_github_write_commands(command: str) -> None:
     hook_output = output["hookSpecificOutput"]
     assert hook_output["permissionDecision"] == "deny"
     assert "GitHub metadata mutation" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_tool_use_allows_dangerous_text_as_inert_data() -> None:
+    output = run_hook(
+        "pre_tool_use",
+        bash_payload("rg -n 'gh issue edit' docs"),
+    )
+
+    assert output == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
 def test_pre_tool_use_allows_safe_shell_command() -> None:
@@ -235,6 +285,21 @@ def test_pre_tool_use_allows_safe_github_read_commands(command: str) -> None:
     output = run_hook("pre_tool_use", bash_payload(command))
 
     assert output == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_permission_request_blocks_short_force_push_flag() -> None:
+    output = run_hook(
+        "permission_request",
+        bash_payload(
+            "git push -f origin fix/review-comment-hardening",
+            event="PermissionRequest",
+            description="push branch",
+        ),
+    )
+
+    decision = output["hookSpecificOutput"]["decision"]
+    assert decision["behavior"] == "deny"
+    assert "unsafe command" in decision["message"]
 
 
 def test_pre_tool_use_malformed_stdin_emits_valid_denial_json() -> None:

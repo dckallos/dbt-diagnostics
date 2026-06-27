@@ -564,6 +564,21 @@ def test_official_docs_accepts_known_provider_official_url() -> None:
     )
 
 
+def test_official_docs_accepts_github_cli_manual_domain() -> None:
+    issue = {
+        "number": 117,
+        "title": "feat: verify GitHub CLI gh api behavior",
+        "labels": ["enhancement"],
+        "body": github_actions_contract_body(
+            official_docs_body("https://cli.github.com/manual/gh_api")
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert result["governance_state"] == "conformant", result["findings"]
+
+
 def test_official_docs_rejects_unofficial_known_provider_url() -> None:
     issue = {
         "number": 118,
@@ -681,6 +696,41 @@ def test_unknown_url_host_is_not_masked_by_known_provider_text() -> None:
     )
 
 
+def test_official_docs_required_fields_are_anchored_to_field_labels() -> None:
+    issue = {
+        "number": 128,
+        "title": "feat: document AcmeCloud CLI contract",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The issue relies on an AcmeCloud CLI contract outside this repository.
+
+## Expected behavior or target outcome
+
+The issue records external source uncertainty.
+
+## Official documentation evidence
+
+- Official URL: https://docs.acme.invalid/cli
+- Supported claim: The CLI flag is documented by AcmeCloud.
+- Docs version or product version: Current hosted docs.
+- Retrieval date: 2026-06-27.
+- Residual uncertainty: Unknown provider: AcmeCloud.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert result["governance_state"] == "needs_contract_revision"
+    assert any(
+        item["code"] == "official-docs-incomplete-section"
+        and item["data"] == "provider"
+        for item in result["findings"]
+    )
+
+
 def test_unknown_provider_official_docs_accepts_maintainer_verified_source() -> None:
     issue = {
         "number": 121,
@@ -758,6 +808,138 @@ The issue records external source uncertainty.
         }
     )
     assert accepted["governance_state"] == "conformant", accepted["findings"]
+
+
+def test_critical_unknown_provider_requires_relevant_blocker_text() -> None:
+    body = common_body(
+        """## User-visible problem or current gap
+
+The issue relies on an AcmeCloud CLI contract outside this repository.
+
+## Expected behavior or target outcome
+
+The issue records external source uncertainty.
+
+## Official documentation evidence
+
+- Provider: AcmeCloud
+- Official URL: https://docs.acme.invalid/cli
+- Supported claim: The CLI flag is documented by AcmeCloud.
+- Docs version or product version: Current hosted docs.
+- Retrieval date: 2026-06-27.
+- Residual uncertainty: Critical unknown provider; maintainer verification is required before implementation.
+
+## Maintainer decisions and blockers
+
+- No blockers.
+"""
+    )
+    issue = {
+        "number": 129,
+        "title": "feat: document AcmeCloud CLI contract",
+        "labels": ["enhancement"],
+        "body": body,
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert result["governance_state"] == "needs_contract_revision"
+    assert any(
+        item["code"] == "official-docs-missing-verification-blocker"
+        for item in result["findings"]
+    )
+
+
+def test_negated_critical_unknown_provider_does_not_require_blocker() -> None:
+    issue = {
+        "number": 130,
+        "title": "feat: document AcmeCloud CLI contract",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The issue relies on an AcmeCloud CLI contract outside this repository.
+
+## Expected behavior or target outcome
+
+The issue records external source uncertainty.
+
+## Official documentation evidence
+
+- Provider: AcmeCloud
+- Official URL: https://docs.acme.invalid/cli
+- Supported claim: The CLI flag is documented by AcmeCloud.
+- Docs version or product version: Current hosted docs.
+- Retrieval date: 2026-06-27.
+- Residual uncertainty: Unknown provider; maintainer verification is required, but the source is not critical before implementation.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert not any(
+        item["code"] == "official-docs-missing-verification-blocker"
+        for item in result["findings"]
+    )
+
+
+def test_disabled_official_docs_policy_skips_retained_section_validation() -> None:
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    official_docs = data["governance"]["official_docs"]  # type: ignore[index]
+    official_docs["enabled"] = False  # type: ignore[index]
+    active_policy = repo_config.policy_from_mapping(data)
+    issue = {
+        "number": 131,
+        "title": "feat: document local widget cleanup",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The issue changes local widget cleanup only.
+
+## Expected behavior or target outcome
+
+The local cleanup remains offline.
+
+## Official documentation evidence
+
+- Provider: Unknown.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue, repo_policy=active_policy)
+
+    assert not any(
+        item["code"].startswith("official-docs-") for item in result["findings"]
+    )
+
+
+def test_configured_official_doc_triggers_match_case_insensitively() -> None:
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    provider = data["governance"]["official_docs"]["providers"][0]  # type: ignore[index]
+    provider["trigger_patterns"] = [r"\bGitHub Actions\b"]  # type: ignore[index]
+    active_policy = repo_config.policy_from_mapping(data)
+    issue = {
+        "number": 132,
+        "title": "feat: verify github actions workflow behavior",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The widgets service relies on github actions workflow behavior.
+
+## Expected behavior or target outcome
+
+The contract records official docs evidence.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue, repo_policy=active_policy)
+
+    assert "Official documentation evidence" in result["missing_required_sections"]
 
 
 def test_proposed_body_includes_official_docs_placeholder_when_required() -> None:

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Harden governance review boundaries
+
+- I made GitHub mutation command classification shared between policy
+  validation and Codex hooks, including compound shell commands, shell
+  wrappers, repo/PR metadata writes, implicit `gh api` POSTs from field flags,
+  and safe inert command text.
+- I tightened repository policy validation for unsupported hook script names,
+  falsey non-table compatibility policy, and empty Python compile roots that
+  would otherwise invoke `compileall` against `sys.path`.
+- I hardened official-documentation checks for case-insensitive configured
+  triggers, field-label anchoring, disabled-but-retained sections, relevant
+  blocker text, negated criticality wording, and GitHub CLI manual URLs.
+- I made extensionless configured root files scannable and citable, and made the
+  hook launcher fail closed with valid event JSON when a hook script crashes.
+- I updated the operating standards to require consumer inventories, shared
+  safety classifiers, hostile portability fixtures, and externally verified CLI
+  semantics for future governance and Codex changes.
+
 ### Add synthesis review packet CLI
 
 - I added `python scripts/triage/triage.py synthesis-review-packet` to build a
