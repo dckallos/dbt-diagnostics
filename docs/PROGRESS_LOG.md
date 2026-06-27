@@ -1074,3 +1074,66 @@ End of session -- 2026-06-26 issue 91 project-plan wrapper implemented
   path or change runtime behavior.
 
 End of session -- 2026-06-26 issue 91 architecture handoff prompt added
+
+---
+
+## 2026-06-27 -- issue 94 synthesis review packet contract implemented
+
+**What changed**
+- Ran the issue-work gate for #94. The live issue body failed contract, so I
+  drafted only the missing local proposed-body sections under
+  `output/triage/issues/94/` and validated them with `standardize`.
+- Added the v1 `synthesis-review-packet` human and machine schema docs.
+- Added `frontier.validate_synthesis_review_packet()` with canonical digest,
+  byte-budget, staleness, safety, and forbidden mutation-shape checks.
+- Added focused validator, schema-surface, digest, empty-packet, forbidden-shape,
+  byte-vs-token, stale-packet, and adjacent read-only regression tests.
+- Updated `CHANGELOG.md`.
+- Updated the local `issue-work` skill so future nonconformant issue bodies must
+  be printed inline, explicitly approved by the maintainer, applied to the live
+  issue, and rechecked before implementation resumes.
+- After maintainer approval, applied the accepted proposed body to live issue
+  #94.
+
+**Validation**
+- `python scripts/triage/triage.py contract --issue 94` failed on the live body,
+  as expected before local standardization.
+- `python .codex/scripts/anchor_check.py output/triage/issues/94/proposed-body.md`
+  passed: anchored refs 4, unresolved 0, past EOF 0.
+- `python scripts/triage/triage.py standardize --issue 94 --proposed-body
+  output/triage/issues/94/proposed-body.md --output-dir output/triage/issues/94`
+  passed with `governance_state: conformant`; only the missing type-label
+  warning remains.
+- `python -m pytest -q scripts/triage/test_frontier.py` passed: 41 passed.
+- `python -m json.tool docs/synthesis-review-packet-schema-v1.json` passed.
+- `python -m compileall -q scripts/triage` passed.
+- `bash .codex/bin/action.sh check` initially hit sandbox-blocked pycache writes
+  under `.codex/scripts`; rerunning the same command with approval passed:
+  630 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema gate
+  skipped as expected.
+- `python /Users/daniel/.codex/skills/.system/skill-creator/scripts/quick_validate.py
+  .agents/skills/issue-work` passed after the skill update.
+- `gh issue edit 94 --repo dckallos/dbt-diagnostics --body-file
+  output/triage/issues/94/proposed-body.md` succeeded.
+- `python scripts/triage/triage.py contract --issue 94` passed on the live
+  body with `governance_state: conformant`; only the missing type-label warning
+  remains.
+
+**Current state**
+- Work is on local branch `feat/94-synthesis-review-packet-schema`, based on
+  `origin/donkey-kong-sandbox`.
+- Implementation changes are uncommitted and local only. Live issue #94 has the
+  approved conformant body.
+- Local governance artifacts for #94 remain under `output/triage/issues/94/`.
+
+**Next steps**
+- Review the schema/validator contract and focused tests.
+- Commit this branch and open a PR into `donkey-kong-sandbox` when ready.
+
+**Be careful**
+- Keep #93 follow-up work ordered: do not add retrieval before the packet
+  schema, packet CLI, verdict schema, and recall fixtures exist.
+- Token estimates remain advisory; serialized byte limits are the deterministic
+  gate.
+
+End of session -- 2026-06-27 issue 94 synthesis review packet contract implemented

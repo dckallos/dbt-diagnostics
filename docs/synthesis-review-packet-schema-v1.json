@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/synthesis-review-packet-schema-v1.json",
+  "title": "dbt-diagnostics synthesis review packet",
+  "type": "object",
+  "additionalProperties": true,
+  "not": {
+    "anyOf": [
+      {"required": ["operations"]},
+      {"required": ["github_request"]},
+      {"required": ["github_requests"]},
+      {"required": ["github_request_payload"]},
+      {"required": ["request_payload"]}
+    ]
+  },
+  "required": [
+    "schema_version",
+    "repository",
+    "generated_at",
+    "source_generated_at",
+    "source_artifacts",
+    "packet_scope",
+    "candidate_sets",
+    "evidence_items",
+    "near_misses",
+    "omissions",
+    "comments_included",
+    "comment_evidence_status",
+    "budget",
+    "staleness",
+    "safety",
+    "synthesis_review_packet_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "generated_at": {"type": "string"},
+    "source_generated_at": {"type": "string"},
+    "source_artifacts": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "snapshot_digest",
+        "audit_digest",
+        "backlog_synthesis_digest"
+      ],
+      "properties": {
+        "snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "audit_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "backlog_synthesis_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "project_plan_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "packet_scope": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "candidate_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["operations"]},
+            {"required": ["body"]},
+            {"required": ["state"]},
+            {"required": ["github_request"]},
+            {"required": ["request_payload"]}
+          ]
+        }
+      }
+    },
+    "evidence_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["operations"]},
+            {"required": ["body"]},
+            {"required": ["state"]},
+            {"required": ["github_request"]},
+            {"required": ["request_payload"]}
+          ]
+        },
+        "required": ["evidence_id"],
+        "properties": {
+          "evidence_id": {"type": "string", "minLength": 1},
+          "excerpt": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "near_misses": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string"},
+          {
+            "type": "object",
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {"required": ["operations"]},
+                {"required": ["body"]},
+                {"required": ["state"]},
+                {"required": ["github_request"]},
+                {"required": ["request_payload"]}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string"},
+          {
+            "type": "object",
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {"required": ["operations"]},
+                {"required": ["body"]},
+                {"required": ["state"]},
+                {"required": ["github_request"]},
+                {"required": ["request_payload"]}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "comments_included": {"const": false},
+    "comment_evidence_status": {"const": "not_collected"},
+    "budget": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "serialized_bytes",
+        "target_bytes",
+        "hard_bytes",
+        "estimated_tokens",
+        "target_estimated_tokens",
+        "hard_estimated_tokens",
+        "token_estimate_method"
+      ],
+      "properties": {
+        "serialized_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 307200
+        },
+        "target_bytes": {"const": 204800},
+        "hard_bytes": {"const": 307200},
+        "estimated_tokens": {"type": "integer", "minimum": 0},
+        "target_estimated_tokens": {"const": 50000},
+        "hard_estimated_tokens": {"const": 75000},
+        "token_estimate_method": {"type": "string", "minLength": 1}
+      }
+    },
+    "staleness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "max_age_hours",
+        "stale",
+        "llm_review_allowed"
+      ],
+      "properties": {
+        "max_age_hours": {"type": "integer", "minimum": 1},
+        "stale": {"type": "boolean"},
+        "llm_review_allowed": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"stale": {"const": true}},
+            "required": ["stale"]
+          },
+          "then": {
+            "properties": {"llm_review_allowed": {"const": false}}
+          }
+        }
+      ]
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "read_only",
+        "github_api_calls",
+        "github_mutations",
+        "contains_executable_operations",
+        "contains_full_tracker_snapshot",
+        "contains_issue_comments",
+        "comments_included",
+        "llm_verdicts_are_advisory"
+      ],
+      "properties": {
+        "read_only": {"const": true},
+        "github_api_calls": {"const": false},
+        "github_mutations": {"const": false},
+        "contains_executable_operations": {"const": false},
+        "contains_full_tracker_snapshot": {"const": false},
+        "contains_issue_comments": {"const": false},
+        "comments_included": {"const": false},
+        "llm_verdicts_are_advisory": {"const": true}
+      }
+    },
+    "synthesis_review_packet_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Define the synthesis review packet contract
+
+- I added the v1 `synthesis-review-packet` schema docs and machine schema for
+  bounded LLM backlog review evidence.
+- I added `validate_synthesis_review_packet()` so malformed, stale,
+  over-budget, or mutation-shaped packets are rejected before any downstream
+  LLM review consumes them.
+- The packet contract remains read-only and advisory: no CLI command, builder,
+  retrieval path, verdict schema, comments collection, or GitHub write path is
+  added.
+
 ### Expose the read-only Project planner wrapper
 
 - I added `bash .codex/bin/action.sh project-plan` as the stable Codex wrapper
