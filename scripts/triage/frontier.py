@@ -2254,6 +2254,7 @@ class WorkerPacketValidator:
         self._validate_issue(context)
         self._validate_contract_and_sections(context)
         self._validate_arrays(context)
+        self._validate_required_verification_commands(context)
         self._validate_context_objects(context)
         self._validate_progress_context(context)
         actual_digest = sha256_json(
@@ -2292,6 +2293,21 @@ class WorkerPacketValidator:
         ):
             if not isinstance(self.value.get(key), list):
                 context.errors.append(f"{key} must be an array")
+
+    def _validate_required_verification_commands(
+        self, context: ValidationContext
+    ) -> None:
+        commands = self.value.get("required_verification_commands")
+        if not isinstance(commands, list):
+            return
+        for index, command in enumerate(commands):
+            if not isinstance(command, str):
+                continue
+            reason = repo_config.github_mutation_command_reason(command)
+            if reason is not None:
+                context.errors.append(
+                    f"required_verification_commands[{index}] {reason}"
+                )
 
     def _validate_context_objects(self, context: ValidationContext) -> None:
         if not isinstance(self.value.get("uncertainty"), Mapping):

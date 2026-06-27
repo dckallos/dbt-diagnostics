@@ -147,6 +147,12 @@ The normal `codex-quality` action records two protected-path fields:
   to the receipt timestamp. This field proves `codex-quality` ran after those
   paths changed; it does not claim the files were semantically scanned.
 
+The semantic governance-boundary scan set is still code-owned in PR 1. Repository
+policy controls the receipt path, protected surfaces, and freshness binding, but
+it does not configure which instruction/doc files receive semantic mutation
+authorization checks. Making that scan set policy-owned is a later extraction
+seam.
+
 ## Issue governance workflow
 
 The full planning surface is available directly:

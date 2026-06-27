@@ -234,6 +234,58 @@ CLI_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:@%+=,-]+$")
 SUPPORTED_HOOK_EVENTS = frozenset({"PreToolUse", "PermissionRequest", "Stop"})
 SUPPORTED_OPTIONAL_CHECKS = frozenset({"package", "compat_schema"})
 UNKNOWN_PROVIDER_POLICY = "preserve_verification_or_uncertainty"
+CANONICAL_OFFICIAL_DOCS_SECTION_TITLE = "Official documentation evidence"
+SUPPORTED_CODEX_VENV_DIR = ".venv"
+GH_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+GH_API_MUTATION_TARGET_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])"
+    r"(?:issues|pulls|labels|milestones|projects|workflows|secrets|variables)"
+    r"(?![A-Za-z0-9_-])",
+    re.IGNORECASE,
+)
+GRAPHQL_MUTATION_RE = re.compile(r"\bmutation\b", re.IGNORECASE)
+GH_MUTATING_SUBCOMMANDS = {
+    "issue": frozenset(
+        {
+            "create",
+            "edit",
+            "close",
+            "reopen",
+            "delete",
+            "comment",
+            "lock",
+            "unlock",
+            "pin",
+            "unpin",
+            "transfer",
+        }
+    ),
+    "pr": frozenset(
+        {
+            "merge",
+            "close",
+            "edit",
+            "ready",
+            "lock",
+            "unlock",
+            "comment",
+            "review",
+        }
+    ),
+    "workflow": frozenset({"run", "disable", "enable"}),
+    "secret": frozenset({"set"}),
+    "variable": frozenset({"set"}),
+    "label": frozenset({"create", "edit", "delete", "clone", "close", "reopen"}),
+    "milestone": frozenset(
+        {"create", "edit", "delete", "clone", "close", "reopen"}
+    ),
+    "project": frozenset(
+        {"create", "edit", "delete", "item-add", "item-edit", "item-delete", "item-move"}
+    ),
+}
+GH_GLOBAL_OPTIONS_WITH_VALUE = frozenset(
+    {"--repo", "-R", "--hostname", "--config", "--jq", "--template"}
+)
 
 FORBIDDEN_MUTATION_KEYS = frozenset(
     {
@@ -448,6 +500,11 @@ def _codex(value: Any, errors: list[str], label: str) -> CodexPolicy:
     table = _table(value, errors, f"{label}.codex")
     environment_name = _required_string(table, "environment_name", errors, f"{label}.codex")
     venv_dir = _required_relative_path(table, "venv_dir", errors, f"{label}.codex")
+    if venv_dir and venv_dir != SUPPORTED_CODEX_VENV_DIR:
+        errors.append(
+            f"{label}.codex.venv_dir must be {SUPPORTED_CODEX_VENV_DIR!r}; "
+            "configurable hook launcher venv_dir is deferred"
+        )
     quality_receipt_path = _required_relative_path(
         table, "quality_receipt_path", errors, f"{label}.codex"
     )
@@ -661,6 +718,15 @@ def _official_docs(value: Any, errors: list[str], label: str) -> OfficialDocsPol
         errors.append(f"{label}.enabled must be a boolean")
         enabled = False
     section_title = _required_string(table, "section_title", errors, label)
+    if (
+        section_title
+        and section_title != CANONICAL_OFFICIAL_DOCS_SECTION_TITLE
+    ):
+        errors.append(
+            f"{label}.section_title must be "
+            f"{CANONICAL_OFFICIAL_DOCS_SECTION_TITLE!r}; configurable official-doc "
+            "section titles are deferred"
+        )
     unknown_provider_policy = _required_string(
         table, "unknown_provider_policy", errors, label
     )
@@ -743,6 +809,9 @@ def _worker_packet(value: Any, errors: list[str], label: str) -> WorkerPacketPol
         errors,
         f"{label}.worker_packet.required_verification_commands",
         required=True,
+    )
+    _validate_worker_packet_commands(
+        commands, errors, f"{label}.worker_packet.required_verification_commands"
     )
     return WorkerPacketPolicy(required_verification_commands=commands)
 
@@ -847,6 +916,85 @@ def _validate_cli_command_tokens(
             errors.append(
                 f"{label}[{index}] must not contain shell metacharacters: {token!r}"
             )
+
+
+def _validate_worker_packet_commands(
+    commands: Sequence[str], errors: list[str], label: str
+) -> None:
+    for index, command in enumerate(commands):
+        reason = github_mutation_command_reason(command)
+        if reason is not None:
+            errors.append(f"{label}[{index}] {reason}")
+
+
+def github_mutation_command_reason(command: str) -> str | None:
+    """Return a reason when a command string is shaped like a GitHub write."""
+
+    try:
+        tokens = shlex.split(command)
+    except ValueError as exc:
+        return f"must be shell-tokenizable: {exc}"
+    if not tokens or tokens[0] != "gh":
+        return None
+    gh_args = _gh_command_args(tokens)
+    if not gh_args:
+        return None
+
+    area = gh_args[0].casefold()
+    subcommand = gh_args[1].casefold() if len(gh_args) > 1 else ""
+    mutating_subcommands = GH_MUTATING_SUBCOMMANDS.get(area)
+    if mutating_subcommands is not None and subcommand in mutating_subcommands:
+        return f"must not contain GitHub mutation command: gh {area} {subcommand}"
+
+    if area == "api":
+        if subcommand == "graphql":
+            if GRAPHQL_MUTATION_RE.search(command):
+                return "must not contain GitHub GraphQL mutation command"
+            return None
+        method = _gh_api_method(gh_args)
+        if method in GH_MUTATING_METHODS and GH_API_MUTATION_TARGET_RE.search(command):
+            return (
+                "must not contain mutating gh api command against tracker, workflow, "
+                "secret, or variable surfaces"
+            )
+    return None
+
+
+def _gh_command_args(tokens: Sequence[str]) -> tuple[str, ...]:
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            index += 1
+            break
+        if token in GH_GLOBAL_OPTIONS_WITH_VALUE:
+            index += 2
+            continue
+        if any(token.startswith(option + "=") for option in GH_GLOBAL_OPTIONS_WITH_VALUE):
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        break
+    return tuple(tokens[index:])
+
+
+def _gh_api_method(gh_args: Sequence[str]) -> str:
+    method = "GET"
+    index = 1
+    while index < len(gh_args):
+        token = gh_args[index]
+        if token in {"--method", "-X"} and index + 1 < len(gh_args):
+            method = gh_args[index + 1].upper()
+            index += 2
+            continue
+        if token.startswith("--method="):
+            method = token.split("=", 1)[1].upper()
+        elif token.startswith("-X") and len(token) > 2:
+            method = token[2:].upper()
+        index += 1
+    return method
 
 
 def shell_exports(policy: RepoPolicy) -> dict[str, str]:

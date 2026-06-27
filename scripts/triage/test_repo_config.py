@@ -242,6 +242,118 @@ def test_cli_smoke_command_tokens_reject_shell_metacharacters(token: str) -> Non
         repo_config.policy_from_mapping(data)
 
 
+def test_codex_venv_dir_is_fixed_until_launcher_is_config_aware() -> None:
+    data = _policy_data()
+    codex = data["codex"]
+    assert isinstance(codex, dict)
+    codex["venv_dir"] = ".codex-venv"
+
+    with pytest.raises(repo_config.RepoConfigError, match="venv_dir.*deferred"):
+        repo_config.policy_from_mapping(data)
+
+
+def test_official_docs_section_title_is_canonical_until_contract_is_config_aware() -> None:
+    data = _policy_data()
+    official_docs = data["governance"]["official_docs"]  # type: ignore[index]
+    official_docs["section_title"] = "Vendor evidence"  # type: ignore[index]
+
+    with pytest.raises(repo_config.RepoConfigError, match="section_title.*deferred"):
+        repo_config.policy_from_mapping(data)
+
+
+@pytest.mark.parametrize(
+    ("area", "subcommands"),
+    [
+        (
+            "issue",
+            [
+                "create",
+                "edit",
+                "close",
+                "reopen",
+                "delete",
+                "comment",
+                "lock",
+                "unlock",
+                "pin",
+                "unpin",
+                "transfer",
+            ],
+        ),
+        ("pr", ["merge", "close", "edit", "ready", "lock", "unlock", "comment", "review"]),
+        ("workflow", ["run", "disable", "enable"]),
+        ("secret", ["set"]),
+        ("variable", ["set"]),
+        ("label", ["create", "edit", "delete", "clone", "close", "reopen"]),
+        ("milestone", ["create", "edit", "delete", "clone", "close", "reopen"]),
+        (
+            "project",
+            [
+                "create",
+                "edit",
+                "delete",
+                "item-add",
+                "item-edit",
+                "item-delete",
+                "item-move",
+            ],
+        ),
+    ],
+)
+def test_worker_packet_commands_reject_github_mutating_subcommands(
+    area: str, subcommands: list[str]
+) -> None:
+    for subcommand in subcommands:
+        data = _policy_data()
+        worker_packet = data["worker_packet"]
+        assert isinstance(worker_packet, dict)
+        worker_packet["required_verification_commands"] = [
+            f"gh {area} {subcommand} target"
+        ]
+
+        with pytest.raises(repo_config.RepoConfigError, match="GitHub mutation command"):
+            repo_config.policy_from_mapping(data)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh api --method POST repos/example/widgets/issues",
+        "gh api -X PATCH repos/example/widgets/pulls/1",
+        "gh api --method=DELETE repos/example/widgets/labels/bug",
+        "gh api -XPUT repos/example/widgets/actions/workflows/ci.yml/dispatches",
+        "gh api graphql -f query='mutation { closeIssue(input:{issueId:\"I\"}) { clientMutationId } }'",
+    ],
+)
+def test_worker_packet_commands_reject_mutating_gh_api_shapes(command: str) -> None:
+    data = _policy_data()
+    worker_packet = data["worker_packet"]
+    assert isinstance(worker_packet, dict)
+    worker_packet["required_verification_commands"] = [command]
+
+    with pytest.raises(repo_config.RepoConfigError, match="mutation|mutating gh api"):
+        repo_config.policy_from_mapping(data)
+
+
+def test_worker_packet_commands_allow_read_only_github_commands() -> None:
+    data = _policy_data()
+    worker_packet = data["worker_packet"]
+    assert isinstance(worker_packet, dict)
+    worker_packet["required_verification_commands"] = [
+        "python -m pytest",
+        "python -m compileall -q scripts",
+        "gh issue view 119",
+        "gh pr view 122",
+        "gh api graphql -f query='query { viewer { login } }'",
+    ]
+
+    policy = repo_config.policy_from_mapping(data)
+
+    assert policy.worker_packet.required_verification_commands == tuple(
+        worker_packet["required_verification_commands"]
+    )
+
+
 @pytest.mark.parametrize(
     "flag",
     ["network_retrieval", "url_fetching", "browser_automation", "freshness_checks"],

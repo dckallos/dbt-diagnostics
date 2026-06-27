@@ -59,3 +59,11 @@ def test_validate_skips_when_package_suffixes_are_not_configured(
     check_dist.validate(tmp_path, repo_policy=widgets_policy)
 
     assert "SKIP: no package artifact suffix requirements configured" in capsys.readouterr().out
+
+
+def test_no_suffix_policy_still_rejects_forbidden_package_members(tmp_path) -> None:
+    widgets_policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    _write_artifacts(tmp_path, forbidden=True)
+
+    with pytest.raises(SystemExit, match="forbidden path"):
+        check_dist.validate(tmp_path, repo_policy=widgets_policy)

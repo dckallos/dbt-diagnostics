@@ -38,6 +38,8 @@ def protected_patterns(
     try:
         return repo_config.load_repo_policy().paths.protected_surfaces
     except repo_config.RepoConfigError:
+        if repo_config.DEFAULT_POLICY_PATH.exists():
+            raise
         return FALLBACK_PROTECTED_PATTERNS
 
 

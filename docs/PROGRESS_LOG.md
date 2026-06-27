@@ -1426,6 +1426,12 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
   regression covers non-dbt roots, and shell-facing policy values reject unsafe
   live-install env names or CLI smoke tokens before wrappers consume them.
   Setup/package CLI smoke loops now parse validated tokens without `eval`.
+- Revised PR #122 locally for the second review pass: Stop blocks when policy
+  loading fails instead of falling back to built-in protected surfaces; worker
+  packet commands reject GitHub mutation shapes; PR-1 drift seams for
+  `codex.venv_dir` and official-doc section title are rejected explicitly;
+  no-suffix package policies still inspect built artifacts; and the
+  codex-quality semantic scan split is documented as code-owned for PR 1.
 
 **Validation**
 - `python -m pytest -q scripts/triage/test_repo_config.py` passed: 41 passed.
@@ -1465,15 +1471,45 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
 - Follow-up PR #122 revision: `bash .codex/bin/action.sh check` passed: Codex
   tests 76 passed; offline tests 712 passed, 2 skipped, 20 deselected, 1
   warning; compatibility schema gate skipped as expected.
+- Second PR #122 review revision: `python -m pytest -q
+  scripts/triage/test_repo_config.py` passed: 64 passed.
+- Second PR #122 review revision: `python -m pytest -q
+  .codex/tests/test_codex_hooks.py .codex/tests/test_check_dist.py
+  scripts/triage/test_frontier.py` passed: 91 passed.
+- Second PR #122 review revision: `python -m pytest -q
+  scripts/triage/test_contract.py scripts/triage/test_readiness.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed: 203
+  passed.
+- Second PR #122 review revision: `python -m pytest -q
+  .codex/tests/test_codex_hooks.py .codex/tests/test_codex_quality.py
+  .codex/tests/test_doctor.py .codex/tests/test_environment.py
+  .codex/tests/test_task_context.py .codex/tests/test_check_dist.py` passed: 76
+  passed.
+- Second PR #122 review revision: `python -m compileall -q scripts
+  .codex/scripts .codex/hooks .codex/tests` passed.
+- Second PR #122 review revision: `python -m py_compile
+  scripts/triage/contract.py scripts/triage/official_docs.py
+  scripts/triage/triage.py scripts/triage/repo_config.py` passed.
+- Second PR #122 review revision: `python -m json.tool .codex/hooks.json`,
+  `bash -n .codex/hooks/run_hook.sh`, and `bash -n` for each `.codex/bin/*.sh`
+  passed.
+- Second PR #122 review revision: `bash .codex/bin/action.sh doctor` passed
+  with 0 failures and expected local warnings for dirty worktree and absent
+  compat schema cache.
+- Second PR #122 review revision: `bash .codex/bin/action.sh codex-quality
+  --json` passed and refreshed the protected-file receipt.
+- Second PR #122 review revision: `bash .codex/bin/action.sh check` passed:
+  Codex tests 78 passed; offline tests 729 passed, 2 skipped, 20 deselected, 1
+  warning; compatibility schema gate skipped as expected.
 
 **Current state**
 - Work is on local branch `feat/119-repo-policy-adapter`.
 - Draft PR #122 is open against `donkey-kong-sandbox`.
-- The follow-up review revision is local and not pushed. Keep it as a separate
-  incremental commit before pushing.
+- The second review-hardening revision is local and not pushed. Keep it as a
+  separate incremental commit before pushing.
 
 **Next steps**
-- Review the focused follow-up diff, then push the local revision only after
+- Review the focused hardening diff, then push the local revision only after
   explicit GitHub-write approval.
 
 **Be careful**

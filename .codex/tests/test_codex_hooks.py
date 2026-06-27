@@ -10,6 +10,7 @@ from types import ModuleType
 import pytest
 
 from conftest import ROOT, load_codex_script
+from scripts.triage import repo_config
 
 
 def load_codex_hook(name: str) -> ModuleType:
@@ -335,6 +336,33 @@ def test_stop_blocks_protected_change_without_fresh_receipt(tmp_path: Path) -> N
 
     assert output["decision"] == "block"
     assert "codex-quality" in output["reason"]
+
+
+def test_stop_blocks_policy_load_failure_without_fallback_surfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hook_policy = load_codex_hook("hook_policy")
+    configured_only = tmp_path / "custom" / "policy-only.txt"
+    configured_only.parent.mkdir()
+    configured_only.write_text("changed\n", encoding="ascii")
+
+    def fail_policy_load() -> object:
+        raise repo_config.RepoConfigError("fixture policy failed")
+
+    monkeypatch.setattr(hook_policy.repo_config, "load_repo_policy", fail_policy_load)
+
+    output = hook_policy.evaluate_stop(
+        stop_payload(tmp_path),
+        root=tmp_path,
+        changed_paths=("custom/policy-only.txt",),
+        receipt_path=tmp_path / "output" / "codex" / "quality-receipt.json",
+    )
+
+    assert output["decision"] == "block"
+    assert "Repository policy failed to load" in output["reason"]
+    assert "fixture policy failed" in output["reason"]
+    assert output.get("systemMessage") != "no protected Codex surfaces changed."
+    json.dumps(output, sort_keys=True)
 
 
 def test_stop_blocks_protected_change_not_covered_by_receipt(tmp_path: Path) -> None:

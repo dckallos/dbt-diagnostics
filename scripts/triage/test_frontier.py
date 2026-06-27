@@ -1114,6 +1114,32 @@ def test_worker_packet_verification_commands_come_from_policy(tmp_path: Path) ->
     assert "dbt" not in repr(packet["required_verification_commands"])
 
 
+def test_worker_packet_validation_rejects_mutating_verification_command(
+    tmp_path: Path,
+) -> None:
+    packet = frontier.build_worker_packet(
+        1,
+        snapshot(issue(1)),
+        audit(entry(1)),
+        root=tmp_path,
+    )
+    packet["required_verification_commands"] = [
+        "python -m pytest",
+        "gh issue edit 119 --body-file body.md",
+    ]
+    packet["packet_digest"] = frontier.sha256_json(
+        {key: value for key, value in packet.items() if key != "packet_digest"}
+    )
+
+    errors = frontier.validate_worker_packet(packet)
+
+    assert any(
+        "required_verification_commands[1]" in error
+        and "GitHub mutation command" in error
+        for error in errors
+    )
+
+
 def test_suggested_branch_strips_conventional_commit_scope() -> None:
     entry = {"issue_kind": "bug_fix", "issue_number": 7}
     branch = frontier.suggested_branch(entry, "fix(cli): resolve crash")

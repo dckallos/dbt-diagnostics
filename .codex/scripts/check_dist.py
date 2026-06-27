@@ -68,16 +68,14 @@ def validate(
     active_policy = repo_policy or repo_config.load_repo_policy()
     required_wheel_suffixes = active_policy.product.dist.required_wheel_suffixes
     required_sdist_suffixes = active_policy.product.dist.required_sdist_suffixes
-    if not required_wheel_suffixes and not required_sdist_suffixes:
-        print("SKIP: no package artifact suffix requirements configured")
-        return
     wheels = sorted(dist_dir.glob("*.whl"))
     sdists = sorted(dist_dir.glob("*.tar.gz"))
     errors: list[str] = []
+    require_artifact_set = bool(required_wheel_suffixes or required_sdist_suffixes)
 
-    if len(wheels) != 1:
+    if require_artifact_set and len(wheels) != 1:
         errors.append(f"expected exactly one wheel, found {len(wheels)}")
-    if len(sdists) != 1:
+    if require_artifact_set and len(sdists) != 1:
         errors.append(f"expected exactly one sdist, found {len(sdists)}")
 
     for wheel in wheels:
@@ -96,6 +94,17 @@ def validate(
 
     if errors:
         raise SystemExit("package artifact validation failed:\n- " + "\n- ".join(errors))
+
+    if not require_artifact_set:
+        count = len(wheels) + len(sdists)
+        if count == 0:
+            print("SKIP: no package artifact suffix requirements configured")
+        else:
+            print(
+                f"validated package artifact safety for {count} artifact(s); "
+                "suffix requirements skipped"
+            )
+        return
 
     print(f"validated {wheels[0].name} and {sdists[0].name}")
 

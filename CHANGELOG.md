@@ -19,6 +19,11 @@
   request payloads, forbidden tracker operation IDs, PR merge instructions, and
   unsupported official-docs live retrieval, browser automation, or freshness
   flags.
+- I tightened the adapter boundary so Stop hook policy-load failures block
+  finalization, worker-packet verification commands reject GitHub mutation
+  command shapes, PR-1-only seams for hook venv and official-doc section title
+  are rejected explicitly, and no-suffix package policies still inspect any
+  built artifacts for forbidden members.
 
 ### Require official documentation evidence for external contracts
 

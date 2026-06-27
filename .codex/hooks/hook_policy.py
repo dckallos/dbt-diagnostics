@@ -22,8 +22,6 @@ import codex_surface
 from scripts.triage import repo_config
 
 
-FALLBACK_RECEIPT = Path("output/codex/quality-receipt.json")
-
 GITHUB_MUTATION_PATTERNS = (
     re.compile(
         r"\bgh\s+issue\s+"
@@ -183,11 +181,8 @@ def evaluate_permission_request(payload: Mapping[str, object]) -> dict[str, obje
 normalize_path = codex_surface.normalize_path
 
 
-def _load_repo_policy_for_hook() -> repo_config.RepoPolicy | None:
-    try:
-        return repo_config.load_repo_policy()
-    except repo_config.RepoConfigError:
-        return None
+def _load_repo_policy_for_hook() -> repo_config.RepoPolicy:
+    return repo_config.load_repo_policy()
 
 
 def is_protected_path(
@@ -315,14 +310,18 @@ def evaluate_stop(
         return {"systemMessage": "stop hook already active; skipping nested run."}
 
     root = root or Path(str(payload.get("cwd") or ".")).resolve()
-    active_policy = repo_policy or _load_repo_policy_for_hook()
+    try:
+        active_policy = repo_policy or _load_repo_policy_for_hook()
+    except repo_config.RepoConfigError as exc:
+        return {
+            "decision": "block",
+            "reason": (
+                "Repository policy failed to load; Stop hook is failing closed: "
+                f"{exc}"
+            ),
+        }
     receipt_path = receipt_path or (
-        root
-        / (
-            active_policy.codex.quality_receipt_path
-            if active_policy is not None
-            else FALLBACK_RECEIPT
-        )
+        root / active_policy.codex.quality_receipt_path
     )
     discovered_paths: Sequence[str] | None = changed_paths
     if discovered_paths is None:
