@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Expose the read-only Project planner wrapper
+
+- I added `bash .codex/bin/action.sh project-plan` as the stable Codex wrapper
+  for the existing advisory Project planner.
+- The wrapper delegates through `.codex/bin/triage-project-plan.sh`, forwards
+  arguments to `python scripts/triage/triage.py project-plan`, and does not add
+  any GitHub write path.
+- I documented the wrapper alongside the existing read-only audit and frontier
+  actions.
+
 ### Add read-only backlog synthesis signals
 
 - I added a `backlog-synthesis` governance command that emits deterministic
