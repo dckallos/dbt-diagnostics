@@ -21,8 +21,9 @@ Input: exactly one GitHub issue number.
    proposed body, and `python scripts/triage/triage.py contract --issue <issue>`
    accepts the live issue. The issue-governance skill and issue-work skill never
    modify GitHub tracker text. Present the final `proposed-body.md` for
-   maintainer-applied review, then stop until the maintainer updates the live
-   issue and the live issue passes the contract audit. Escalate
+   maintainer-applied review, then stop. Resume only after the live issue
+   changes outside issue-work and the contract audit accepts the live issue.
+   Escalate
    instead of implementing when `issue-governance` stops for a disposition other
    than `keep`, for a section that cannot be grounded, or when the maintainer
    does not approve the exact body. Never implement against a non-conformant

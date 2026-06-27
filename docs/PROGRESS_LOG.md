@@ -1152,30 +1152,54 @@ End of session -- 2026-06-27 issue 94 synthesis review packet contract implement
   hardened synthesis review packet validation/schema, added full-audit coverage
   gates for `project-plan` and `backlog-synthesis`, fixed backlog signal
   extraction/order, and repaired governance issue normalization.
+- Tightened `.codex/scripts/check_governance_boundary.py` so the default scan
+  includes `docs/ISSUE_CONTRACT_V1.md`, generic read-only wording no longer
+  suppresses mutation authorization, forbidden operation IDs are rejected, and
+  verb-first tracker mutation instructions are detected without flagging
+  negated or PR auto-close prose.
+- Removed the separate authorized writer-flow wording from `issue-work`. The
+  skill now stops for maintainer-applied review and resumes only after the live
+  issue changes outside issue-work and passes the contract audit.
+- Captured the direct maintainer-delegated GitHub operator-action boundary in
+  `AGENTS.md`: it is outside issue-governance/issue-work outputs, triage
+  artifacts, plans, and allowlists, and requires exact current-chat approval.
+- Captured the progress-log convention in `AGENTS.md`: one cohesive
+  `docs/PROGRESS_LOG.md` entry per PR, edited in place as the PR evolves.
+- Added focused regression tests for the new forbidden and safe governance
+  boundary shapes and the new project conventions.
 
 **Validation**
+- `python -m pytest -q .codex/tests/test_codex_quality.py` passed:
+  17 passed.
+- `python /Users/daniel/.codex/skills/.system/skill-creator/scripts/quick_validate.py
+  .agents/skills/issue-work` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed with no findings
+  across the default governance scan paths.
 - `python -m pytest -q .codex/tests/test_codex_quality.py
   scripts/triage/test_frontier.py scripts/triage/test_triage.py
   scripts/triage/test_contract.py` passed: 151 passed.
 - `python -m json.tool docs/synthesis-review-packet-schema-v1.json` passed.
-- `python /Users/daniel/.codex/skills/.system/skill-creator/scripts/quick_validate.py
-  .agents/skills/issue-work` passed.
-- `bash .codex/bin/action.sh codex-quality --json` passed.
 - `python -m compileall -q .codex/scripts scripts/triage` passed with approved
   pycache writes.
-- `bash .codex/bin/action.sh check` passed: 641 passed, 2 skipped,
-  20 deselected, 1 warning; compatibility schema gate skipped as expected.
+- `git diff --check` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 31 passed; offline
+  tests 641 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
 
 **Current state**
 - Work is on branch `chore/105-codex-quality-v2` for PR #113.
-- The branch includes the PR #113 review fixes and the issue-work carry-over
-  change; it is ready to push after commit.
+- The branch has been pushed to `origin/chore/105-codex-quality-v2` with the
+  PR #113 review fixes and governance convention follow-up.
 
 **Next steps**
-- Push the branch update to PR #113 and review the expanded scope carefully.
+- Review the governance-boundary regex boundaries and the AGENTS distinction
+  between reusable governance workflows and direct maintainer-delegated operator
+  actions.
 
 **Be careful**
-- Keep `issue-governance` read-only. Nonconformant issue-body updates remain a
-  maintainer-applied step or a separate authorized writer flow.
+- Keep PR auto-close keyword guidance distinct from direct GitHub tracker
+  mutation instructions; the quality gate intentionally allows the former and
+  rejects the latter.
+- Keep all further PR #113 progress notes inside this single entry.
 
 End of session -- 2026-06-27 PR 113 review fixes and governance hardening

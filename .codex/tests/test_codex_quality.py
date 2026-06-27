@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import re
 import sys
 
 
@@ -39,7 +40,29 @@ def test_issue_work_skill_does_not_authorize_issue_body_mutation() -> None:
     assert "only GitHub metadata mutation allowed" not in skill
     assert "live issue body is updated" not in skill
     assert "authorized writer flow" not in skill
+    assert "maintainer updates the live issue" not in skill
+    assert "changes outside issue-work" in skill
     assert "issue-work skill never" in skill
+
+
+def test_agents_records_single_progress_log_entry_per_pr() -> None:
+    agents = re.sub(
+        r"\s+", " ", (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    )
+
+    assert "Maintain exactly one dated entry per PR" in agents
+    assert "otherwise edit that PR entry in place" in agents
+    assert "single cohesive entry" in agents
+
+
+def test_agents_records_direct_operator_delegation_boundary() -> None:
+    agents = re.sub(
+        r"\s+", " ", (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    )
+
+    assert "one exact GitHub operator action" in agents
+    assert "outside issue-governance/issue-work outputs" in agents
+    assert "triage artifacts, plans, and allowlists" in agents
 
 
 def test_issue_work_skill_requires_pr_auto_close_keyword() -> None:

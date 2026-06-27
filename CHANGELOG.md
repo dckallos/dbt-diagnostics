@@ -14,6 +14,9 @@
   rejects forbidden operation IDs and verb-first tracker mutation instructions,
   and no longer treats generic read-only wording as enough to allow a mutation
   sentence.
+- I clarified the direct maintainer-delegated GitHub operator-action boundary
+  and the one-entry-per-PR progress-log convention in the repository agent
+  instructions.
 - I hardened `project-plan`, `backlog-synthesis`, and
   `synthesis-review-packet` validation so partial audits, stale packets,
   under-reported byte sizes, nested comments/snapshots, and mutation-shaped

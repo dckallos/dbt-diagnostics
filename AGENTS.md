@@ -41,9 +41,12 @@ Stop reading once there is enough to act.
 
 Before stopping, leave the repo resumable:
 
-1. Append a new dated entry to `docs/PROGRESS_LOG.md`: what changed, current
-   state vs. the remote, the next sensible steps, open decisions, and anything
-   to be careful about. End it with an `End of session` marker.
+1. Maintain exactly one dated entry per PR in `docs/PROGRESS_LOG.md`. Add it at
+   session end if no entry exists for the PR; otherwise edit that PR entry in
+   place. Keep all updates for the same PR in that single cohesive entry: what
+   changed, current state vs. the remote, the next sensible steps, open
+   decisions, and anything to be careful about. End the entry with an
+   `End of session` marker.
 2. Keep the entry short enough to skim cold.
 
 ## Conventions (do not violate)
@@ -102,6 +105,11 @@ plainly and directly.
   coverage is CI's responsibility, not a local Codex action.
 - I treat GitHub metadata commands as read-only unless the task explicitly
   authorizes mutations. One metadata-writer session owns an approved batch.
+- A direct maintainer request in the current chat may delegate one exact GitHub
+  operator action, including applying an approved `proposed-body.md`, only
+  outside issue-governance/issue-work outputs, triage artifacts, plans, and
+  allowlists. Before running it, restate the target, command, and artifact;
+  receive explicit approval; run only that command; verify; report.
 - Local Codex can edit workflow files in the checkout, but workflow, secret,
   environment, release, and branch-protection changes still require maintainer
   review and the appropriate GitHub permissions.
@@ -129,7 +137,9 @@ live here even when no skill is invoked:
 - The triage toolchain (`scripts/triage/`) and its skills are **read-only**. They
   audit, score, draft, and plan; they never create, edit, close, label,
   milestone, or move a GitHub item, and no plan or allowlist may add an
-  issue-body write. The maintainer applies any change by hand.
+  issue-body write. The maintainer applies any change outside the triage
+  toolchain; a current-session direct operator delegation is allowed only under
+  the Local Codex app rules above.
 - Per-issue runs handle **one issue at a time**; the per-issue `issue-governance`
   skill never reasons across issues. Cross-issue judgment (deduplication,
   splitting, merging, ordering, project structure) is reserved for a dedicated,
