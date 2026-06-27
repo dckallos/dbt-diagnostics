@@ -1,8 +1,13 @@
 # Issue contract v1
 
-Contract ID: `dbt-diagnostics.issue-contract.v1`
+Default configured contract ID: `dbt-diagnostics.issue-contract.v1`
 
-Contract version: `1.0`
+Default configured contract version: `1.0`
+
+The active ID and version come from `scripts/triage/policy.toml`
+`[governance.contract]` through the typed repo policy adapter. This repository
+keeps the values above; another configured consumer can supply its own contract
+ID without changing the contract parser.
 
 This document defines the issue contract used by the repository governance and
 readiness tooling. The contract is deliberately smaller than a universal issue

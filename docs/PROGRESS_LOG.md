@@ -1393,3 +1393,171 @@ End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented
   certainty.
 
 End of session -- 2026-06-27 issue 115 official documentation evidence contract
+
+---
+
+## 2026-06-27 -- issue 119 repo policy adapter boundary
+
+**What changed**
+- Ran the issue-work gate for #119 after confirming PR #117 is merged and issue
+  #115 is closed by PR #117, so the official-docs validator is current base
+  state for this PR.
+- Added a typed `scripts/triage/repo_config.py` loader for
+  `scripts/triage/policy.toml`, including early validation, shell/JSON export
+  helpers, and recursive rejection of write-shaped config keys or operation
+  values.
+- Extended the checked-in policy with the current repository identity, contract,
+  governance paths, Codex hooks, receipt path, product checks, dist checks,
+  compatibility schema records, official-docs provider policy, and worker
+  packet verification commands.
+- Routed the governance and Codex tooling through the policy boundary while
+  preserving the configured dbt adapter behavior. GitHub mutation blocking,
+  unsafe-command blocking, hook fail-closed behavior, receipt digest validation,
+  and official-docs placeholder/blocker behavior remain hard-coded or
+  policy-validated so config cannot loosen them.
+- Added a synthetic non-dbt widgets-service policy fixture and tests proving the
+  loader, official-docs policy, worker commands, task context, doctor, quality,
+  and dist checks do not require dbt-specific package or CLI assumptions.
+- Updated docs, skill descriptions, and `CHANGELOG.md` to describe the
+  behavior-preserving repo policy adapter boundary only; no physical extraction
+  or reusable package/plugin distribution has landed.
+- Revised PR #122 locally for the follow-up review: `triage.audit_snapshot()`
+  now passes configured reference roots into the missing-path parser, a widgets
+  regression covers non-dbt roots, and shell-facing policy values reject unsafe
+  live-install env names or CLI smoke tokens before wrappers consume them.
+  Setup/package CLI smoke loops now parse validated tokens without `eval`.
+- Revised PR #122 locally for the second review pass: Stop blocks when policy
+  loading fails instead of falling back to built-in protected surfaces; worker
+  packet commands reject GitHub mutation shapes; PR-1 drift seams for
+  `codex.venv_dir` and official-doc section title are rejected explicitly;
+  and no-suffix package policies still inspect built artifacts.
+- Revised PR #122 locally for the codex-quality policy-awareness pass:
+  `governance.paths.semantic_scan_roots` now configures the default
+  governance-boundary semantic scan, `codex-quality` passes the active policy
+  into that scan, and the receipt still keeps semantic scan evidence separate
+  from Stop-hook freshness coverage.
+
+**Validation**
+- `python -m pytest -q scripts/triage/test_repo_config.py` passed: 41 passed.
+- `python -m pytest -q scripts/triage/test_contract.py
+  scripts/triage/test_readiness.py scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 201 passed.
+- `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py
+  .codex/tests/test_environment.py .codex/tests/test_task_context.py
+  .codex/tests/test_check_dist.py` passed: 74 passed.
+- `python -m compileall -q scripts .codex/scripts .codex/hooks .codex/tests`
+  passed.
+- `python -m py_compile scripts/triage/contract.py
+  scripts/triage/official_docs.py scripts/triage/triage.py
+  scripts/triage/repo_config.py` passed.
+- `python -m json.tool .codex/hooks.json` passed.
+- `bash -n .codex/hooks/run_hook.sh` and `bash -n` for each `.codex/bin/*.sh`
+  passed.
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and the expected
+  local warnings for dirty worktree, `gh` auth, and absent compat schema cache.
+- `bash .codex/bin/action.sh codex-quality --json` passed and refreshed the
+  protected-file receipt.
+- `python scripts/triage/triage.py contract --issue 119` and
+  `python scripts/triage/triage.py contract --issue 115` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 76 passed; offline
+  tests 704 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+- Follow-up PR #122 revision: `python -m pytest -q
+  scripts/triage/test_repo_config.py scripts/triage/test_triage.py` passed: 116
+  passed.
+- Follow-up PR #122 revision: `python -m pytest -q
+  .codex/tests/test_codex_hooks.py .codex/tests/test_codex_quality.py
+  .codex/tests/test_doctor.py .codex/tests/test_task_context.py
+  .codex/tests/test_check_dist.py` passed: 70 passed.
+- Follow-up PR #122 revision: `python -m compileall -q scripts .codex/scripts
+  .codex/hooks .codex/tests` passed.
+- Follow-up PR #122 revision: `bash .codex/bin/action.sh check` passed: Codex
+  tests 76 passed; offline tests 712 passed, 2 skipped, 20 deselected, 1
+  warning; compatibility schema gate skipped as expected.
+- Second PR #122 review revision: `python -m pytest -q
+  scripts/triage/test_repo_config.py` passed: 64 passed.
+- Second PR #122 review revision: `python -m pytest -q
+  .codex/tests/test_codex_hooks.py .codex/tests/test_check_dist.py
+  scripts/triage/test_frontier.py` passed: 91 passed.
+- Second PR #122 review revision: `python -m pytest -q
+  scripts/triage/test_contract.py scripts/triage/test_readiness.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed: 203
+  passed.
+- Second PR #122 review revision: `python -m pytest -q
+  .codex/tests/test_codex_hooks.py .codex/tests/test_codex_quality.py
+  .codex/tests/test_doctor.py .codex/tests/test_environment.py
+  .codex/tests/test_task_context.py .codex/tests/test_check_dist.py` passed: 76
+  passed.
+- Second PR #122 review revision: `python -m compileall -q scripts
+  .codex/scripts .codex/hooks .codex/tests` passed.
+- Second PR #122 review revision: `python -m py_compile
+  scripts/triage/contract.py scripts/triage/official_docs.py
+  scripts/triage/triage.py scripts/triage/repo_config.py` passed.
+- Second PR #122 review revision: `python -m json.tool .codex/hooks.json`,
+  `bash -n .codex/hooks/run_hook.sh`, and `bash -n` for each `.codex/bin/*.sh`
+  passed.
+- Second PR #122 review revision: `bash .codex/bin/action.sh doctor` passed
+  with 0 failures and expected local warnings for dirty worktree and absent
+  compat schema cache.
+- Second PR #122 review revision: `bash .codex/bin/action.sh codex-quality
+  --json` passed and refreshed the protected-file receipt.
+- Second PR #122 review revision: `bash .codex/bin/action.sh check` passed:
+  Codex tests 78 passed; offline tests 729 passed, 2 skipped, 20 deselected, 1
+  warning; compatibility schema gate skipped as expected.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q scripts/triage/test_repo_config.py` passed: 69 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_codex_quality.py` passed: 23 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py` passed: 40 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_doctor.py` passed: 5 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q scripts/triage/test_contract.py
+  scripts/triage/test_readiness.py scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 203 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py
+  .codex/tests/test_environment.py .codex/tests/test_task_context.py
+  .codex/tests/test_check_dist.py` passed: 81 passed.
+- Codex-quality policy-awareness revision: `python -m compileall -q scripts
+  .codex/scripts .codex/hooks .codex/tests` passed.
+- Codex-quality policy-awareness revision: `python -m py_compile
+  scripts/triage/contract.py scripts/triage/official_docs.py
+  scripts/triage/triage.py scripts/triage/repo_config.py` passed.
+- Codex-quality policy-awareness revision: `python -m json.tool
+  .codex/hooks.json`, `bash -n .codex/hooks/run_hook.sh`, and `bash -n` for
+  each `.codex/bin/*.sh` passed.
+- Codex-quality policy-awareness revision: `bash .codex/bin/action.sh doctor`
+  passed with 0 failures and expected local warnings for dirty worktree and
+  absent compat schema cache.
+- Codex-quality policy-awareness revision: `bash .codex/bin/action.sh
+  codex-quality --json` passed and refreshed the protected-file receipt.
+- Codex-quality policy-awareness revision: `bash .codex/bin/action.sh check`
+  passed: Codex tests 83 passed; offline tests 734 passed, 2 skipped, 20
+  deselected, 1 warning; compatibility schema gate skipped as expected.
+- Codex-quality policy-awareness revision:
+  `python scripts/triage/triage.py contract --issue 119` and
+  `python scripts/triage/triage.py contract --issue 115` passed.
+
+**Current state**
+- Work is on local branch `feat/119-repo-policy-adapter`.
+- Draft PR #122 is open against `donkey-kong-sandbox`.
+- The codex-quality policy-awareness revision is local and not pushed. Keep it
+  as a separate incremental commit before pushing.
+
+**Next steps**
+- Review the focused semantic-scan policy-awareness diff, then push the local
+  revision only after explicit GitHub-write approval.
+
+**Be careful**
+- Do not add config that authorizes GitHub writes or weakens hook denial
+  behavior.
+- Keep official-docs offline-only: no fetching, browser automation, freshness
+  enforcement, or treating URLs as semantic proof.
+- Do not physically split, publish, package, pluginize, submodule, subtree, or
+  move reusable logic out of this checkout in PR 1.
+
+End of session -- 2026-06-27 issue 119 repo policy adapter boundary

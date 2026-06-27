@@ -1,0 +1,110 @@
+[repository]
+owner = "example"
+name = "widgets-service"
+default_branch = "trunk"
+protected_branches = ["main", "trunk"]
+progress_log_path = "docs/WORK_LOG.md"
+
+[governance.contract]
+id = "widgets.issue-contract.v1"
+version = "1.0"
+
+[governance.paths]
+reference_roots = [
+  "AGENTS.md",
+  "README.md",
+  "docs",
+  "scripts",
+  ".codex",
+  ".agents",
+]
+protected_surfaces = [
+  ".agents/skills/**",
+  ".codex/bin/**",
+  ".codex/scripts/**",
+  ".codex/hooks/**",
+  ".codex/hooks.json",
+  "scripts/triage/**",
+  "docs/*schema*.json",
+  "AGENTS.md",
+  "custom/governance/**",
+]
+semantic_scan_roots = [
+  "AGENTS.md",
+  ".agents/skills",
+  "custom/governance",
+]
+
+[governance.official_docs]
+enabled = true
+section_title = "Official documentation evidence"
+unknown_provider_policy = "preserve_verification_or_uncertainty"
+critical_unverified_requires_blocker = true
+network_retrieval = false
+browser_automation = false
+freshness_enforcement = false
+
+[[governance.official_docs.providers]]
+key = "github"
+display_name = "GitHub"
+trigger_patterns = [
+  '\bgithub actions\b',
+  '\bgithub workflow\b',
+  '\bci service\b',
+]
+official_domains = ["docs.github.com"]
+
+[[governance.official_docs.providers]]
+key = "python_packaging"
+display_name = "Python packaging"
+trigger_patterns = [
+  '\bpython packaging\b',
+  '\bpip\b',
+  '\bpypi\b',
+]
+official_domains = ["packaging.python.org", "pip.pypa.io", "docs.pypi.org"]
+
+[codex]
+environment_name = "widgets-service"
+venv_dir = ".venv"
+quality_receipt_path = "output/codex/quality-receipt.json"
+
+[codex.hooks]
+config_path = ".codex/hooks.json"
+launcher_path = ".codex/hooks/run_hook.sh"
+
+[codex.hooks.events.PreToolUse]
+matcher = "Bash"
+script = "pre_tool_use.py"
+
+[codex.hooks.events.PermissionRequest]
+matcher = "Bash"
+script = "permission_request.py"
+
+[codex.hooks.events.Stop]
+script = "stop.py"
+
+[product]
+package_roots = []
+python_compile_roots = ["scripts", ".codex/scripts", ".codex/hooks", ".codex/tests"]
+required_modules = ["pytest"]
+live_modules = []
+live_install_env_vars = ["CODEX_INSTALL_LIVE"]
+optional_checks = []
+
+[product.cli]
+distribution_name = ""
+commands = []
+
+[product.dist]
+required_wheel_suffixes = []
+required_sdist_suffixes = []
+
+[compat]
+schema_sets = []
+
+[worker_packet]
+required_verification_commands = [
+  "python -m compileall -q scripts .codex/scripts .codex/hooks .codex/tests",
+  "pytest -q scripts/triage",
+]

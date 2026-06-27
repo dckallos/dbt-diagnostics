@@ -39,9 +39,9 @@ from scripts.triage import contract as issue_contract  # noqa: E402
 from scripts.triage import frontier as issue_frontier  # noqa: E402
 from scripts.triage import readiness as issue_readiness  # noqa: E402
 from scripts.triage import common as governance_common  # noqa: E402
+from scripts.triage import repo_config  # noqa: E402
 
 DEFAULT_POLICY = ROOT / "scripts" / "triage" / "policy.toml"
-DEFAULT_REPO = "dckallos/dbt-diagnostics"
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "triage"
 LOCK_PATH = DEFAULT_OUTPUT_DIR / ".metadata-writer.lock"
 
@@ -369,15 +369,11 @@ def require_list(value: Any, label: str) -> list[Any]:
 
 
 def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
-    if tomllib is None:
-        raise TriageError("Python 3.11+ with tomllib is required")
     try:
-        with path.open("rb") as handle:
-            policy = tomllib.load(handle)
-    except FileNotFoundError as exc:
-        raise TriageError(f"policy file not found: {path}") from exc
-    except tomllib.TOMLDecodeError as exc:
-        raise TriageError(f"invalid policy TOML: {path}: {exc}") from exc
+        policy = repo_config.load_policy_mapping(path)
+        repo_config.policy_from_mapping(policy, source=path)
+    except repo_config.RepoConfigError as exc:
+        raise TriageError(str(exc)) from exc
     validate_policy(policy)
     return policy
 
@@ -1400,7 +1396,9 @@ def audit_snapshot(
     *,
     issue_filter: set[int] | None = None,
     root: Path = ROOT,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> list[dict[str, Any]]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     findings: list[dict[str, Any]] = []
     issues_by_number = issue_map(snapshot)
     pulls_by_number = pull_map(snapshot)
@@ -1679,7 +1677,9 @@ def audit_snapshot(
             missing_files: set[str] = set()
             missing_directories: set[str] = set()
             body = str(issue.get("body") or "")
-            for ref in governance_common.parse_file_references(body):
+            for ref in governance_common.parse_file_references(
+                body, reference_roots=active_policy.paths.reference_roots
+            ):
                 path_text = ref.path
                 if not path_text or (root / path_text).exists():
                     continue
@@ -1819,12 +1819,13 @@ def audit_snapshot(
             )
 
     if audit_policy.get("check_progress_log_staleness", True):
-        progress = latest_progress_entry(root / "docs" / "PROGRESS_LOG.md")
+        progress_log = root / active_policy.repository.progress_log_path
+        progress = latest_progress_entry(progress_log)
         if progress is None:
             add(
                 "warning",
                 "progress-log-missing",
-                "docs/PROGRESS_LOG.md has no dated entry",
+                f"{active_policy.repository.progress_log_path} has no dated entry",
             )
         else:
             latest_date, section = progress
@@ -3068,9 +3069,11 @@ def make_readiness_audit(
     snapshot: Mapping[str, Any],
     policy: Mapping[str, Any],
     *,
+    repo_policy: repo_config.RepoPolicy | None = None,
     semantic_evidence: Mapping[int, Mapping[str, Any]] | None = None,
     issue_filter: set[int] | None = None,
 ) -> dict[str, Any]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     if issue_filter is not None:
         unknown = sorted(issue_filter - set(governance_common.issue_map(snapshot)))
         if unknown:
@@ -3081,6 +3084,7 @@ def make_readiness_audit(
         snapshot,
         policy,
         root=ROOT,
+        repo_policy=active_policy,
         semantic_evidence=semantic_evidence,
         issue_filter=issue_filter,
     )
@@ -3090,7 +3094,11 @@ def make_readiness_audit(
     # out-of-scope issue-keyed findings and suppresses cycles that do not touch
     # the filter, so no separate post-filter is needed.
     metadata_findings = audit_snapshot(
-        snapshot, policy, root=ROOT, issue_filter=issue_filter
+        snapshot,
+        policy,
+        root=ROOT,
+        issue_filter=issue_filter,
+        repo_policy=active_policy,
     )
     readiness["metadata_findings"] = metadata_findings
     readiness["metadata_finding_count"] = len(metadata_findings)
@@ -3247,8 +3255,12 @@ def print_readiness_audit(audit: Mapping[str, Any]) -> int:
     return 1 if readiness_audit_has_errors(audit) else 0
 
 
-def contract_result(issue: Mapping[str, Any]) -> dict[str, Any]:
-    result = issue_contract.audit_contract(issue)
+def contract_result(
+    issue: Mapping[str, Any],
+    *,
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> dict[str, Any]:
+    result = issue_contract.audit_contract(issue, repo_policy=repo_policy)
     result.update(
         {
             "issue_number": issue.get("number"),
@@ -3297,8 +3309,11 @@ def load_optional_mapping(path: Path | None, label: str) -> dict[str, Any]:
     return load_json_file(path, label)
 
 
-def latest_progress_context() -> str | None:
-    entry = latest_progress_entry(ROOT / "docs" / "PROGRESS_LOG.md")
+def latest_progress_context(
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> str | None:
+    active_policy = repo_policy or repo_config.load_repo_policy()
+    entry = latest_progress_entry(ROOT / active_policy.repository.progress_log_path)
     if entry is None:
         return None
     _date, text = entry
@@ -3545,7 +3560,8 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
 
     try:
         policy = load_policy(args.policy)
-        repo = validate_repo_name(args.repo or policy_repo(policy) or DEFAULT_REPO)
+        repo_policy = repo_config.policy_from_mapping(policy, source=args.policy)
+        repo = validate_repo_name(args.repo or repo_policy.repository.full_name)
         if args.command == "apply":
             return apply_plan(args, runner=active_runner, expected_repo=repo)
         if args.command == "project-plan":
@@ -3566,6 +3582,7 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 snapshot,
                 readiness_audit,
                 policy=policy,
+                repo_policy=repo_policy,
             )
             plan_errors = issue_frontier.validate_project_plan(plan)
             if plan_errors:
@@ -3597,7 +3614,7 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
 
         if args.command == "contract":
             issue = issue_from_snapshot(snapshot, args.issue)
-            result = contract_result(issue)
+            result = contract_result(issue, repo_policy=repo_policy)
             if args.output:
                 write_json(args.output, result)
             if args.json:
@@ -3609,7 +3626,10 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             issue = issue_from_snapshot(snapshot, args.issue)
             semantic = load_semantic_evidence(args.semantic_evidence)
             readiness_audit = make_readiness_audit(
-                snapshot, policy, semantic_evidence=semantic
+                snapshot,
+                policy,
+                repo_policy=repo_policy,
+                semantic_evidence=semantic,
             )
             validate_readiness_audit(readiness_audit, snapshot)
             packet = issue_frontier.build_worker_packet(
@@ -3617,20 +3637,23 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 snapshot,
                 readiness_audit,
                 root=ROOT,
-                progress_context=latest_progress_context(),
+                repo_policy=repo_policy,
+                progress_context=latest_progress_context(repo_policy),
             )
             packet_errors = issue_frontier.validate_worker_packet(packet)
             if packet_errors:
                 raise TriageError(
                     "worker packet validation failed: " + "; ".join(packet_errors)
                 )
-            result = contract_result(issue)
+            result = contract_result(issue, repo_policy=repo_policy)
             output_dir = issue_output_dir(args.issue, args.output_dir)
             write_json(output_dir / "review-packet.json", packet)
             write_json(output_dir / "contract.json", result)
             atomic_write_text(
                 output_dir / "proposed-body.md",
-                issue_contract.propose_normalized_body(issue),
+                issue_contract.propose_normalized_body(
+                    issue, repo_policy=repo_policy
+                ),
             )
             status_stream = sys.stderr if args.json else sys.stdout
             print(f"Wrote {output_dir / 'review-packet.json'}", file=status_stream)
@@ -3645,13 +3668,17 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             proposed_body = read_ascii_file(args.proposed_body, "proposed issue body")
             proposed_issue = dict(issue)
             proposed_issue["body"] = proposed_body
-            result = contract_result(proposed_issue)
+            result = contract_result(proposed_issue, repo_policy=repo_policy)
             # Bind content-anchor verification to standardize so a fabricated or
             # stale quote/symbol cannot pass the gate the agent trusts. Every
             # path:symbol and path "snippet" in the proposed body must resolve in
             # the current files; an unresolved anchor or a past-EOF line citation
             # blocks acceptance just like a missing contract section.
-            anchor_report = issue_readiness.verify_file_anchors(proposed_issue, ROOT)
+            anchor_report = issue_readiness.verify_file_anchors(
+                proposed_issue,
+                ROOT,
+                reference_roots=repo_policy.paths.reference_roots,
+            )
             unresolved_anchors = anchor_report["unresolved_anchors"]
             past_eof_citations = anchor_report["line_citations_past_eof"]
             anchors_resolved = not unresolved_anchors and not past_eof_citations
@@ -3704,7 +3731,10 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             else:
                 semantic = load_semantic_evidence(args.semantic_evidence)
                 readiness_audit = make_readiness_audit(
-                    snapshot, policy, semantic_evidence=semantic
+                    snapshot,
+                    policy,
+                    repo_policy=repo_policy,
+                    semantic_evidence=semantic,
                 )
                 validate_readiness_audit(readiness_audit, snapshot)
             issue_filter = parse_frontier_issue_filter(
@@ -3751,13 +3781,14 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 progress_context = (
                     read_ascii_file(args.progress_context, "progress context")[:4000]
                     if args.progress_context
-                    else latest_progress_context()
+                    else latest_progress_context(repo_policy)
                 )
                 packet = issue_frontier.build_worker_packet(
                     selected,
                     snapshot,
                     readiness_audit,
                     root=ROOT,
+                    repo_policy=repo_policy,
                     branch_state=branch_state,
                     progress_context=progress_context,
                 )
@@ -3793,7 +3824,10 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             else:
                 semantic = load_semantic_evidence(args.semantic_evidence)
                 readiness_audit = make_readiness_audit(
-                    snapshot, policy, semantic_evidence=semantic
+                    snapshot,
+                    policy,
+                    repo_policy=repo_policy,
+                    semantic_evidence=semantic,
                 )
                 validate_readiness_audit(readiness_audit, snapshot)
             require_full_audit_coverage(
@@ -3823,6 +3857,7 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
         readiness_audit = make_readiness_audit(
             snapshot,
             policy,
+            repo_policy=repo_policy,
             semantic_evidence=semantic,
             issue_filter=issue_filter if args.command == "audit" else None,
         )
@@ -3841,7 +3876,9 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             return print_readiness_audit(readiness_audit)
 
         if args.command == "plan":
-            findings = audit_snapshot(snapshot, policy, root=ROOT)
+            findings = audit_snapshot(
+                snapshot, policy, root=ROOT, repo_policy=repo_policy
+            )
             plan_data = make_plan(snapshot, policy, findings)
             write_plan_bundle(
                 plan_data,

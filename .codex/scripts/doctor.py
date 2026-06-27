@@ -17,16 +17,15 @@ from typing import Iterable
 from urllib.parse import urlsplit, urlunsplit
 
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.triage import repo_config
+
+
 DEFAULT_INSTRUCTION_LIMIT = 32 * 1024
 ALLOWED_ACTION_ICONS = {"build", "check", "run", "test", "tool"}
-ALLOWED_HOOK_EVENTS = {"PermissionRequest", "PreToolUse", "Stop"}
-EXPECTED_HOOK_SCRIPTS = {
-    "PermissionRequest": "permission_request.py",
-    "PreToolUse": "pre_tool_use.py",
-    "Stop": "stop.py",
-}
-HOOK_LAUNCHER_PATH = ".codex/hooks/run_hook.sh"
-ROOT_RESOLVED_HOOK_LAUNCHER = '"$root/.codex/hooks/run_hook.sh"'
 IGNORED_PARTS = {".git", ".venv", "__pycache__"}
 
 
@@ -115,7 +114,10 @@ def _maximum_instruction_bytes(root: Path, files: list[Path]) -> int:
     return maximum
 
 
-def _validate_environment(root: Path) -> tuple[bool, str]:
+def _validate_environment(
+    root: Path, repo_policy: repo_config.RepoPolicy | None = None
+) -> tuple[bool, str]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     try:
         import tomllib
 
@@ -128,8 +130,8 @@ def _validate_environment(root: Path) -> tuple[bool, str]:
     errors: list[str] = []
     if environment.get("version") != 1:
         errors.append("version must be 1")
-    if environment.get("name") != "dbt-diagnostics":
-        errors.append("name must be dbt-diagnostics")
+    if environment.get("name") != active_policy.codex.environment_name:
+        errors.append(f"name must be {active_policy.codex.environment_name}")
 
     setup_script = environment.get("setup", {}).get("script")
     if not isinstance(setup_script, str) or ".codex/bin/setup.sh" not in setup_script:
@@ -176,44 +178,58 @@ def _validate_environment(root: Path) -> tuple[bool, str]:
     return True, f"valid version 1 configuration with {len(actions)} actions"
 
 
-def _validate_hooks(root: Path) -> tuple[bool, str]:
-    path = root / ".codex" / "hooks.json"
+def _validate_hooks(
+    root: Path, repo_policy: repo_config.RepoPolicy | None = None
+) -> tuple[bool, str]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
+    path = root / active_policy.codex.hooks.config_path
     if not path.exists():
-        return False, "missing .codex/hooks.json"
+        return False, f"missing {active_policy.codex.hooks.config_path}"
     try:
         hooks_config = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        return False, f"cannot parse hooks.json: {type(exc).__name__}"
+        return False, f"cannot parse hooks config: {type(exc).__name__}"
 
     errors: list[str] = []
-    launcher_path = root / ".codex" / "hooks" / "run_hook.sh"
+    launcher_path = root / active_policy.codex.hooks.launcher_path
     launcher_text = ""
     if launcher_path.is_file():
         try:
             launcher_text = launcher_path.read_text(encoding="ascii")
         except (OSError, UnicodeDecodeError) as exc:
-            errors.append(f"cannot read .codex/hooks/run_hook.sh: {type(exc).__name__}")
+            errors.append(
+                f"cannot read {active_policy.codex.hooks.launcher_path}: {type(exc).__name__}"
+            )
     else:
-        errors.append("missing .codex/hooks/run_hook.sh")
+        errors.append(f"missing {active_policy.codex.hooks.launcher_path}")
     if launcher_text:
         if ".venv/bin/python" not in launcher_text:
             errors.append("hook launcher must use the repo .venv")
         if "git rev-parse --show-toplevel" not in launcher_text:
             errors.append("hook launcher must resolve the git root")
         if not os.access(launcher_path, os.X_OK):
-            errors.append(".codex/hooks/run_hook.sh must be executable")
-        syntax = _run(["bash", "-n", ".codex/hooks/run_hook.sh"], cwd=root)
+            errors.append(
+                f"{active_policy.codex.hooks.launcher_path} must be executable"
+            )
+        syntax = _run(
+            ["bash", "-n", active_policy.codex.hooks.launcher_path], cwd=root
+        )
         if syntax.returncode != 0:
             detail = (syntax.stderr or syntax.stdout).strip() or "unknown error"
-            errors.append(f".codex/hooks/run_hook.sh has invalid syntax: {detail}")
+            errors.append(
+                f"{active_policy.codex.hooks.launcher_path} has invalid syntax: {detail}"
+            )
 
     hooks = hooks_config.get("hooks") if isinstance(hooks_config, dict) else None
     if not isinstance(hooks, dict) or not hooks:
         errors.append("hooks must be a non-empty object")
         hooks = {}
+    missing_events = sorted(set(active_policy.codex.hooks.events) - set(hooks))
+    if missing_events:
+        errors.append("hooks config missing event(s): " + ", ".join(missing_events))
 
     for event, groups in hooks.items():
-        if event not in ALLOWED_HOOK_EVENTS:
+        if event not in active_policy.codex.hooks.events:
             errors.append(f"unsupported hook event: {event}")
             continue
         if not isinstance(groups, list) or not groups:
@@ -255,7 +271,8 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
                         f"{event} group {group_index} hook {handler_index} must run through bash -lc"
                     )
                 script = argv[2] if len(argv) >= 3 else ""
-                if HOOK_LAUNCHER_PATH not in command:
+                launcher_reference = active_policy.codex.hooks.launcher_path
+                if launcher_reference not in command:
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} must use the hook launcher"
                     )
@@ -265,7 +282,8 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
                         f"{event} group {group_index} hook {handler_index} must resolve the git root before launching hooks"
                     )
                     continue
-                if ROOT_RESOLVED_HOOK_LAUNCHER not in script:
+                root_resolved_launcher = f'"$root/{launcher_reference}"'
+                if root_resolved_launcher not in script:
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} must launch hooks from the resolved git root"
                     )
@@ -275,7 +293,7 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
                         f"{event} group {group_index} hook {handler_index} must emit fail-closed JSON when git root resolution fails"
                     )
                     continue
-                expected_script = EXPECTED_HOOK_SCRIPTS[event]
+                expected_script = active_policy.codex.hooks.events[event].script
                 if expected_script not in command:
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} must launch {expected_script}"
@@ -286,7 +304,7 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
                         f"{event} group {group_index} hook {handler_index} must pass {event}"
                     )
                     continue
-                script_path = root / ".codex" / "hooks" / expected_script
+                script_path = launcher_path.parent / expected_script
                 if not script_path.is_file():
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} references missing {script_path.relative_to(root)}"
@@ -304,20 +322,23 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
     return True, f"valid hooks.json with {len(hooks)} event(s) and {handler_count} handler(s)"
 
 
-def collect_static_checks(root: Path) -> list[Check]:
+def collect_static_checks(
+    root: Path, repo_policy: repo_config.RepoPolicy | None = None
+) -> list[Check]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     checks: list[Check] = []
-    required_paths = (
+    required_paths = [
         "AGENTS.md",
         "CONTRIBUTING.md",
         "pyproject.toml",
-        "dbt_diagnostics",
         ".codex/README.md",
         ".codex/environments/environment.toml",
         ".codex/bin/action.sh",
         ".codex/bin/setup.sh",
         ".codex/scripts/doctor.py",
         ".codex/scripts/task_context.py",
-    )
+    ]
+    required_paths.extend(active_policy.product.package_roots)
     missing_paths = [path for path in required_paths if not (root / path).exists()]
     checks.append(
         Check(
@@ -345,7 +366,7 @@ def collect_static_checks(root: Path) -> list[Check]:
         )
     )
 
-    valid_environment, environment_detail = _validate_environment(root)
+    valid_environment, environment_detail = _validate_environment(root, active_policy)
     checks.append(
         Check(
             "PASS" if valid_environment else "FAIL",
@@ -354,7 +375,7 @@ def collect_static_checks(root: Path) -> list[Check]:
         )
     )
 
-    valid_hooks, hooks_detail = _validate_hooks(root)
+    valid_hooks, hooks_detail = _validate_hooks(root, active_policy)
     checks.append(
         Check(
             "PASS" if valid_hooks else "FAIL",
@@ -378,7 +399,9 @@ def collect_static_checks(root: Path) -> list[Check]:
         )
     )
 
-    progress_heading = _latest_progress_heading(root / "docs" / "PROGRESS_LOG.md")
+    progress_heading = _latest_progress_heading(
+        root / active_policy.repository.progress_log_path
+    )
     checks.append(
         Check(
             "PASS" if progress_heading else "WARN",
@@ -389,7 +412,13 @@ def collect_static_checks(root: Path) -> list[Check]:
     return checks
 
 
-def collect_runtime_checks(root: Path, *, require_live: bool) -> list[Check]:
+def collect_runtime_checks(
+    root: Path,
+    *,
+    require_live: bool,
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> list[Check]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     checks: list[Check] = []
     version = sys.version_info
     checks.append(
@@ -409,18 +438,7 @@ def collect_runtime_checks(root: Path, *, require_live: bool) -> list[Check]:
         )
     )
 
-    required_modules = (
-        "dbt_diagnostics",
-        "pytest",
-        "hypothesis",
-        "sqlglot",
-        "yaml",
-        "jinja2",
-        "build",
-        "twine",
-        "pre_commit",
-    )
-    _, missing_modules = _module_checks(required_modules)
+    _, missing_modules = _module_checks(active_policy.product.required_modules)
     checks.append(
         Check(
             "FAIL" if missing_modules else "PASS",
@@ -453,7 +471,7 @@ def collect_runtime_checks(root: Path, *, require_live: bool) -> list[Check]:
             branch = _run([git, "branch", "--show-current"], cwd=root).stdout.strip()
             if not branch:
                 checks.append(Check("WARN", "git branch", "detached HEAD"))
-            elif branch in {"main", "donkey-kong-sandbox"}:
+            elif branch in set(active_policy.repository.protected_branches):
                 checks.append(
                     Check(
                         "WARN",
@@ -512,17 +530,32 @@ def collect_runtime_checks(root: Path, *, require_live: bool) -> list[Check]:
         )
     )
 
-    schema_cache = root / "dbt_diagnostics" / "fixtures" / "schemas" / "manifest" / "v12.json"
-    checks.append(
-        Check(
-            "PASS" if schema_cache.is_file() else "WARN",
-            "compatibility schema cache",
-            "present" if schema_cache.is_file() else "absent; current CI skips the schema gate",
+    if active_policy.compat_schema_sets:
+        schema_cache = root / active_policy.compat_schema_sets[0].sentinel
+        checks.append(
+            Check(
+                "PASS" if schema_cache.is_file() else "WARN",
+                "compatibility schema cache",
+                "present"
+                if schema_cache.is_file()
+                else "absent; current CI skips the schema gate",
+            )
         )
-    )
+    else:
+        checks.append(
+            Check(
+                "PASS",
+                "compatibility schema cache",
+                "skipped; no compatibility schema sets configured",
+            )
+        )
 
-    live_modules = ("snowflake.connector", "dotenv", "cryptography")
-    _, missing_live = _module_checks(live_modules)
+    if not active_policy.product.live_modules:
+        checks.append(
+            Check("PASS", "live extras", "skipped; no live modules configured")
+        )
+        return checks
+    _, missing_live = _module_checks(active_policy.product.live_modules)
     live_level = "FAIL" if require_live and missing_live else "PASS"
     if missing_live:
         live_detail = (
@@ -541,10 +574,30 @@ def collect_checks(
     *,
     config_only: bool = False,
     require_live: bool = False,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> list[Check]:
-    checks = collect_static_checks(root)
+    checks: list[Check] = []
+    active_policy = repo_policy
+    if active_policy is None:
+        try:
+            active_policy = repo_config.load_repo_policy()
+        except repo_config.RepoConfigError as exc:
+            checks.append(Check("FAIL", "repo policy", str(exc)))
+            return checks
+    checks.append(
+        Check(
+            "PASS",
+            "repo policy",
+            f"{active_policy.repository.full_name} on {active_policy.repository.default_branch}",
+        )
+    )
+    checks.extend(collect_static_checks(root, active_policy))
     if not config_only:
-        checks.extend(collect_runtime_checks(root, require_live=require_live))
+        checks.extend(
+            collect_runtime_checks(
+                root, require_live=require_live, repo_policy=active_policy
+            )
+        )
     return checks
 
 
@@ -574,6 +627,11 @@ def main() -> int:
         config_only=args.config_only,
         require_live=args.require_live,
     )
+    try:
+        active_policy = repo_config.load_repo_policy()
+        environment_name = active_policy.codex.environment_name
+    except repo_config.RepoConfigError:
+        environment_name = "unknown"
 
     failures = sum(check.level == "FAIL" for check in checks)
     warnings = sum(check.level == "WARN" for check in checks)
@@ -591,7 +649,7 @@ def main() -> int:
             )
         )
     else:
-        print("dbt-diagnostics Codex doctor")
+        print(f"{environment_name} Codex doctor")
         print(f"Repository: {root}")
         for check in checks:
             print(f"[{check.level:4}] {check.name}: {check.detail}")

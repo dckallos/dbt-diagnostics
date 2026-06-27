@@ -37,7 +37,7 @@ fi
 
 codex_header "Compile"
 codex_run "$python_path" -m compileall -q -f \
-  dbt_diagnostics scripts .codex/scripts .codex/hooks .codex/tests
+  $CODEX_POLICY_PYTHON_COMPILE_ROOTS
 
 codex_header "Tests (normal offline gate)"
 codex_run "$python_path" -m pytest -q -m "not live and not chaos"

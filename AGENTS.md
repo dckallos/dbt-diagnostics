@@ -65,6 +65,9 @@ Before stopping, leave the repo resumable:
   artifact shapes; keep raw `dict[str, Any]` handling at IO boundaries, keep
   domain logic independent of IO, and prove public JSON compatibility with
   tests.
+- Any PR touching Python, governance artifacts, hooks, wrappers, JSON, policy,
+  or CLI output must comply with `docs/CODE_STANDARDS.md` or explicitly call out
+  the exact exception in the final report.
 - **Docs follow code, never lead it.** Design docs describe the target state
   and are annotated as such (e.g. "to be removed, tracked by #N") until the
   corresponding PR merges. `PROGRESS_LOG.md` is updated only after a PR

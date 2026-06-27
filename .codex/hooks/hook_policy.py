@@ -14,11 +14,13 @@ from typing import Mapping, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+ROOT_DIR = SCRIPT_DIR.parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import codex_surface
+from scripts.triage import repo_config
 
-
-DEFAULT_RECEIPT = Path("output/codex/quality-receipt.json")
 
 GITHUB_MUTATION_PATTERNS = (
     re.compile(
@@ -177,7 +179,16 @@ def evaluate_permission_request(payload: Mapping[str, object]) -> dict[str, obje
 
 
 normalize_path = codex_surface.normalize_path
-is_protected_path = codex_surface.is_protected_path
+
+
+def _load_repo_policy_for_hook() -> repo_config.RepoPolicy:
+    return repo_config.load_repo_policy()
+
+
+def is_protected_path(
+    path: str, *, repo_policy: repo_config.RepoPolicy | None = None
+) -> bool:
+    return codex_surface.is_protected_path(path, repo_policy=repo_policy)
 
 
 def changed_paths_from_git(root: Path) -> tuple[str, ...] | None:
@@ -223,11 +234,13 @@ def load_receipt(receipt_path: Path) -> tuple[dict[str, object] | None, str | No
 
 def receipt_freshness_bound_paths(
     receipt: Mapping[str, object],
+    *,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> tuple[tuple[str, ...] | None, str | None]:
     value = receipt.get("freshness_bound_protected_paths")
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         return None, "codex-quality receipt has no valid freshness_bound_protected_paths"
-    normalized = codex_surface.protected_paths(value)
+    normalized = codex_surface.protected_paths(value, repo_policy=repo_policy)
     if list(normalized) != value:
         return (
             None,
@@ -241,16 +254,21 @@ def receipt_covers_protected_paths(
     root: Path,
     receipt_path: Path,
     protected_paths: Sequence[str],
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> tuple[bool, str | None]:
     receipt, error = load_receipt(receipt_path)
     if error is not None:
         return False, error
 
-    freshness_bound_paths, error = receipt_freshness_bound_paths(receipt)
+    freshness_bound_paths, error = receipt_freshness_bound_paths(
+        receipt, repo_policy=repo_policy
+    )
     if error is not None:
         return False, error
 
-    normalized_protected_paths = codex_surface.protected_paths(protected_paths)
+    normalized_protected_paths = codex_surface.protected_paths(
+        protected_paths, repo_policy=repo_policy
+    )
     missing_local_paths = [
         path for path in normalized_protected_paths if not (root / path).exists()
     ]
@@ -286,12 +304,25 @@ def evaluate_stop(
     root: Path | None = None,
     changed_paths: Sequence[str] | None = None,
     receipt_path: Path | None = None,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> dict[str, object]:
     if payload.get("stop_hook_active") is True:
         return {"systemMessage": "stop hook already active; skipping nested run."}
 
     root = root or Path(str(payload.get("cwd") or ".")).resolve()
-    receipt_path = receipt_path or (root / DEFAULT_RECEIPT)
+    try:
+        active_policy = repo_policy or _load_repo_policy_for_hook()
+    except repo_config.RepoConfigError as exc:
+        return {
+            "decision": "block",
+            "reason": (
+                "Repository policy failed to load; Stop hook is failing closed: "
+                f"{exc}"
+            ),
+        }
+    receipt_path = receipt_path or (
+        root / active_policy.codex.quality_receipt_path
+    )
     discovered_paths: Sequence[str] | None = changed_paths
     if discovered_paths is None:
         discovered_paths = changed_paths_from_git(root)
@@ -304,7 +335,11 @@ def evaluate_stop(
             ),
         }
 
-    protected_paths = tuple(path for path in discovered_paths if is_protected_path(path))
+    protected_paths = tuple(
+        path
+        for path in discovered_paths
+        if is_protected_path(path, repo_policy=active_policy)
+    )
     if not protected_paths:
         return {"systemMessage": "no protected Codex surfaces changed."}
 
@@ -312,6 +347,7 @@ def evaluate_stop(
         root=root,
         receipt_path=receipt_path,
         protected_paths=protected_paths,
+        repo_policy=active_policy,
     )
     if covered:
         return {"systemMessage": "codex-quality receipt covers protected changes."}

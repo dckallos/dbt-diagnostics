@@ -1,6 +1,6 @@
 ---
 name: issue-governance
-description: Audit or standardize exactly one dbt-diagnostics issue against contract v1 without mutating GitHub. Use for contract checks, bounded review packets, readiness evidence, and local proposed-body validation.
+description: Audit or standardize exactly one configured-repository issue against contract v1 without mutating GitHub. Use for configured contract checks, bounded review packets, readiness evidence, and local proposed-body validation.
 ---
 
 Input: exactly one issue number and, when offline, an explicit tracker snapshot.

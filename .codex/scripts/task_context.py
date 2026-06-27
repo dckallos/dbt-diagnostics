@@ -15,6 +15,14 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.triage import common as governance_common
+from scripts.triage import repo_config
+
+
 class ContextError(RuntimeError):
     """Raised when live task context cannot be assembled safely."""
 
@@ -80,13 +88,16 @@ def latest_progress_entry(path: Path, limit: int = 12_000) -> str | None:
     return entry
 
 
-def referenced_paths(body: str, root: Path) -> list[dict[str, Any]]:
-    pattern = re.compile(
-        r"(?<![A-Za-z0-9_./-])"
-        r"((?:docs|dbt_diagnostics|scripts)/"
-        r"[A-Za-z0-9_./-]+\.(?:md|py|json|yml|yaml|toml|j2|sh))"
+def referenced_paths(
+    body: str,
+    root: Path,
+    *,
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> list[dict[str, Any]]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
+    values = governance_common.referenced_paths(
+        body, reference_roots=active_policy.paths.reference_roots
     )
-    values = sorted(set(pattern.findall(body)))
     return [{"path": value, "exists": (root / value).exists()} for value in values]
 
 
@@ -136,13 +147,17 @@ def discover_repository(root: Path, explicit: str | None) -> str:
         return explicit
     if configured := os.environ.get("CODEX_GITHUB_REPO"):
         return configured
+    return repo_config.load_repo_policy().repository.full_name
     return run(
         ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
         cwd=root,
     )
 
 
-def local_payload(root: Path) -> dict[str, Any]:
+def local_payload(
+    root: Path, *, repo_policy: repo_config.RepoPolicy | None = None
+) -> dict[str, Any]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     status = git_value(root, "status", "--porcelain")
     branch = git_value(root, "branch", "--show-current")
     return {
@@ -153,7 +168,10 @@ def local_payload(root: Path) -> dict[str, Any]:
         "origin": redact_remote(git_value(root, "remote", "get-url", "origin")),
         "changed_paths": 0 if not status else len(status.splitlines()),
         "inferred_issue": infer_issue_number(branch),
-        "latest_progress": latest_progress_entry(root / "docs" / "PROGRESS_LOG.md"),
+        "protected_branches": list(active_policy.repository.protected_branches),
+        "latest_progress": latest_progress_entry(
+            root / active_policy.repository.progress_log_path
+        ),
     }
 
 
@@ -247,7 +265,9 @@ def render_issue_markdown(payload: dict[str, Any]) -> str:
             "",
             "- Treat the live issue body above as current tracker state.",
             "- Read AGENTS.md before edits.",
-            "- Confirm the branch is not main or donkey-kong-sandbox.",
+            "- Confirm the branch is not "
+            + " or ".join(local.get("protected_branches") or ["main"])
+            + ".",
             "- Keep one issue per PR and run credential-free checks before handoff.",
             "- Do not mutate GitHub metadata unless this task explicitly authorizes it.",
         ]
@@ -316,7 +336,12 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(os.environ.get("CODEX_REPO_ROOT", Path.cwd())).resolve()
-    local = local_payload(root)
+    try:
+        active_policy = repo_config.load_repo_policy()
+    except repo_config.RepoConfigError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    local = local_payload(root, repo_policy=active_policy)
     configured_issue = os.environ.get("CODEX_ISSUE")
     if configured_issue:
         try:
@@ -350,7 +375,9 @@ def main() -> int:
     # mirrors scripts/triage/triage.py, which has no auth pre-gate.
     if gh_available:
         try:
-            repository = discover_repository(root, args.repo)
+            repository = args.repo or os.environ.get("CODEX_GITHUB_REPO")
+            if repository is None:
+                repository = active_policy.repository.full_name
             issue = issue_payload(
                 root=root,
                 issue_number=int(issue_number),
@@ -400,7 +427,9 @@ def main() -> int:
         "issue": issue,
         "local": local,
         "source": source,
-        "referenced_paths": referenced_paths(issue.get("body") or "", root),
+        "referenced_paths": referenced_paths(
+            issue.get("body") or "", root, repo_policy=active_policy
+        ),
     }
 
     if args.json:

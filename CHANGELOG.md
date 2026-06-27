@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Add repo policy adapter boundary for governance tooling
+
+- I added a typed `scripts/triage/policy.toml` loader for repository identity,
+  issue-contract identity, path roots, protected Codex/governance surfaces,
+  hook wiring, quality receipt paths, product checks, compatibility schema
+  checks, official-docs policy, and worker-packet verification commands.
+- I moved the governance, Codex doctor, quality, hook, context, package, compat,
+  and shell wrapper surfaces to consume the checked-in policy values while
+  preserving current `dbt-diagnostics` behavior.
+- I made `codex-quality` semantically scan configured governance instruction
+  roots by default while keeping semantic scan evidence separate from Stop-hook
+  freshness coverage.
+- I added a synthetic `example/widgets-service` policy fixture that proves the
+  reusable governance paths do not require `dbt_diagnostics`,
+  `dbt-diagnostics`, `donkey-kong-sandbox`, package checks, or dbt schema
+  caches.
+- I added fail-fast policy validation that rejects mutation-shaped keys,
+  request payloads, forbidden tracker operation IDs, PR merge instructions, and
+  unsupported official-docs live retrieval, browser automation, or freshness
+  flags.
+- I tightened the adapter boundary so Stop hook policy-load failures block
+  finalization, worker-packet verification commands reject GitHub mutation
+  command shapes, PR-1-only seams for hook venv and official-doc section title
+  are rejected explicitly, and no-suffix package policies still inspect any
+  built artifacts for forbidden members.
+
 ### Require official documentation evidence for external contracts
 
 - I added a conditional `Official documentation evidence` issue-contract

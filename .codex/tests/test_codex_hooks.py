@@ -10,6 +10,7 @@ from types import ModuleType
 import pytest
 
 from conftest import ROOT, load_codex_script
+from scripts.triage import repo_config
 
 
 def load_codex_hook(name: str) -> ModuleType:
@@ -337,6 +338,33 @@ def test_stop_blocks_protected_change_without_fresh_receipt(tmp_path: Path) -> N
     assert "codex-quality" in output["reason"]
 
 
+def test_stop_blocks_policy_load_failure_without_fallback_surfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hook_policy = load_codex_hook("hook_policy")
+    configured_only = tmp_path / "custom" / "policy-only.txt"
+    configured_only.parent.mkdir()
+    configured_only.write_text("changed\n", encoding="ascii")
+
+    def fail_policy_load() -> object:
+        raise repo_config.RepoConfigError("fixture policy failed")
+
+    monkeypatch.setattr(hook_policy.repo_config, "load_repo_policy", fail_policy_load)
+
+    output = hook_policy.evaluate_stop(
+        stop_payload(tmp_path),
+        root=tmp_path,
+        changed_paths=("custom/policy-only.txt",),
+        receipt_path=tmp_path / "output" / "codex" / "quality-receipt.json",
+    )
+
+    assert output["decision"] == "block"
+    assert "Repository policy failed to load" in output["reason"]
+    assert "fixture policy failed" in output["reason"]
+    assert output.get("systemMessage") != "no protected Codex surfaces changed."
+    json.dumps(output, sort_keys=True)
+
+
 def test_stop_blocks_protected_change_not_covered_by_receipt(tmp_path: Path) -> None:
     hook_policy = load_codex_hook("hook_policy")
     quality = load_codex_script("codex_quality")
@@ -443,6 +471,37 @@ def test_stop_blocks_receipt_that_did_not_pass(tmp_path: Path) -> None:
 
     assert output["decision"] == "block"
     assert "did not pass" in output["reason"]
+
+
+def test_stop_rejects_semantic_coverage_without_freshness_coverage(
+    tmp_path: Path,
+) -> None:
+    hook_policy = load_codex_hook("hook_policy")
+    protected = tmp_path / "AGENTS.md"
+    protected.write_text("changed\n", encoding="ascii")
+    receipt_path = tmp_path / "output" / "codex" / "quality-receipt.json"
+    receipt = {
+        "schema_version": 1,
+        "generated_at": "2026-06-27T00:00:00Z",
+        "tool": "codex-quality",
+        "passed": True,
+        "checks": [],
+        "freshness_bound_protected_paths": [],
+        "semantically_checked_protected_paths": ["AGENTS.md"],
+    }
+    receipt["quality_receipt_digest"] = hook_policy.receipt_digest(receipt)
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(json.dumps(receipt), encoding="ascii")
+
+    output = hook_policy.evaluate_stop(
+        stop_payload(tmp_path),
+        root=tmp_path,
+        changed_paths=("AGENTS.md",),
+        receipt_path=receipt_path,
+    )
+
+    assert output["decision"] == "block"
+    assert "not freshness-bound" in output["reason"]
 
 
 def test_stop_blocks_deleted_protected_file_even_if_receipt_claims_coverage(

@@ -21,6 +21,7 @@ from scripts.triage.common import (
     snapshot_digest,
 )
 from scripts.triage.contract import audit_contract, normalize_heading, parse_sections
+from scripts.triage import repo_config
 
 IMPLEMENTATION_STATES = (
     "ready",
@@ -282,15 +283,22 @@ def derive_release_gate(
 DELIVERABLE_SECTION_KEYS = {"scope_files", "deliverable"}
 
 
-def missing_paths(issue: Mapping[str, Any], root: Path) -> list[str]:
+def missing_paths(
+    issue: Mapping[str, Any],
+    root: Path,
+    *,
+    reference_roots: Iterable[str] | None = None,
+) -> list[str]:
     body = issue.get("body") or ""
     sections, _ = parse_sections(body)
     deliverable_paths: set[str] = set()
     for section in sections:
         if section.key in DELIVERABLE_SECTION_KEYS:
-            deliverable_paths.update(referenced_paths(section.content))
+            deliverable_paths.update(
+                referenced_paths(section.content, reference_roots=reference_roots)
+            )
     missing: list[str] = []
-    for path in referenced_paths(body):
+    for path in referenced_paths(body, reference_roots=reference_roots):
         # Paths listed only as intended deliverables are not stale references.
         if path in deliverable_paths:
             continue
@@ -317,15 +325,24 @@ def _is_prose_path_concatenation(path: str, root: Path) -> bool:
     )
 
 
-def _deliverable_reference_paths(sections: Iterable[Any]) -> set[str]:
+def _deliverable_reference_paths(
+    sections: Iterable[Any], *, reference_roots: Iterable[str] | None = None
+) -> set[str]:
     paths: set[str] = set()
     for section in sections:
         if getattr(section, "key", None) in DELIVERABLE_SECTION_KEYS:
-            paths.update(ref.path for ref in parse_file_references(section.content))
+            paths.update(
+                ref.path
+                for ref in parse_file_references(
+                    section.content, reference_roots=reference_roots
+                )
+            )
     return paths
 
 
-def unanchored_citations(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
+def unanchored_citations(
+    issue: Mapping[str, Any], *, reference_roots: Iterable[str] | None = None
+) -> list[dict[str, Any]]:
     """Flag file citations that pin a line number instead of a content anchor.
 
     A bare ``path:line`` or ``path:line-range`` citation is advisory: line
@@ -338,10 +355,12 @@ def unanchored_citations(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
 
     body = issue.get("body") or ""
     sections, _ = parse_sections(body)
-    deliverable_paths = _deliverable_reference_paths(sections)
+    deliverable_paths = _deliverable_reference_paths(
+        sections, reference_roots=reference_roots
+    )
     smells: list[dict[str, Any]] = []
     seen: set[tuple[str, int | None, int | None]] = set()
-    for ref in parse_file_references(body):
+    for ref in parse_file_references(body, reference_roots=reference_roots):
         if ref.kind not in {"line", "range"} or ref.is_anchored:
             continue
         if ref.path in deliverable_paths:
@@ -362,7 +381,10 @@ def unanchored_citations(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def verify_file_anchors(
-    issue: Mapping[str, Any], root: Path
+    issue: Mapping[str, Any],
+    root: Path,
+    *,
+    reference_roots: Iterable[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Re-locate content anchors and flag definitely-stale line citations.
 
@@ -397,7 +419,7 @@ def verify_file_anchors(
 
     seen_anchor: set[tuple[str, str]] = set()
     seen_eof: set[tuple[str, int]] = set()
-    for ref in parse_file_references(body):
+    for ref in parse_file_references(body, reference_roots=reference_roots):
         loaded = load(ref.path)
         if loaded is None:
             continue
@@ -587,9 +609,11 @@ def detect_explicit_overlaps(
     return {number: value for number, value in overlaps.items()}
 
 
-def scope_warning(issue: Mapping[str, Any]) -> dict[str, Any] | None:
+def scope_warning(
+    issue: Mapping[str, Any], *, reference_roots: Iterable[str] | None = None
+) -> dict[str, Any] | None:
     body = issue.get("body") or ""
-    paths = referenced_paths(body)
+    paths = referenced_paths(body, reference_roots=reference_roots)
     subsystems = {
         path.split("/", 2)[1] if "/" in path else path for path in paths if path
     }
@@ -667,6 +691,7 @@ def audit_issue(
     *,
     snapshot: Mapping[str, Any],
     policy: Mapping[str, Any],
+    repo_policy: repo_config.RepoPolicy | None = None,
     root: Path,
     cycles: list[list[int]],
     release_gate: set[int],
@@ -675,16 +700,18 @@ def audit_issue(
     blocked_by: Mapping[int, set[int]] | None = None,
     semantic_evidence: Mapping[int, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
+    reference_roots = active_policy.paths.reference_roots
     normalized = normalize_issue(issue)
     number = normalized["number"]
     if not isinstance(number, int):
         raise ValueError("issue number is required")
     issues = issue_map(snapshot)
     pulls = pull_map(snapshot)
-    contract = audit_contract(normalized)
+    contract = audit_contract(normalized, repo_policy=active_policy)
     body = normalized.get("body") or ""
     relationships = parse_relationships(body)
-    missing_all = missing_paths(normalized, root)
+    missing_all = missing_paths(normalized, root, reference_roots=reference_roots)
     prose_path_references = [
         path for path in missing_all if _is_prose_path_concatenation(path, root)
     ]
@@ -700,9 +727,13 @@ def audit_issue(
         if isinstance(audit_cfg, Mapping)
         else True
     )
-    unanchored = unanchored_citations(normalized) if check_citations else []
+    unanchored = (
+        unanchored_citations(normalized, reference_roots=reference_roots)
+        if check_citations
+        else []
+    )
     anchor_report = (
-        verify_file_anchors(normalized, root)
+        verify_file_anchors(normalized, root, reference_roots=reference_roots)
         if check_anchors
         else {"unresolved_anchors": [], "line_citations_past_eof": []}
     )
@@ -741,7 +772,7 @@ def audit_issue(
     issue_overlaps = overlaps.get(number, [])
     pr_conflicts = active_pr_conflicts(number, snapshot)
     semantic = _semantic_review(normalized, semantic_evidence)
-    scope = scope_warning(normalized)
+    scope = scope_warning(normalized, reference_roots=reference_roots)
 
     merge_evidence_default = bool(semantic.get("dependency_merge_evidence", False))
     raw_merge_details = semantic.get("dependency_merge_evidence_details")
@@ -1094,7 +1125,7 @@ def audit_issue(
         "unanchored_file_citations": unanchored,
         "unresolved_file_anchors": unresolved_anchors,
         "line_citations_past_eof": past_eof_citations,
-        "referenced_paths": referenced_paths(body),
+        "referenced_paths": referenced_paths(body, reference_roots=reference_roots),
         "active_pr_conflicts": pr_conflicts,
         "overlap_conflicts": issue_overlaps,
         "acceptance_coverage": contract["acceptance_coverage"],
@@ -1130,9 +1161,11 @@ def audit_all_issues(
     policy: Mapping[str, Any],
     *,
     root: Path,
+    repo_policy: repo_config.RepoPolicy | None = None,
     semantic_evidence: Mapping[int, Mapping[str, Any]] | None = None,
     issue_filter: set[int] | None = None,
 ) -> dict[str, Any]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     issues = issue_map(snapshot)
     graph = dependency_graph(snapshot)
     cycles = find_cycles(graph)
@@ -1149,6 +1182,7 @@ def audit_all_issues(
                 issues[number],
                 snapshot=snapshot,
                 policy=policy,
+                repo_policy=active_policy,
                 root=root,
                 cycles=cycles,
                 release_gate=release_gate,
@@ -1161,7 +1195,9 @@ def audit_all_issues(
     state_counts = Counter(item["implementation_state"] for item in results)
     governance_counts = Counter(item["governance_state"] for item in results)
     global_findings: list[dict[str, Any]] = []
-    drift = progress_log_drift(snapshot, root / "docs" / "PROGRESS_LOG.md")
+    drift = progress_log_drift(
+        snapshot, root / active_policy.repository.progress_log_path
+    )
     if drift:
         global_findings.append({"level": "warning", **drift})
     projects = snapshot.get("projects", snapshot.get("project"))
@@ -1180,9 +1216,13 @@ def audit_all_issues(
     expected_base = None
     repository_policy = policy.get("repository")
     if isinstance(repository_policy, Mapping):
-        expected_base = repository_policy.get(
-            "required_base_branch"
-        ) or repository_policy.get("default_branch")
+        expected_base = (
+            repository_policy.get("required_base_branch")
+            or repository_policy.get("default_branch")
+            or active_policy.repository.default_branch
+        )
+    else:
+        expected_base = active_policy.repository.default_branch
     for number, pull in pull_map(snapshot).items():
         if (
             pull.get("state") == "open"
@@ -1225,7 +1265,7 @@ def progress_log_drift(
     if not progress_log.is_file():
         return {
             "code": "missing-progress-log",
-            "message": "docs/PROGRESS_LOG.md is missing",
+            "message": f"{progress_log.as_posix()} is missing",
         }
     text = progress_log.read_text(encoding="utf-8", errors="replace")
     dates = re.findall(r"(?m)^##\s+(20\d\d-\d\d-\d\d)", text)

@@ -12,6 +12,25 @@ small; one stable dispatcher owns the command surface:
 bash .codex/bin/action.sh help
 ```
 
+## Repository Policy Adapter
+
+The repo-local adapter values live in `scripts/triage/policy.toml` and are
+loaded through `scripts/triage/repo_config.py`. The loader returns typed policy
+objects for repository identity, branch policy, governance path roots, protected
+Codex surfaces, hook wiring, quality receipts, product checks, compatibility
+schema sets, official-docs policy, and worker-packet verification commands.
+
+The `.codex/bin/*` wrappers source one shell-safe export from that loader before
+continuing. If policy validation fails, the wrappers stop locally rather than
+falling back to hidden `dbt-diagnostics` defaults. Hook runtime keeps the
+mutation and unsafe-command deny rules in code; policy can name paths and
+receipt locations, but it cannot authorize tracker writes or weaken the deny
+patterns.
+
+This is an adapter boundary only. The Codex environment, hooks, skills, and
+triage tooling still live in this repository, with `dbt-diagnostics` as the
+checked-in configured consumer.
+
 ## Local prerequisites
 
 - A real git clone of `dckallos/dbt-diagnostics`.
@@ -122,11 +141,18 @@ operation being evaluated.
 The normal `codex-quality` action records two protected-path fields:
 
 - `semantically_checked_protected_paths` lists protected files that were
-  actually scanned by deterministic quality checks.
+  actually scanned by deterministic quality checks. With no explicit `--path`,
+  the governance-boundary semantic scan uses the configured
+  `governance.paths.semantic_scan_roots` policy roots.
 - `freshness_bound_protected_paths` lists existing protected files from local
   git status, or from explicit `--path` values in targeted runs, that are bound
   to the receipt timestamp. This field proves `codex-quality` ran after those
   paths changed; it does not claim the files were semantically scanned.
+
+Semantic scanning and freshness binding are intentionally separate. A file being
+listed in `semantically_checked_protected_paths` never satisfies the Stop-hook
+freshness gate by itself; changed protected files still need
+`freshness_bound_protected_paths` coverage from a fresh passing receipt.
 
 ## Issue governance workflow
 

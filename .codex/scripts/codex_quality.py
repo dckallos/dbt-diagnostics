@@ -15,13 +15,17 @@ from typing import Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+ROOT_DIR = SCRIPT_DIR.parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import check_governance_boundary
 import codex_surface
+from scripts.triage import repo_config
 
 
 SCHEMA_VERSION = 1
-DEFAULT_RECEIPT = Path("output/codex/quality-receipt.json")
+FALLBACK_RECEIPT = Path("output/codex/quality-receipt.json")
 
 
 def canonical_json(value: object) -> str:
@@ -77,19 +81,23 @@ def semantically_checked_protected_paths(
     *,
     root: Path,
     checked_files: Sequence[str],
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> tuple[str, ...]:
     existing_checked_files = [
         path
         for path in checked_files
         if path and (root / codex_surface.normalize_path(path)).exists()
     ]
-    return codex_surface.protected_paths(existing_checked_files)
+    return codex_surface.protected_paths(
+        existing_checked_files, repo_policy=repo_policy
+    )
 
 
 def freshness_bound_protected_paths(
     *,
     root: Path,
     requested_paths: Sequence[Path] | None,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> tuple[str, ...]:
     if requested_paths is None:
         candidates = list(changed_paths_from_git(root))
@@ -104,7 +112,7 @@ def freshness_bound_protected_paths(
         for path in candidates
         if path and (root / codex_surface.normalize_path(path)).exists()
     ]
-    return codex_surface.protected_paths(existing_candidates)
+    return codex_surface.protected_paths(existing_candidates, repo_policy=repo_policy)
 
 
 def run_quality(
@@ -112,13 +120,17 @@ def run_quality(
     root: Path | None = None,
     receipt_path: Path | None = None,
     paths: Sequence[Path] | None = None,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> dict[str, object]:
     root = (root or Path.cwd()).resolve()
-    receipt_path = receipt_path or (root / DEFAULT_RECEIPT)
+    active_policy = repo_policy or repo_config.load_repo_policy()
+    receipt_path = receipt_path or (root / active_policy.codex.quality_receipt_path)
     if not receipt_path.is_absolute():
         receipt_path = root / receipt_path
 
-    governance_result = check_governance_boundary.run_check(paths, root=root)
+    governance_result = check_governance_boundary.run_check(
+        paths, root=root, repo_policy=active_policy
+    )
     checks = [
         {
             "name": "governance-boundary",
@@ -132,10 +144,12 @@ def run_quality(
     semantically_checked_paths = semantically_checked_protected_paths(
         root=root,
         checked_files=governance_result.checked_files,
+        repo_policy=active_policy,
     )
     freshness_bound_paths = freshness_bound_protected_paths(
         root=root,
         requested_paths=paths,
+        repo_policy=active_policy,
     )
     passed = all(check["status"] == "passed" for check in checks)
     receipt: dict[str, object] = {
@@ -159,14 +173,24 @@ def run_quality(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--receipt", type=Path, default=DEFAULT_RECEIPT)
+    parser.add_argument("--receipt", type=Path)
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--json", action="store_true", help="emit receipt JSON")
     args = parser.parse_args(argv)
 
     root = Path.cwd().resolve()
     paths = [Path(item) for item in args.path] if args.path else None
-    receipt = run_quality(root=root, receipt_path=args.receipt, paths=paths)
+    try:
+        active_policy = repo_config.load_repo_policy()
+    except repo_config.RepoConfigError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    receipt = run_quality(
+        root=root,
+        receipt_path=args.receipt,
+        paths=paths,
+        repo_policy=active_policy,
+    )
 
     if args.json:
         print(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=True))

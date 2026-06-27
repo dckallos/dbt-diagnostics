@@ -1,6 +1,6 @@
 ---
 name: issue-work
-description: Implement exactly one dbt-diagnostics GitHub issue end-to-end in its own branch or worktree. Use for issue-number implementation, focused tests, and review handoff. Do not use for backlog-wide planning or GitHub metadata changes.
+description: Implement exactly one configured-repository GitHub issue end-to-end in its own branch or worktree. Use for configured issue-number implementation, focused tests, and review handoff. Do not use for backlog-wide planning or GitHub metadata changes.
 ---
 
 Input: exactly one GitHub issue number.

@@ -10,6 +10,13 @@ import sys
 from typing import Iterable
 
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.triage import repo_config
+
+
 TEXT_SUFFIXES = {
     ".cfg",
     ".ini",
@@ -70,7 +77,11 @@ def _changed_paths(root: Path) -> list[Path]:
     ):
         names.update(_git(root, *args))
 
-    for base in ("origin/donkey-kong-sandbox", "donkey-kong-sandbox"):
+    try:
+        default_branch = repo_config.load_repo_policy().repository.default_branch
+    except repo_config.RepoConfigError:
+        default_branch = "HEAD"
+    for base in (f"origin/{default_branch}", default_branch):
         if _git(root, "rev-parse", "--verify", "--quiet", base):
             names.update(
                 _git(

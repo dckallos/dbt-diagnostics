@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from conftest import load_codex_script
+from scripts.triage import repo_config
 
 
 task_context = load_codex_script("task_context")
+ROOT = Path(__file__).resolve().parents[2]
+WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
 
 
 def test_issue_number_inference_is_conservative() -> None:
@@ -29,3 +34,18 @@ def test_referenced_paths_are_deduplicated_and_checked(tmp_path) -> None:
         {"path": "docs/DESIGN.md", "exists": True},
         {"path": "scripts/missing.py", "exists": False},
     ]
+
+
+def test_referenced_paths_use_configured_roots_for_non_dbt_policy(tmp_path) -> None:
+    widgets_policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    script = tmp_path / "scripts" / "widget_check.py"
+    script.parent.mkdir()
+    script.write_text("x", encoding="ascii")
+    body = (
+        "Read scripts/widget_check.py and ignore "
+        "dbt_diagnostics/fixtures/schemas/manifest/v12.json."
+    )
+
+    assert task_context.referenced_paths(
+        body, tmp_path, repo_policy=widgets_policy
+    ) == [{"path": "scripts/widget_check.py", "exists": True}]

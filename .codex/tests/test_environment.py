@@ -57,6 +57,15 @@ def test_frontier_wrapper_is_exposed_and_dispatches() -> None:
     assert 'exec "$python_path" "$tool" frontier --mode "$mode" "$@"' in wrapper
 
 
+def test_common_policy_loader_uses_data_records_without_eval() -> None:
+    common = (ROOT / ".codex" / "bin" / "common.sh").read_text(encoding="utf-8")
+
+    assert "export-shell" not in common
+    assert " export-env" in common
+    assert "eval" not in common
+    assert "codex_set_policy_value" in common
+
+
 def _issue(number: int) -> dict[str, Any]:
     return {
         "number": number,
