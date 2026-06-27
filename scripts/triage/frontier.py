@@ -507,6 +507,206 @@ class BacklogSynthesisReport:
         return report
 
 
+@dataclass(frozen=True)
+class SynthesisReviewPacketSourceArtifacts:
+    snapshot_digest: str
+    audit_digest: str
+    backlog_synthesis_digest: str
+    project_plan_digest: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        result = {
+            "snapshot_digest": self.snapshot_digest,
+            "audit_digest": self.audit_digest,
+            "backlog_synthesis_digest": self.backlog_synthesis_digest,
+        }
+        if self.project_plan_digest is not None:
+            result["project_plan_digest"] = self.project_plan_digest
+        return result
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketScope:
+    review_task: str
+    issue_numbers: tuple[int, ...]
+    candidate_set_ids: tuple[str, ...]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "review_task": self.review_task,
+            "issue_numbers": list(self.issue_numbers),
+            "candidate_set_ids": list(self.candidate_set_ids),
+        }
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketCandidateSet:
+    candidate_set_id: str
+    source_signal_index: int
+    signal_type: str
+    confidence: str
+    issue_numbers: tuple[int, ...]
+    summary: str
+    evidence_ids: tuple[str, ...]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "candidate_set_id": self.candidate_set_id,
+            "source_signal_index": self.source_signal_index,
+            "signal_type": self.signal_type,
+            "confidence": self.confidence,
+            "issue_numbers": list(self.issue_numbers),
+            "summary": self.summary,
+            "evidence_ids": list(self.evidence_ids),
+        }
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketEvidenceItem:
+    evidence_id: str
+    source: str
+    excerpt: str
+    issue_numbers: tuple[int, ...] = ()
+
+    def to_json(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "evidence_id": self.evidence_id,
+            "source": self.source,
+            "excerpt": self.excerpt[:1000],
+        }
+        if self.issue_numbers:
+            result["issue_numbers"] = list(self.issue_numbers)
+        return result
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketOmission:
+    omission_id: str
+    reason: str
+
+    def to_json(self) -> dict[str, str]:
+        return {
+            "omission_id": self.omission_id,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketBudget:
+    serialized_bytes: int = 0
+    estimated_tokens: int = 0
+    target_bytes: int = SYNTHESIS_REVIEW_TARGET_BYTES
+    hard_bytes: int = SYNTHESIS_REVIEW_HARD_BYTES
+    target_estimated_tokens: int = SYNTHESIS_REVIEW_TARGET_TOKENS
+    hard_estimated_tokens: int = SYNTHESIS_REVIEW_HARD_TOKENS
+    token_estimate_method: str = "bytes_div_4"
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "serialized_bytes": self.serialized_bytes,
+            "target_bytes": self.target_bytes,
+            "hard_bytes": self.hard_bytes,
+            "estimated_tokens": self.estimated_tokens,
+            "target_estimated_tokens": self.target_estimated_tokens,
+            "hard_estimated_tokens": self.hard_estimated_tokens,
+            "token_estimate_method": self.token_estimate_method,
+        }
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketStaleness:
+    max_age_hours: int
+    stale: bool = False
+    llm_review_allowed: bool = True
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "max_age_hours": self.max_age_hours,
+            "stale": self.stale,
+            "llm_review_allowed": self.llm_review_allowed,
+        }
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketSafety:
+    read_only: bool
+    github_api_calls: bool
+    github_mutations: bool
+    contains_executable_operations: bool
+    contains_full_tracker_snapshot: bool
+    contains_issue_comments: bool
+    comments_included: bool
+    llm_verdicts_are_advisory: bool
+
+    @classmethod
+    def read_only_contract(cls) -> SynthesisReviewPacketSafety:
+        return cls(
+            read_only=True,
+            github_api_calls=False,
+            github_mutations=False,
+            contains_executable_operations=False,
+            contains_full_tracker_snapshot=False,
+            contains_issue_comments=False,
+            comments_included=False,
+            llm_verdicts_are_advisory=True,
+        )
+
+    def to_json(self) -> dict[str, bool]:
+        return {
+            "read_only": self.read_only,
+            "github_api_calls": self.github_api_calls,
+            "github_mutations": self.github_mutations,
+            "contains_executable_operations": self.contains_executable_operations,
+            "contains_full_tracker_snapshot": self.contains_full_tracker_snapshot,
+            "contains_issue_comments": self.contains_issue_comments,
+            "comments_included": self.comments_included,
+            "llm_verdicts_are_advisory": self.llm_verdicts_are_advisory,
+        }
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacket:
+    repository: str
+    generated_at: str
+    source_generated_at: str
+    source_artifacts: SynthesisReviewPacketSourceArtifacts
+    packet_scope: SynthesisReviewPacketScope
+    candidate_sets: tuple[SynthesisReviewPacketCandidateSet, ...]
+    evidence_items: tuple[SynthesisReviewPacketEvidenceItem, ...]
+    near_misses: tuple[Any, ...]
+    omissions: tuple[SynthesisReviewPacketOmission, ...]
+    comments_included: bool
+    comment_evidence_status: str
+    staleness: SynthesisReviewPacketStaleness
+    budget: SynthesisReviewPacketBudget = field(
+        default_factory=SynthesisReviewPacketBudget
+    )
+    safety: SynthesisReviewPacketSafety = field(
+        default_factory=SynthesisReviewPacketSafety.read_only_contract
+    )
+    schema_version: int = SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION
+
+    def to_json(self) -> dict[str, Any]:
+        packet: dict[str, Any] = {
+            "schema_version": self.schema_version,
+            "repository": self.repository,
+            "generated_at": self.generated_at,
+            "source_generated_at": self.source_generated_at,
+            "source_artifacts": self.source_artifacts.to_json(),
+            "packet_scope": self.packet_scope.to_json(),
+            "candidate_sets": [item.to_json() for item in self.candidate_sets],
+            "evidence_items": [item.to_json() for item in self.evidence_items],
+            "near_misses": list(self.near_misses),
+            "omissions": [item.to_json() for item in self.omissions],
+            "comments_included": self.comments_included,
+            "comment_evidence_status": self.comment_evidence_status,
+            "budget": self.budget.to_json(),
+            "staleness": self.staleness.to_json(),
+            "safety": self.safety.to_json(),
+        }
+        return _finalize_synthesis_review_packet(packet)
+
+
 def _is_positive_int(value: Any) -> bool:
     return not isinstance(value, bool) and isinstance(value, int) and value > 0
 
@@ -1785,6 +1985,12 @@ def _filtered_issue_numbers(
         for number in signal.get("issue_numbers") or []:
             if _is_positive_int(number):
                 values.add(int(number))
+    for disposition in backlog_synthesis.get("issue_dispositions") or []:
+        if not isinstance(disposition, Mapping):
+            continue
+        number = disposition.get("issue_number")
+        if _is_positive_int(number):
+            values.add(int(number))
     return sorted(values)
 
 
@@ -1803,22 +2009,23 @@ def _packet_evidence_item(
     source: str,
     excerpt: str,
     issue_numbers: Sequence[int] = (),
-) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "evidence_id": evidence_id,
-        "source": source,
-        "excerpt": excerpt[:1000],
-    }
-    if issue_numbers:
-        item["issue_numbers"] = list(issue_numbers)
-    return item
+) -> SynthesisReviewPacketEvidenceItem:
+    return SynthesisReviewPacketEvidenceItem(
+        evidence_id=evidence_id,
+        source=source,
+        excerpt=excerpt,
+        issue_numbers=tuple(issue_numbers),
+    )
 
 
 def _packet_candidate_sets(
     backlog_synthesis: Mapping[str, Any], issue_filter: set[int] | None
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    candidate_sets: list[dict[str, Any]] = []
-    evidence_items: list[dict[str, Any]] = []
+) -> tuple[
+    tuple[SynthesisReviewPacketCandidateSet, ...],
+    tuple[SynthesisReviewPacketEvidenceItem, ...],
+]:
+    candidate_sets: list[SynthesisReviewPacketCandidateSet] = []
+    evidence_items: list[SynthesisReviewPacketEvidenceItem] = []
     for index, signal in enumerate(backlog_synthesis.get("signals") or [], start=1):
         if not isinstance(signal, Mapping) or not _signal_in_scope(
             signal, issue_filter
@@ -1833,15 +2040,15 @@ def _packet_candidate_sets(
         evidence_id = f"evidence-{len(evidence_items) + 1:03d}"
         summary = str(signal.get("summary") or signal.get("signal_type") or "")
         candidate_sets.append(
-            {
-                "candidate_set_id": candidate_set_id,
-                "source_signal_index": index,
-                "signal_type": str(signal.get("signal_type") or "unknown"),
-                "confidence": str(signal.get("confidence") or "unknown"),
-                "issue_numbers": sorted(set(issue_numbers)),
-                "summary": summary,
-                "evidence_ids": [evidence_id],
-            }
+            SynthesisReviewPacketCandidateSet(
+                candidate_set_id=candidate_set_id,
+                source_signal_index=index,
+                signal_type=str(signal.get("signal_type") or "unknown"),
+                confidence=str(signal.get("confidence") or "unknown"),
+                issue_numbers=tuple(sorted(set(issue_numbers))),
+                summary=summary,
+                evidence_ids=(evidence_id,),
+            )
         )
         evidence_text = "; ".join(
             item for item in signal.get("evidence") or [] if isinstance(item, str)
@@ -1851,10 +2058,10 @@ def _packet_candidate_sets(
                 evidence_id=evidence_id,
                 source="backlog-synthesis",
                 excerpt=evidence_text or summary or "backlog synthesis signal",
-                issue_numbers=sorted(set(issue_numbers)),
+                issue_numbers=tuple(sorted(set(issue_numbers))),
             )
         )
-    return candidate_sets, evidence_items
+    return tuple(candidate_sets), tuple(evidence_items)
 
 
 def _packet_disposition_evidence(
@@ -1862,8 +2069,8 @@ def _packet_disposition_evidence(
     issue_filter: set[int] | None,
     *,
     start_index: int,
-) -> list[dict[str, Any]]:
-    evidence_items: list[dict[str, Any]] = []
+) -> tuple[SynthesisReviewPacketEvidenceItem, ...]:
+    evidence_items: list[SynthesisReviewPacketEvidenceItem] = []
     for disposition in backlog_synthesis.get("issue_dispositions") or []:
         if not isinstance(disposition, Mapping):
             continue
@@ -1889,20 +2096,20 @@ def _packet_disposition_evidence(
                 issue_numbers=(issue_number,),
             )
         )
-    return evidence_items
+    return tuple(evidence_items)
 
 
-def _packet_omissions() -> list[dict[str, Any]]:
-    return [
-        {
-            "omission_id": "issue-comments-not-collected",
-            "reason": "issue discussion text is not collected in v1",
-        },
-        {
-            "omission_id": "full-issue-bodies-not-embedded",
-            "reason": "v1 uses bounded evidence excerpts instead of full tracker text",
-        },
-    ]
+def _packet_omissions() -> tuple[SynthesisReviewPacketOmission, ...]:
+    return (
+        SynthesisReviewPacketOmission(
+            omission_id="issue-comments-not-collected",
+            reason="issue discussion text is not collected in v1",
+        ),
+        SynthesisReviewPacketOmission(
+            omission_id="full-issue-bodies-not-embedded",
+            reason="v1 uses bounded evidence excerpts instead of full tracker text",
+        ),
+    )
 
 
 def _finalize_synthesis_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
@@ -1935,17 +2142,18 @@ def build_synthesis_review_packet(
 ) -> dict[str, Any]:
     """Build a bounded read-only synthesis review packet from local artifacts."""
 
-    source_artifacts = {
-        "snapshot_digest": snapshot_digest(snapshot),
-        "audit_digest": str(audit.get("audit_digest") or ""),
-        "backlog_synthesis_digest": str(
+    source_artifacts = SynthesisReviewPacketSourceArtifacts(
+        snapshot_digest=snapshot_digest(snapshot),
+        audit_digest=str(audit.get("audit_digest") or ""),
+        backlog_synthesis_digest=str(
             backlog_synthesis.get("backlog_synthesis_digest") or ""
         ),
-    }
-    if project_plan is not None:
-        source_artifacts["project_plan_digest"] = str(
-            project_plan.get("project_plan_digest") or ""
-        )
+        project_plan_digest=(
+            str(project_plan.get("project_plan_digest") or "")
+            if project_plan is not None
+            else None
+        ),
+    )
 
     candidate_sets, signal_evidence = _packet_candidate_sets(
         backlog_synthesis, issue_filter
@@ -1956,51 +2164,27 @@ def build_synthesis_review_packet(
         start_index=len(signal_evidence) + 1,
     )
     issue_numbers = _filtered_issue_numbers(backlog_synthesis, issue_filter)
-    packet: dict[str, Any] = {
-        "schema_version": SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION,
-        "repository": repository_name(snapshot),
-        "generated_at": str(snapshot.get("generated_at") or "unknown"),
-        "source_generated_at": str(snapshot.get("generated_at") or "unknown"),
-        "source_artifacts": source_artifacts,
-        "packet_scope": {
-            "review_task": "backlog-synthesis",
-            "issue_numbers": issue_numbers,
-            "candidate_set_ids": [
-                str(item["candidate_set_id"]) for item in candidate_sets
-            ],
-        },
-        "candidate_sets": candidate_sets,
-        "evidence_items": signal_evidence + disposition_evidence,
-        "near_misses": [],
-        "omissions": _packet_omissions(),
-        "comments_included": False,
-        "comment_evidence_status": "not_collected",
-        "budget": {
-            "serialized_bytes": 0,
-            "target_bytes": SYNTHESIS_REVIEW_TARGET_BYTES,
-            "hard_bytes": SYNTHESIS_REVIEW_HARD_BYTES,
-            "estimated_tokens": 0,
-            "target_estimated_tokens": SYNTHESIS_REVIEW_TARGET_TOKENS,
-            "hard_estimated_tokens": SYNTHESIS_REVIEW_HARD_TOKENS,
-            "token_estimate_method": "bytes_div_4",
-        },
-        "staleness": {
-            "max_age_hours": max_age_hours,
-            "stale": False,
-            "llm_review_allowed": True,
-        },
-        "safety": {
-            "read_only": True,
-            "github_api_calls": False,
-            "github_mutations": False,
-            "contains_executable_operations": False,
-            "contains_full_tracker_snapshot": False,
-            "contains_issue_comments": False,
-            "comments_included": False,
-            "llm_verdicts_are_advisory": True,
-        },
-    }
-    return _finalize_synthesis_review_packet(packet)
+    packet = SynthesisReviewPacket(
+        repository=repository_name(snapshot),
+        generated_at=str(snapshot.get("generated_at") or "unknown"),
+        source_generated_at=str(snapshot.get("generated_at") or "unknown"),
+        source_artifacts=source_artifacts,
+        packet_scope=SynthesisReviewPacketScope(
+            review_task="backlog-synthesis",
+            issue_numbers=tuple(issue_numbers),
+            candidate_set_ids=tuple(
+                item.candidate_set_id for item in candidate_sets
+            ),
+        ),
+        candidate_sets=candidate_sets,
+        evidence_items=signal_evidence + disposition_evidence,
+        near_misses=(),
+        omissions=_packet_omissions(),
+        comments_included=False,
+        comment_evidence_status="not_collected",
+        staleness=SynthesisReviewPacketStaleness(max_age_hours=max_age_hours),
+    )
+    return packet.to_json()
 
 
 def validate_backlog_synthesis_report(value: Mapping[str, Any]) -> list[str]:

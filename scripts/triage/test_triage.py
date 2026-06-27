@@ -2611,7 +2611,11 @@ def test_synthesis_review_packet_cli_emits_json_without_github_calls(
     def fail_collect(*_args: object, **_kwargs: object) -> dict[str, Any]:
         raise AssertionError("synthesis-review-packet must not collect live state")
 
+    def fail_subprocess(*_args: object, **_kwargs: object) -> triage.CommandResult:
+        raise AssertionError("synthesis-review-packet must not run subprocesses")
+
     monkeypatch.setattr(triage, "collect_snapshot", fail_collect)
+    monkeypatch.setattr(triage.subprocess, "run", fail_subprocess)
 
     code = triage.main(
         [
@@ -2646,6 +2650,37 @@ def test_synthesis_review_packet_cli_emits_json_without_github_calls(
     assert "operations" not in packet
     assert "body" not in json.dumps(packet, sort_keys=True)
     assert runner.calls == []
+
+
+def test_synthesis_review_packet_cli_rejects_looser_max_age(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--max-age-hours",
+            "169",
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "--max-age-hours cannot exceed the default hard review age" in captured.err
+    assert captured.out == ""
 
 
 def test_synthesis_review_packet_cli_writes_output_and_status_to_stderr(

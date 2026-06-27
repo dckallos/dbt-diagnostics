@@ -3900,6 +3900,12 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
         if args.command == "synthesis-review-packet":
             if args.max_age_hours <= 0:
                 raise TriageError("--max-age-hours must be a positive integer")
+            default_max_age = issue_frontier.DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS
+            if args.max_age_hours > default_max_age:
+                raise TriageError(
+                    "--max-age-hours cannot exceed the default hard review age "
+                    f"({default_max_age})"
+                )
             readiness_audit = load_json_file(
                 args.audit_file, "readiness audit JSON"
             )

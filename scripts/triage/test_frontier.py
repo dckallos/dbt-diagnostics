@@ -864,6 +864,36 @@ def test_build_synthesis_review_packet_from_valid_sources() -> None:
     assert "body" not in json.dumps(packet, sort_keys=True)
 
 
+def test_build_synthesis_review_packet_scope_includes_disposition_only_issues() -> None:
+    snap = snapshot(issue(95))
+    results = audit(entry(95))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    assert report["signals"] == []
+
+    packet = frontier.build_synthesis_review_packet(snap, results, report)
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+    assert packet["packet_scope"]["issue_numbers"] == [95]
+    assert packet["evidence_items"][0]["issue_numbers"] == [95]
+
+
+def test_build_synthesis_review_packet_records_stricter_max_age() -> None:
+    snap = snapshot(issue(95))
+    results = audit(entry(95))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    packet = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        max_age_hours=24,
+    )
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+    assert packet["staleness"]["max_age_hours"] == 24
+
+
 def test_build_synthesis_review_packet_records_project_plan_digest() -> None:
     snap = snapshot(issue(95))
     results = audit(entry(95))

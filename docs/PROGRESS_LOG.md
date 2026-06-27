@@ -1582,6 +1582,10 @@ End of session -- 2026-06-27 issue 119 repo policy adapter boundary
   project-plan digests, digest mismatch rejection, invalid backlog inputs,
   missing files, clean `--json` stdout, output writes, deterministic output, and
   no GitHub/subprocess state collection with local inputs.
+- Follow-up review hardening added typed synthesis-review-packet domain objects,
+  included disposition-only issues in packet scope, rejected `--max-age-hours`
+  values that loosen the default 168-hour hard review threshold, and strengthened
+  the local-artifact no-subprocess regression.
 - Updated `CHANGELOG.md` and `docs/ISSUE_GOVERNANCE.md` with the landed command
   behavior only.
 
@@ -1593,19 +1597,30 @@ End of session -- 2026-06-27 issue 119 repo policy adapter boundary
   maintainer-authorized issue body update.
 - `python -m pytest -q scripts/triage/test_frontier.py
   scripts/triage/test_triage.py` passed: 126 passed.
+- Follow-up focused run of `python -m pytest -q scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 129 passed.
 - `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py
   scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed.
+- Follow-up `python -m py_compile scripts/triage/frontier.py
+  scripts/triage/triage.py scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed.
 - `bash .codex/bin/action.sh check` passed: Codex tests 83 passed; offline
   tests 744 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
+- Follow-up `bash .codex/bin/action.sh check` passed: Codex tests 83 passed;
+  offline tests 747 passed, 2 skipped, 20 deselected, 1 warning; compatibility
+  schema gate skipped as expected.
+- Follow-up `bash .codex/bin/action.sh codex-quality --json` passed and
+  refreshed the protected-file receipt.
 
 **Current state**
-- Work is local on branch `feat/95-synthesis-review-packet`.
-- No PR has been opened yet.
+- Work is on branch `feat/95-synthesis-review-packet`.
+- Draft PR #123 is open against `donkey-kong-sandbox`.
+- The branch includes the follow-up review hardening as an incremental PR
+  update.
 
 **Next steps**
-- Refresh the Codex quality receipt for the protected governance changes.
-- Review the diff, then commit and push only after explicit approval.
+- Address PR review or CI feedback on #123.
 
 **Be careful**
 - This issue intentionally does not implement #96 budget/freshness gates beyond
