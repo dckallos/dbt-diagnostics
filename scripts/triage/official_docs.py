@@ -22,6 +22,13 @@ class OfficialDocsRequirement:
     matched_patterns: tuple[str, ...]
 
 
+UNKNOWN_EXTERNAL_PROVIDER = OfficialDocsProvider(
+    key="unknown_external",
+    display_name="Unknown external provider",
+    trigger_patterns=(),
+    official_domains=(),
+)
+
 PROVIDERS = (
     OfficialDocsProvider(
         key="openai",
@@ -148,6 +155,35 @@ CONTEXT_PATTERNS = (
     r"\bversion\b",
 )
 
+EXTERNAL_SCOPE_PATTERNS = (
+    r"\bexternal (product|platform|provider|service|source|contract)\b",
+    r"\boutside this repository\b",
+    r"\bthird[- ]party\b",
+    r"\bvendor\b",
+    r"\bhosted\b",
+    r"\bci service\b",
+    r"\bpackage[- ]manager\b",
+    r"\bpublished schema\b",
+)
+
+GENERIC_CONTRACT_PATTERNS = (
+    r"\bapi\b",
+    r"\bcli\b",
+    r"\bcontract\b",
+    r"\bschema guarantees?\b",
+    r"\bpublished schema\b",
+    r"\bhosted api\b",
+    r"\bhosted service\b",
+    r"\bci service\b",
+    r"\bpackage[- ]manager\b",
+    r"\bsemantics?\b",
+    r"\bbehavior\b",
+    r"\bguarantee\b",
+    r"\bofficial source\b",
+    r"\bofficial docs?\b",
+    r"\bofficial documentation\b",
+)
+
 META_PATTERNS = (
     r"\bofficial documentation evidence\b",
     r"\bofficial docs evidence\b",
@@ -155,7 +191,36 @@ META_PATTERNS = (
     r"\bissue contract\b",
     r"\bcontract and standardize\b",
     r"\bsection should be required\b",
+    r"\brequires? the new section\b",
+    r"\bnew section\b",
+    r"\bsection is not required\b",
+    r"\bcondition is triggered\b",
+    r"\bplaceholder when .*condition is triggered\b",
     r"\bcontract enforces the section\b",
+    r"\bofficial domains are accepted\b",
+    r"\bpublic official documentation urls? as examples\b",
+)
+
+META_EXAMPLE_PATTERNS = (
+    r"\btrigger list\b",
+    r"\bprovider trigger\b",
+    r"\bknown-provider trigger\b",
+    r"\bexamples? such as\b",
+    r"\bmay include examples\b",
+    r"\bprovider list\b",
+)
+
+EXTERNAL_DEPENDENCY_ACTION_PATTERNS = (
+    r"\bdepends on\b",
+    r"\brelies on\b",
+    r"\brequires\b",
+    r"\bsupports the api\b",
+    r"\bapi behavior\b",
+    r"\bcli contract\b",
+    r"\bschema guarantee\b",
+    r"\bhosted api\b",
+    r"\bci service behavior\b",
+    r"\bpackage[- ]manager behavior\b",
 )
 
 PROVIDER_LABELS = {
@@ -168,7 +233,14 @@ PROVIDER_LABELS = {
 
 URL_RE = re.compile(r"https?://[^\s<>)\]]+")
 PROVIDER_LINE_RE = re.compile(r"(?im)^\s*[-*]?\s*provider\s*:\s*(.+?)\s*$")
+RESIDUAL_UNCERTAINTY_RE = re.compile(
+    r"(?im)^\s*[-*]?\s*residual uncertainty\s*:\s*(.+?)\s*$"
+)
 DATE_RE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
+_NEG_PREFIX_RE = re.compile(r"\b(?:no|not|none|without|never|n/?a)\b[\s:,;.\-]*$")
+_NEGATED_LINE_PREFIX_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:no|not|none|without|never|n/?a)\b"
+)
 
 
 def _matches_any_pattern(text: str, patterns: Iterable[str]) -> tuple[str, ...]:
@@ -176,27 +248,86 @@ def _matches_any_pattern(text: str, patterns: Iterable[str]) -> tuple[str, ...]:
     return tuple(pattern for pattern in patterns if re.search(pattern, lower))
 
 
+def _requires_any_pattern(text: str, patterns: Iterable[str]) -> tuple[str, ...]:
+    lower = text.lower()
+    required: list[str] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, lower):
+            prefix = lower[max(0, match.start() - 24): match.start()]
+            line_start = lower.rfind("\n", 0, match.start()) + 1
+            line_prefix = lower[line_start: match.start()]
+            if not _NEG_PREFIX_RE.search(prefix) and not _NEGATED_LINE_PREFIX_RE.search(
+                line_prefix
+            ):
+                required.append(pattern)
+                break
+    return tuple(required)
+
+
+def _line_is_meta_example(line: str) -> bool:
+    return bool(
+        _matches_any_pattern(line, META_PATTERNS)
+        or _matches_any_pattern(line, META_EXAMPLE_PATTERNS)
+    )
+
+
+def _line_has_external_dependency_action(line: str) -> bool:
+    return bool(_matches_any_pattern(line, EXTERNAL_DEPENDENCY_ACTION_PATTERNS))
+
+
+def _provider_example_only_line(line: str) -> bool:
+    if _line_has_external_dependency_action(line):
+        return False
+    return bool(
+        _matches_any_pattern(
+            line,
+            tuple(
+                pattern
+                for provider in PROVIDERS
+                for pattern in provider.trigger_patterns
+            ),
+        )
+    )
+
+
+def _non_meta_requirement_text(text: str) -> str:
+    kept: list[str] = []
+    previous_was_meta_example = False
+    for line in text.splitlines():
+        is_meta_example = _line_is_meta_example(line)
+        if is_meta_example:
+            previous_was_meta_example = True
+            continue
+        if previous_was_meta_example and _provider_example_only_line(line):
+            continue
+        kept.append(line)
+        previous_was_meta_example = False
+    return "\n".join(kept)
+
+
+def _generic_external_matches(text: str) -> tuple[str, ...]:
+    scope_matches = _requires_any_pattern(text, EXTERNAL_SCOPE_PATTERNS)
+    contract_matches = _requires_any_pattern(text, GENERIC_CONTRACT_PATTERNS)
+    if scope_matches and contract_matches:
+        return tuple(sorted(set(scope_matches + contract_matches)))
+    return ()
+
+
 def requirements(
     title: str, labels: Iterable[str], body: str
 ) -> tuple[OfficialDocsRequirement, ...]:
     text = "\n".join([title, " ".join(labels), body])
-    meta_matches = _matches_any_pattern(text, META_PATTERNS)
-    has_meta_subject = any(
-        "official doc" in match or "official documentation" in match
-        for match in meta_matches
-    )
-    has_contract_context = any(
-        "issue" in match or "contract" in match or "section" in match
-        for match in meta_matches
-    )
-    if has_meta_subject and has_contract_context:
+    requirement_text = _non_meta_requirement_text(text)
+    if not requirement_text.strip() and _matches_any_pattern(text, META_PATTERNS):
         return ()
 
-    context_matches = _matches_any_pattern(text, CONTEXT_PATTERNS)
+    context_matches = _matches_any_pattern(requirement_text, CONTEXT_PATTERNS)
     label_set = {label.lower() for label in labels}
     required: list[OfficialDocsRequirement] = []
     for provider in PROVIDERS:
-        provider_matches = list(_matches_any_pattern(text, provider.trigger_patterns))
+        provider_matches = list(
+            _matches_any_pattern(requirement_text, provider.trigger_patterns)
+        )
         for label, key in PROVIDER_LABELS.items():
             if key == provider.key and label in label_set:
                 provider_matches.append(f"label:{label}")
@@ -209,6 +340,14 @@ def requirements(
                     matched_patterns=tuple(sorted(set(provider_matches))),
                 )
             )
+    generic_matches = _generic_external_matches(requirement_text)
+    if generic_matches and not required:
+        required.append(
+            OfficialDocsRequirement(
+                provider=UNKNOWN_EXTERNAL_PROVIDER,
+                matched_patterns=generic_matches,
+            )
+        )
     return tuple(required)
 
 
@@ -242,6 +381,18 @@ def _provider_field_values(content: str) -> tuple[str, ...]:
     return tuple(match.group(1).strip() for match in PROVIDER_LINE_RE.finditer(content))
 
 
+def _residual_uncertainty_values(content: str) -> tuple[str, ...]:
+    return tuple(
+        match.group(1).strip() for match in RESIDUAL_UNCERTAINTY_RE.finditer(content)
+    )
+
+
+def _provider_field_known_providers(value: str) -> tuple[OfficialDocsProvider, ...]:
+    return tuple(
+        provider for provider in PROVIDERS if _content_mentions_provider(value, provider)
+    )
+
+
 def _content_mentions_provider(content: str, provider: OfficialDocsProvider) -> bool:
     if _matches_any_pattern(content, provider.trigger_patterns):
         return True
@@ -249,22 +400,53 @@ def _content_mentions_provider(content: str, provider: OfficialDocsProvider) -> 
     return provider.key in lower or provider.display_name.lower() in lower
 
 
-def _unknown_provider_requires_verification(content: str) -> bool:
-    lower = content.lower()
-    return bool(
-        re.search(
-            r"\b(maintainer|manual|human)\s+(review|verification|check)\b",
-            lower,
-        )
-        or "unknown provider" in lower
+def _unknown_provider_requires_verification(
+    content: str,
+    *,
+    unknown_provider_values: Iterable[str] = (),
+    unknown_hosts: Iterable[str] = (),
+) -> bool:
+    residual = "\n".join(_residual_uncertainty_values(content)) or content
+    lower = residual.lower()
+    if (
+        "unknown provider" in lower
+        or "unknown source" in lower
+        or "unknown url" in lower
+        or "unknown host" in lower
         or "unverified provider" in lower
+        or "unverified source" in lower
         or "cannot verify" in lower
+    ):
+        return True
+    maintainer_verification = re.search(
+        r"\b(maintainer|manual|human)\s+(review|verification|check)\b",
+        lower,
     )
+    if not maintainer_verification:
+        return False
+    if re.search(r"\b(provider|source|host|domain|official url|url)\b", lower):
+        return True
+    for value in unknown_provider_values:
+        if value and value.lower() in lower:
+            return True
+    for host in unknown_hosts:
+        if host and host.lower() in lower:
+            return True
+    return False
 
 
-def _unknown_provider_blocks_implementation(content: str) -> bool:
+def _unknown_provider_blocks_implementation(
+    content: str,
+    *,
+    unknown_provider_values: Iterable[str] = (),
+    unknown_hosts: Iterable[str] = (),
+) -> bool:
     lower = content.lower()
-    return _unknown_provider_requires_verification(content) and bool(
+    return _unknown_provider_requires_verification(
+        content,
+        unknown_provider_values=unknown_provider_values,
+        unknown_hosts=unknown_hosts,
+    ) and bool(
         "critical" in lower
         or "before implementation" in lower
         or "before implementation starts" in lower
@@ -335,13 +517,14 @@ def section_findings(
 ) -> list[dict[str, Any]]:
     urls = _extract_urls(content)
     required = tuple(requirements)
-    required_providers = tuple(item.provider for item in required)
+    known_required_providers = tuple(
+        item.provider for item in required if item.provider.official_domains
+    )
     findings = _field_findings(content)
     if unresolved_placeholder in content:
         return findings
 
-    for requirement in required:
-        provider = requirement.provider
+    for provider in known_required_providers:
         if not any(_provider_matches_host(provider, _url_host(url)) for url in urls):
             findings.append(
                 {
@@ -357,12 +540,12 @@ def section_findings(
                 }
             )
 
-    if required_providers:
+    if known_required_providers:
         for url in urls:
             host = _url_host(url)
             if not any(
                 _provider_matches_host(provider, host)
-                for provider in required_providers
+                for provider in known_required_providers
             ):
                 findings.append(
                     {
@@ -377,15 +560,23 @@ def section_findings(
                     }
                 )
 
-    known_url_provider = any(_known_providers_for_host(_url_host(url)) for url in urls)
-    known_content_provider = any(
-        _content_mentions_provider(content, provider) for provider in PROVIDERS
+    unknown_hosts = tuple(
+        _url_host(url)
+        for url in urls
+        if _url_host(url) and not _known_providers_for_host(_url_host(url))
     )
     provider_values = _provider_field_values(content)
-    unknown_provider_named = bool(provider_values) and not known_content_provider
-    unknown_url = bool(urls) and not known_url_provider
-    unknown_source = unknown_provider_named or unknown_url
-    if unknown_source and not _unknown_provider_requires_verification(content):
+    unknown_provider_values = tuple(
+        value
+        for value in provider_values
+        if value and not _provider_field_known_providers(value)
+    )
+    unknown_source = bool(unknown_provider_values or unknown_hosts)
+    if unknown_source and not _unknown_provider_requires_verification(
+        content,
+        unknown_provider_values=unknown_provider_values,
+        unknown_hosts=unknown_hosts,
+    ):
         findings.append(
             {
                 "level": "error",
@@ -395,11 +586,19 @@ def section_findings(
                     "maintainer verification or residual uncertainty."
                 ),
                 "section": "official_docs",
+                "data": {
+                    "providers": sorted(unknown_provider_values),
+                    "hosts": sorted(unknown_hosts),
+                },
             }
         )
     if (
         unknown_source
-        and _unknown_provider_blocks_implementation(content)
+        and _unknown_provider_blocks_implementation(
+            content,
+            unknown_provider_values=unknown_provider_values,
+            unknown_hosts=unknown_hosts,
+        )
         and not has_decisions_blockers
     ):
         findings.append(

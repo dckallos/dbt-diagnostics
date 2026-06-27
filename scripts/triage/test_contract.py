@@ -345,6 +345,60 @@ def test_official_docs_required_for_external_provider_contracts() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("title", "body_text"),
+    [
+        (
+            "feat: document AcmeCloud CLI contract",
+            "The implementation depends on an AcmeCloud CLI contract outside this repository.",
+        ),
+        (
+            "feat: preserve hosted API schema guarantees",
+            "The issue depends on a hosted API schema guarantee from the vendor.",
+        ),
+        (
+            "feat: mirror CI service retry behavior",
+            "The implementation relies on CI service behavior for retry semantics.",
+        ),
+        (
+            "feat: validate package-manager resolution behavior",
+            "The issue depends on package-manager behavior for dependency resolution.",
+        ),
+        (
+            "feat: ingest published schema semantics",
+            "The implementation relies on published schema semantics maintained outside this repository.",
+        ),
+    ],
+)
+def test_official_docs_required_for_unknown_or_generic_external_contracts(
+    title: str, body_text: str
+) -> None:
+    issue = {
+        "number": 123,
+        "title": title,
+        "labels": ["enhancement"],
+        "body": common_body(
+            f"""## User-visible problem or current gap
+
+{body_text}
+
+## Expected behavior or target outcome
+
+The issue records the official source or explicit uncertainty before implementation.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert "Official documentation evidence" in result["missing_required_sections"]
+    assert any(
+        item["code"] == "missing-required-section"
+        and item["message"].endswith("Official documentation evidence")
+        for item in result["findings"]
+    )
+
+
 def test_official_docs_not_required_for_repository_local_tracker_state() -> None:
     issue = {
         "number": 116,
@@ -422,6 +476,35 @@ No live provider call is added; this is a deterministic local governance check.
     ]
 
 
+def test_official_docs_meta_wording_does_not_suppress_real_external_claim() -> None:
+    issue = {
+        "number": 124,
+        "title": "feat(governance): require official docs evidence for GitHub API",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+Issue-governance needs a first-class `Official documentation evidence` section.
+The implementation also depends on GitHub API behavior for closing issue
+references across pull requests.
+
+## Expected behavior or target outcome
+
+The contract enforces the section structurally and records the official GitHub
+documentation that supports the API behavior.
+
+## Offline behavior
+
+The contract parses local issue text without network retrieval.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert "Official documentation evidence" in result["missing_required_sections"]
+
+
 def test_official_docs_accepts_known_provider_official_url() -> None:
     issue = {
         "number": 117,
@@ -482,6 +565,69 @@ The issue records external source uncertainty.
 - Docs version or product version: Current hosted docs.
 - Retrieval date: 2026-06-27.
 - Residual uncertainty: None.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert result["governance_state"] == "needs_contract_revision"
+    assert any(
+        item["code"] == "official-docs-unknown-provider"
+        for item in result["findings"]
+    )
+
+
+def test_unknown_provider_field_is_not_masked_by_known_provider_url() -> None:
+    issue = {
+        "number": 125,
+        "title": "feat: document AcmeCloud CLI contract",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The issue relies on an AcmeCloud CLI contract outside this repository.
+
+## Expected behavior or target outcome
+
+The issue records external source uncertainty.
+
+## Official documentation evidence
+
+- Provider: AcmeCloud
+- Official URL: https://docs.github.com/en/actions
+- Supported claim: The AcmeCloud CLI flag is documented by AcmeCloud.
+- Docs version or product version: Current hosted docs.
+- Retrieval date: 2026-06-27.
+- Residual uncertainty: None.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue)
+
+    assert result["governance_state"] == "needs_contract_revision"
+    assert any(
+        item["code"] == "official-docs-unknown-provider"
+        for item in result["findings"]
+    )
+
+
+def test_unknown_url_host_is_not_masked_by_known_provider_text() -> None:
+    issue = {
+        "number": 126,
+        "title": "feat: verify GitHub Actions workflow dispatch",
+        "labels": ["enhancement"],
+        "body": github_actions_contract_body(
+            """## Official documentation evidence
+
+- Provider: GitHub Actions
+- Official URL: https://docs.github.com/en/actions
+- Official URL: https://docs.acme.invalid/actions
+- Supported claim: GitHub Actions workflow dispatch semantics are external to this repository.
+- Docs version or product version: Current hosted GitHub Docs; no pinned product version.
+- Retrieval date: 2026-06-27.
+- Residual uncertainty: Maintainer review must verify the issue interpretation.
 """
         ),
     }
@@ -580,6 +726,36 @@ def test_proposed_body_includes_official_docs_placeholder_when_required() -> Non
         "title": "feat: verify GitHub Actions workflow dispatch",
         "labels": ["enhancement"],
         "body": github_actions_contract_body(),
+    }
+
+    proposed = contract.propose_normalized_body(issue)
+    result = contract.audit_contract({**issue, "body": proposed})
+
+    assert "## Official documentation evidence" in proposed
+    assert contract.UNRESOLVED_PLACEHOLDER in proposed
+    assert result["missing_required_sections"] == []
+    assert any(
+        item["code"] == "unresolved-placeholder-section"
+        and item["section"] == "official_docs"
+        for item in result["findings"]
+    )
+
+
+def test_proposed_body_includes_official_docs_placeholder_for_unknown_trigger() -> None:
+    issue = {
+        "number": 127,
+        "title": "feat: document AcmeCloud CLI contract",
+        "labels": ["enhancement"],
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The implementation depends on an AcmeCloud CLI contract outside this repository.
+
+## Expected behavior or target outcome
+
+The issue records official documentation evidence or explicit uncertainty.
+"""
+        ),
     }
 
     proposed = contract.propose_normalized_body(issue)

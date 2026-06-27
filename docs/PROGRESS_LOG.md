@@ -1324,6 +1324,16 @@ End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented
 - Added the unknown-provider workflow: maintainer-verified unknown sources can
   pass with explicit verification context, while critical unverified unknown
   sources must also be captured under `Maintainer decisions and blockers`.
+- Revised the PR after review so unknown or generic external product, platform,
+  API, CLI, schema, hosted-service, package-manager, and CI-service contract
+  claims trigger the section even when the provider is not in the known-provider
+  list.
+- Tightened validation so provider field values and URL hostnames are checked
+  independently; a known provider mention or known URL no longer masks a
+  separate unknown provider or URL host.
+- Narrowed the self-reference exemption so #115-style contract-section work
+  still does not require itself, while real external-provider claims such as
+  GitHub API behavior still trigger the section.
 - Updated issue contract docs, issue-governance docs, the issue-governance
   skill, and `CHANGELOG.md`.
 - Consulted current official documentation surfaces for Codex/OpenAI, GitHub
@@ -1344,6 +1354,12 @@ End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented
 - Focused tests passed after the unknown-provider workflow update:
   `python -m pytest -q scripts/triage/test_contract.py
   scripts/triage/test_triage.py` -> 108 passed.
+- Review regression tests failed before the revision as expected:
+  `python -m pytest -q scripts/triage/test_contract.py
+  scripts/triage/test_triage.py` -> 10 failed, 108 passed.
+- Focused tests passed after the review revision:
+  `python -m pytest -q scripts/triage/test_contract.py
+  scripts/triage/test_triage.py` -> 118 passed.
 - `python -m py_compile scripts/triage/contract.py
   scripts/triage/official_docs.py scripts/triage/triage.py
   scripts/triage/test_contract.py scripts/triage/test_triage.py` passed.
@@ -1353,22 +1369,27 @@ End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented
   .agents/skills/issue-governance` passed.
 - `bash .codex/bin/action.sh codex-quality --json` passed with no findings.
 - `bash .codex/bin/action.sh check` passed: Codex tests 72 passed; offline
-  tests 649 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  tests 661 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
 
 **Current state**
 - Work is on branch `feat/115-official-docs-evidence`, tracking
   `origin/feat/115-official-docs-evidence`.
+- The latest review revision is local and not pushed. Changed files are the
+  official-docs validator, contract/triage tests, issue-governance docs and
+  skill text, `CHANGELOG.md`, and this progress-log entry.
 - Draft PR #117 is open into `donkey-kong-sandbox` with `Closes #115` in the
   PR body, and GitHub reports issue #115 in `closingIssuesReferences`.
 
 **Next steps**
-- Review provider trigger boundaries, the initial official-domain allowlist,
-  and the unknown-provider blocker wording in PR #117.
+- Review the generic external trigger boundaries, the meta/self-reference
+  exemption, and the independent provider-field/URL-host validation in PR #117.
+- Push the branch only after an explicit GitHub-write approval.
 
 **Be careful**
 - Do not add retrieval, freshness checks, browser automation, or any issue-body
-  write path to this contract. Unknown providers must preserve explicit
-  maintainer verification or uncertainty instead of invented certainty.
+  write path to this contract. Unknown providers and unknown URL hosts must
+  preserve explicit maintainer verification or uncertainty instead of invented
+  certainty.
 
 End of session -- 2026-06-27 issue 115 official documentation evidence contract

@@ -220,19 +220,23 @@ inferred issue kind, governance state, acceptance-coverage checks, findings,
 and a body digest. With `--snapshot`, it performs no GitHub call.
 
 When the issue text clearly relies on an external provider contract, such as a
-hosted API, CLI behavior, schema guarantee, platform rule, or product
-documentation, the contract requires `Official documentation evidence`. The
-check is deterministic and local: it parses the issue body, matches a
-conservative known-provider trigger list, and validates URL hostnames against
-known official documentation domains. It does not retrieve URLs, cache web
-pages, check freshness, or certify that the documentation was interpreted
-correctly.
+hosted API, CLI behavior, schema guarantee, platform rule, product
+documentation, package-manager rule, or CI-service behavior, the contract
+requires `Official documentation evidence`. This applies even when the provider
+is unknown or not in the known-provider list. The check is deterministic and
+local: it parses the issue body, matches conservative known-provider and
+generic external-contract triggers, and validates URL hostnames against known
+official documentation domains. It checks provider field values and URL
+hostnames independently, so one known provider mention cannot mask a separate
+unknown provider or URL host. It does not retrieve URLs, cache web pages, check
+freshness, or certify that the documentation was interpreted correctly.
 
-Unknown documentation providers are allowed only when the issue preserves the
-verification state. If I have verified that the URL is official, I record that
-fact in residual uncertainty and still leave interpretation for review. If the
-provider is unverified and the source is critical before implementation, I also
-record that unresolved verification under `Maintainer decisions and blockers`.
+Unknown documentation providers and unknown URL hosts are allowed only when the
+issue preserves the verification state. If I have verified that the URL is
+official, I record that fact in residual uncertainty and still leave
+interpretation for review. If the source is unverified and critical before
+implementation, I also record that unresolved verification under
+`Maintainer decisions and blockers`.
 
 ### Review packet
 

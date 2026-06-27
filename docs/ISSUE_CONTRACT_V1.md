@@ -134,11 +134,14 @@ The section must name:
 - residual uncertainty.
 
 The deterministic contract check is local-only. It detects conservative known
-provider triggers, checks URL hostnames against known official documentation
-domains, rejects clearly unofficial URLs for known providers, and requires
-explicit maintainer verification or residual uncertainty for unknown providers.
-It does not fetch URLs, cache pages, use a browser, check freshness, or prove
-that the issue interprets the documentation correctly.
+provider triggers and generic external contract claims, including unknown
+products or hosted services. Known-provider checks validate URL hostnames
+against known official documentation domains. Provider field values and URL
+hostnames are checked independently, so one known URL or known provider mention
+does not prove a separate unknown provider or URL host. Unknown providers or
+unknown URL hosts require explicit maintainer verification or residual
+uncertainty. The check does not fetch URLs, cache pages, use a browser, check
+freshness, or prove that the issue interprets the documentation correctly.
 
 For an unknown provider, use the section to preserve the uncertainty instead of
 inventing a trusted domain. If the maintainer has verified that the URL is
@@ -429,7 +432,8 @@ python scripts/triage/triage.py standardize --issue 55 \
 stops before tracker mutation and requires explicit approval for the exact body
 text through the maintainer's normal GitHub workflow.
 
-When `review-packet` or `standardize` sees a known-provider external contract
-claim, it includes or requires `Official documentation evidence` in the same
-local-only flow. A placeholder section still blocks acceptance until the exact
-body records real documentation evidence and residual uncertainty.
+When `review-packet` or `standardize` sees a known-provider, unknown-provider,
+or generic external contract claim, it includes or requires
+`Official documentation evidence` in the same local-only flow. A placeholder
+section still blocks acceptance until the exact body records real documentation
+evidence and residual uncertainty.
