@@ -7,9 +7,12 @@ import zipfile
 import pytest
 
 from conftest import load_codex_script
+from scripts.triage import repo_config
 
 
 check_dist = load_codex_script("check_dist")
+ROOT = repo_config.ROOT
+WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
 
 
 def _write_artifacts(dist_dir, *, forbidden: bool = False) -> None:
@@ -46,3 +49,13 @@ def test_validate_rejects_codex_files_in_sdist(tmp_path) -> None:
     _write_artifacts(tmp_path, forbidden=True)
     with pytest.raises(SystemExit, match="forbidden path"):
         check_dist.validate(tmp_path)
+
+
+def test_validate_skips_when_package_suffixes_are_not_configured(
+    tmp_path, capsys
+) -> None:
+    widgets_policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+
+    check_dist.validate(tmp_path, repo_policy=widgets_policy)
+
+    assert "SKIP: no package artifact suffix requirements configured" in capsys.readouterr().out

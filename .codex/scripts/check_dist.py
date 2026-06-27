@@ -7,7 +7,15 @@ import argparse
 import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
+import sys
 from typing import Iterable
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.triage import repo_config
 
 
 FORBIDDEN_PARTS = {
@@ -20,12 +28,6 @@ FORBIDDEN_PARTS = {
 FORBIDDEN_PREFIXES = (
     "scripts/governance/",
     "scripts/triage/",
-)
-REQUIRED_WHEEL_SUFFIXES = (
-    "dbt_diagnostics/__init__.py",
-    "dbt_diagnostics/templates/report.j2",
-    ".dist-info/METADATA",
-    ".dist-info/entry_points.txt",
 )
 
 
@@ -60,7 +62,15 @@ def _sdist_names(path: Path) -> list[str]:
         return archive.getnames()
 
 
-def validate(dist_dir: Path) -> None:
+def validate(
+    dist_dir: Path, *, repo_policy: repo_config.RepoPolicy | None = None
+) -> None:
+    active_policy = repo_policy or repo_config.load_repo_policy()
+    required_wheel_suffixes = active_policy.product.dist.required_wheel_suffixes
+    required_sdist_suffixes = active_policy.product.dist.required_sdist_suffixes
+    if not required_wheel_suffixes and not required_sdist_suffixes:
+        print("SKIP: no package artifact suffix requirements configured")
+        return
     wheels = sorted(dist_dir.glob("*.whl"))
     sdists = sorted(dist_dir.glob("*.tar.gz"))
     errors: list[str] = []
@@ -73,17 +83,16 @@ def validate(dist_dir: Path) -> None:
     for wheel in wheels:
         names = _wheel_names(wheel)
         errors.extend(validate_member_names(names, wheel))
-        for suffix in REQUIRED_WHEEL_SUFFIXES:
+        for suffix in required_wheel_suffixes:
             if not any(name.endswith(suffix) for name in names):
                 errors.append(f"wheel is missing required member ending in {suffix}")
 
     for sdist in sdists:
         names = _sdist_names(sdist)
         errors.extend(validate_member_names(names, sdist))
-        if not any(name.endswith("/pyproject.toml") for name in names):
-            errors.append("sdist is missing pyproject.toml")
-        if not any(name.endswith("/dbt_diagnostics/__init__.py") for name in names):
-            errors.append("sdist is missing dbt_diagnostics/__init__.py")
+        for suffix in required_sdist_suffixes:
+            if not any(name.endswith("/" + suffix) or name == suffix for name in names):
+                errors.append(f"sdist is missing required member ending in {suffix}")
 
     if errors:
         raise SystemExit("package artifact validation failed:\n- " + "\n- ".join(errors))

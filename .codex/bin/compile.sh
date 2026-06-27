@@ -10,4 +10,4 @@ python_path="$(codex_require_venv)"
 
 codex_header "Compile Python"
 codex_run "$python_path" -m compileall -q -f \
-  dbt_diagnostics scripts .codex/scripts .codex/hooks .codex/tests
+  $CODEX_POLICY_PYTHON_COMPILE_ROOTS

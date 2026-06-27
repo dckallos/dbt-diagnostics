@@ -36,8 +36,39 @@ codex_repo_root() {
   fi
 }
 
+codex_policy_python() {
+  local candidate resolved
+  local candidates=()
+
+  if [ -n "${CODEX_PYTHON:-}" ]; then
+    candidates+=("${CODEX_PYTHON}")
+  fi
+
+  candidates+=(python3.12 python3.11 python3.14 python3.13 python3)
+  for candidate in "${candidates[@]}"; do
+    if resolved="$(command -v "$candidate" 2>/dev/null)" \
+      && "$resolved" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+      printf '%s\n' "$resolved"
+      return 0
+    fi
+  done
+  return 1
+}
+
 CODEX_REPO_ROOT="$(codex_repo_root)"
-CODEX_VENV_DIR="${CODEX_VENV_DIR:-${CODEX_REPO_ROOT}/.venv}"
+
+codex_load_policy_exports() {
+  local python_path exports
+  python_path="$(codex_policy_python)" \
+    || codex_die "Python 3.11 or newer is required to load repository policy"
+  exports="$("$python_path" "${CODEX_REPO_ROOT}/scripts/triage/repo_config.py" export-shell)" \
+    || codex_die "failed to load repository policy"
+  eval "$exports"
+}
+
+codex_load_policy_exports
+
+CODEX_VENV_DIR="${CODEX_VENV_DIR:-${CODEX_REPO_ROOT}/${CODEX_POLICY_VENV_DIR}}"
 
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export PIP_NO_INPUT=1
@@ -66,8 +97,11 @@ codex_require_repo_layout() {
     || codex_die "missing pyproject.toml at repository root: ${CODEX_REPO_ROOT}"
   [ -f "${CODEX_REPO_ROOT}/AGENTS.md" ] \
     || codex_die "missing AGENTS.md at repository root: ${CODEX_REPO_ROOT}"
-  [ -d "${CODEX_REPO_ROOT}/dbt_diagnostics" ] \
-    || codex_die "missing dbt_diagnostics package at repository root"
+  local package_root
+  for package_root in $CODEX_POLICY_PACKAGE_ROOTS; do
+    [ -d "${CODEX_REPO_ROOT}/${package_root}" ] \
+      || codex_die "missing configured package root at repository root: ${package_root}"
+  done
 }
 
 codex_python_is_supported() {
@@ -110,6 +144,18 @@ codex_require_venv() {
     codex_die "virtual environment missing; run: bash .codex/bin/setup.sh"
   fi
   printf '%s\n' "$python_path"
+}
+
+codex_policy_live_install_value() {
+  local name value
+  for name in $CODEX_POLICY_LIVE_INSTALL_ENV_VARS; do
+    eval "value=\${${name}:-}"
+    if [ -n "$value" ]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done
+  printf '0\n'
 }
 
 codex_is_git_checkout() {

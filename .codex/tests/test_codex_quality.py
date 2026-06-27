@@ -6,8 +6,11 @@ from pathlib import Path
 import re
 import sys
 
+from scripts.triage import repo_config
+
 
 ROOT = Path(__file__).resolve().parents[2]
+WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
 
 
 def _load_codex_script(name: str):
@@ -244,6 +247,28 @@ def test_codex_quality_records_deterministic_freshness_bound_protected_paths(
     assert saved["semantically_checked_protected_paths"] == []
     assert saved["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)
+
+
+def test_codex_quality_uses_configured_receipt_and_protected_surfaces(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    data["codex"]["quality_receipt_path"] = "custom/receipt.json"  # type: ignore[index]
+    data["governance"]["paths"]["protected_surfaces"] = ["custom/**"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    protected = tmp_path / "custom" / "tool.py"
+    protected.parent.mkdir()
+    protected.write_text("# protected\n", encoding="ascii")
+
+    receipt = quality.run_quality(
+        root=tmp_path,
+        paths=[Path("custom/tool.py")],
+        repo_policy=policy,
+    )
+
+    assert (tmp_path / "custom" / "receipt.json").is_file()
+    assert receipt["freshness_bound_protected_paths"] == ["custom/tool.py"]
 
 
 def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(

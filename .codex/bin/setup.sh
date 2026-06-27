@@ -16,7 +16,7 @@ MARKER_FILE="${CODEX_VENV_DIR}/.codex-managed"
 FINGERPRINT_FILE="${CODEX_VENV_DIR}/.codex-setup.sha256"
 MODE_FILE="${CODEX_VENV_DIR}/.codex-live-mode"
 LOCK_KEY="$(printf '%s' "$CODEX_REPO_ROOT" | cksum | awk '{print $1}')"
-LOCK_DIR="${TMPDIR:-/tmp}/dbt-diagnostics-codex-${LOCK_KEY}.lock"
+LOCK_DIR="${TMPDIR:-/tmp}/${CODEX_POLICY_ENVIRONMENT_NAME}-codex-${LOCK_KEY}.lock"
 LOCK_HELD=0
 
 [ -f "$TOOLS_FILE" ] \
@@ -52,40 +52,36 @@ acquire_lock() {
 
 verify_environment() {
   local python_path="${CODEX_VENV_DIR}/bin/python"
-  local cli_path="${CODEX_VENV_DIR}/bin/dbt-diagnostics"
   local install_live="$1"
 
   [ -x "$python_path" ] || return 1
-  [ -x "$cli_path" ] || return 1
 
-  "$python_path" - "$install_live" <<'PY' >/dev/null 2>&1
+  "$python_path" - "$install_live" "$CODEX_POLICY_REQUIRED_MODULES" "$CODEX_POLICY_LIVE_MODULES" <<'PY' >/dev/null 2>&1
 from __future__ import annotations
 
 import importlib.util
 import sys
 
-required = [
-    "build",
-    "dbt_diagnostics",
-    "hypothesis",
-    "jinja2",
-    "pre_commit",
-    "pytest",
-    "sqlglot",
-    "twine",
-    "yaml",
-]
+required = [item for item in sys.argv[2].split() if item]
 if sys.argv[1] == "1":
-    required.extend(["cryptography", "dotenv", "snowflake.connector"])
+    required.extend(item for item in sys.argv[3].split() if item)
 
 missing = [name for name in required if importlib.util.find_spec(name) is None]
 raise SystemExit(1 if missing else 0)
 PY
-  "$cli_path" --help >/dev/null 2>&1 || return 1
+  while IFS= read -r command_line; do
+    [ -n "$command_line" ] || continue
+    eval "set -- $command_line"
+    [ "$#" -ge 1 ] || return 1
+    local command_name="$1"
+    shift
+    [ -x "${CODEX_VENV_DIR}/bin/${command_name}" ] || return 1
+    "${CODEX_VENV_DIR}/bin/${command_name}" "$@" >/dev/null 2>&1 || return 1
+  done < <("$python_path" scripts/triage/repo_config.py cli-commands)
   "$python_path" -m pip check >/dev/null 2>&1 || return 1
 }
 
-install_live="${CODEX_INSTALL_LIVE:-${DBT_DIAGNOSTICS_INSTALL_LIVE:-0}}"
+install_live="$(codex_policy_live_install_value)"
 force_setup="${CODEX_SETUP_FORCE:-0}"
 case "$install_live" in
   0|1) ;;
@@ -157,6 +153,8 @@ paths = (
     root / ".codex" / "requirements-tools.txt",
     root / ".codex" / "bin" / "common.sh",
     root / ".codex" / "bin" / "setup.sh",
+    root / "scripts" / "triage" / "policy.toml",
+    root / "scripts" / "triage" / "repo_config.py",
 )
 
 digest = hashlib.sha256()
@@ -189,7 +187,7 @@ else
 fi
 
 codex_run "$venv_python" -m compileall -q \
-  dbt_diagnostics scripts .codex/scripts .codex/tests
+  $CODEX_POLICY_PYTHON_COMPILE_ROOTS
 
 codex_note ""
 codex_note "Codex environment is ready."
