@@ -1003,3 +1003,74 @@ End of session -- 2026-06-26 issue 81 body applied and ready
   `.codex/scripts/__pycache__` writes fail.
 
 End of session -- 2026-06-26 issue 81 backlog synthesis implemented
+
+---
+
+## 2026-06-26 -- issue 91 project-plan wrapper implemented
+
+**What changed**
+- Standardized live issue #91 after review and resumed implementation from the
+  conformant body.
+- Added `bash .codex/bin/action.sh project-plan` and the dedicated
+  `.codex/bin/triage-project-plan.sh` helper.
+- Kept the wrapper read-only: it forwards arguments to
+  `python scripts/triage/triage.py project-plan` and adds no apply path.
+- Added wrapper smoke/parity tests and updated the stable command-surface docs
+  plus `CHANGELOG.md`.
+
+**Validation**
+- `python scripts/triage/triage.py contract --issue 91` passed:
+  `governance_state: conformant`.
+- `.venv/bin/python -m pytest -q .codex/tests/test_environment.py` passed:
+  4 passed.
+- `bash .codex/bin/action.sh project-plan` reached the planner and failed as
+  expected on missing `--snapshot` and `--audit-file`.
+- `PYTHONPYCACHEPREFIX=.venv/pycache bash .codex/bin/action.sh check` passed:
+  621 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema gate
+  skipped as expected.
+
+**Current state**
+- Work is on local branch `feat/91-project-plan-action`, based on
+  `origin/donkey-kong-sandbox`.
+- The branch is ready to commit, push, and open as a draft PR into
+  `donkey-kong-sandbox`.
+
+**Next steps**
+- Stage only the #91 implementation, docs, changelog, and this progress entry.
+- Commit, push, and open the #91 PR.
+
+**Be careful**
+- Do not add a `.codex/environments/environment.toml` app action for
+  `project-plan`; #91 exposes only the stable shell action.
+- Keep Project mutation out of scope. The wrapper is advisory and read-only.
+
+End of session -- 2026-06-26 issue 91 project-plan wrapper implemented
+
+---
+
+## 2026-06-26 -- issue 91 architecture handoff prompt added
+
+**What changed**
+- Added `docs/CONCLUSIONS_ON_HOW_TO_MOVE_FORWARD.md` as a paste-ready
+  ChatGPT Pro prompt and as my written conclusions about the next governance
+  architecture work.
+- The document asks the next model to inspect PR #92 through GitHub MCP, use web
+  research, challenge my conclusions, and propose the next issue/epic backlog
+  for bounded LLM governance review.
+
+**Validation**
+- `PYTHONPYCACHEPREFIX=.venv/pycache bash .codex/bin/action.sh check` passed:
+  621 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema gate
+  skipped as expected.
+
+**Current state**
+- Work remains on branch `feat/91-project-plan-action` for PR #92.
+
+**Next steps**
+- Commit, push, and leave PR #92 ready for review.
+
+**Be careful**
+- The handoff prompt is advisory documentation. It does not add a GitHub write
+  path or change runtime behavior.
+
+End of session -- 2026-06-26 issue 91 architecture handoff prompt added

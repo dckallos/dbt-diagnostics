@@ -22,6 +22,7 @@ Actions:
   compat         Run the local compatibility schema gate
   audit          Run the read-only issue governance/readiness audit
   frontier MODE Select the read-only audit or implementation frontier
+  project-plan   Emit the read-only advisory Project plan
   package        Build, inspect, install, and smoke-test wheel and sdist
   help           Show this message
 USAGE
@@ -62,6 +63,9 @@ case "$action" in
     ;;
   frontier)
     exec bash .codex/bin/triage-frontier.sh "$@"
+    ;;
+  project-plan)
+    exec bash .codex/bin/triage-project-plan.sh "$@"
     ;;
   package)
     exec bash .codex/bin/package.sh "$@"

@@ -76,7 +76,9 @@ least-privileged credentials, and the issue's bounded test plan.
 | Package | `bash .codex/bin/action.sh package` | Build one wheel and sdist, inspect them, install the wheel, and smoke-test the CLI. |
 
 The Issue audit action is read-only. It requires a local `gh` identity but never
-calls a GitHub write endpoint.
+calls a GitHub write endpoint. Additional governance shell actions are exposed
+through the stable dispatcher without adding app-menu buttons: `frontier` and
+`project-plan`.
 
 ## Issue governance workflow
 
@@ -95,27 +97,35 @@ python scripts/triage/triage.py standardize --issue 54 \
   --proposed-body output/triage/issues/54/proposed-body.md \
   --output-dir output/triage/issues/54
 python scripts/triage/triage.py plan --output-dir output/triage
+python scripts/triage/triage.py project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
 python scripts/triage/triage.py frontier --mode audit --json
 python scripts/triage/triage.py frontier --mode implement --json
 ```
 
 For credential-free use, pass `--snapshot output/triage/snapshot.json` to the
 commands that inspect tracker state. `audit.json` written by `plan` or `audit
---output` can be passed directly to `frontier --audit-file`.
+--output` can be passed directly to `frontier --audit-file` or
+`project-plan --audit-file`.
 
 `plan` writes a normalized snapshot, a full readiness audit, a digest-bound
 metadata plan, a human-readable summary, and an approval template that approves
 nothing. `contract`, `review-packet`, and `standardize` write local files only.
 
-The stable frontier wrapper is:
+The stable read-only governance wrappers are:
 
 ```bash
 bash .codex/bin/action.sh frontier audit --json
 bash .codex/bin/action.sh frontier implement --json
+bash .codex/bin/action.sh project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
 ```
 
 An empty implementation frontier is valid and reports `selected_issue: null`.
-Neither wrapper creates a branch, worktree, Codex thread, or GitHub mutation.
+These wrappers do not create a branch, worktree, Codex thread, or GitHub
+mutation.
 
 A later approved session must run a live read-only preflight before a metadata
 write is eligible:

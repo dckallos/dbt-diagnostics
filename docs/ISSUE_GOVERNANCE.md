@@ -19,6 +19,9 @@ python scripts/triage/triage.py backlog-synthesis \
   --audit-file output/triage/audit.json \
   --output output/triage/backlog-synthesis.json
 python scripts/triage/triage.py plan --output-dir output/triage
+python scripts/triage/triage.py project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
 python scripts/triage/triage.py frontier --mode audit --json
 python scripts/triage/triage.py frontier --mode implement --json
 ```
@@ -52,6 +55,11 @@ bash .codex/bin/action.sh frontier audit --json | jq '{selected_issue, candidate
 python scripts/triage/triage.py plan --snapshot output/triage/snapshot.json \
   --output-dir output/triage/plan
 bash .codex/bin/action.sh frontier implement \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/plan/audit.json --json
+
+# Advisory Project layout (read-only).
+bash .codex/bin/action.sh project-plan \
   --snapshot output/triage/snapshot.json \
   --audit-file output/triage/plan/audit.json --json
 ```
@@ -182,6 +190,22 @@ target, request, batch, or precondition changes the digest and invalidates an
 existing approval.
 
 The generated approval template approves no batch and no operation.
+
+### Project plan
+
+```bash
+python scripts/triage/triage.py project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
+bash .codex/bin/action.sh project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
+```
+
+`project-plan` emits the advisory GitHub Project layout from an existing
+snapshot and readiness audit. The stable wrapper uses the repository virtualenv
+and keeps `--json` stdout clean. It writes no GitHub metadata, emits no
+operation plan, and does not replace the approval-gated `apply` path.
 
 ### Contract
 

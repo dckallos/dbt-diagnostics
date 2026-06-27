@@ -56,6 +56,11 @@ python scripts/triage/triage.py audit --snapshot output/triage/snapshot.json
 # read-only frontier selection
 bash .codex/bin/action.sh frontier <mode>
 
+# read-only advisory Project layout from existing local artifacts
+bash .codex/bin/action.sh project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
+
 # per-issue review packet: writes contract.json, review-packet.json, proposed-body.md
 python scripts/triage/triage.py review-packet --issue <n> \
   --output-dir output/triage/issues/<n>
