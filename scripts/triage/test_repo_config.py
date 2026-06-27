@@ -171,6 +171,15 @@ def test_malformed_hook_event_mapping_fails() -> None:
     assert "missing required event" in message
 
 
+def test_hook_event_scripts_are_canonical_until_launcher_is_config_aware() -> None:
+    data = _policy_data()
+    events = data["codex"]["hooks"]["events"]  # type: ignore[index]
+    events["Stop"]["script"] = "custom_stop.py"  # type: ignore[index]
+
+    with pytest.raises(repo_config.RepoConfigError, match="hook launcher scripts"):
+        repo_config.policy_from_mapping(data)
+
+
 def test_invalid_official_docs_provider_domain_fails() -> None:
     data = _policy_data()
     provider = data["governance"]["official_docs"]["providers"][0]  # type: ignore[index]
@@ -363,6 +372,30 @@ def test_worker_packet_commands_reject_mutating_gh_api_shapes(command: str) -> N
         repo_config.policy_from_mapping(data)
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest -q && gh issue edit 1 --body-file proposed-body.md",
+        "bash -lc 'gh issue close 1'",
+        "env GH_REPO=example/widgets gh repo edit --description unsafe",
+        "gh api repos/example/widgets/issues/1/comments -f body=hi",
+        "gh pr create --title unsafe --body unsafe",
+        "gh pr reopen 1",
+        "gh repo edit example/widgets --description unsafe",
+    ],
+)
+def test_worker_packet_commands_reject_compound_and_implicit_writes(
+    command: str,
+) -> None:
+    data = _policy_data()
+    worker_packet = data["worker_packet"]
+    assert isinstance(worker_packet, dict)
+    worker_packet["required_verification_commands"] = [command]
+
+    with pytest.raises(repo_config.RepoConfigError, match="GitHub|mutating"):
+        repo_config.policy_from_mapping(data)
+
+
 def test_worker_packet_commands_allow_read_only_github_commands() -> None:
     data = _policy_data()
     worker_packet = data["worker_packet"]
@@ -373,6 +406,8 @@ def test_worker_packet_commands_allow_read_only_github_commands() -> None:
         "gh issue view 119",
         "gh pr view 122",
         "gh api graphql -f query='query { viewer { login } }'",
+        "gh api -X GET search/issues -f q='repo:example/widgets is:open'",
+        "rg -n 'gh issue edit' docs",
     ]
 
     policy = repo_config.policy_from_mapping(data)
@@ -380,6 +415,25 @@ def test_worker_packet_commands_allow_read_only_github_commands() -> None:
     assert policy.worker_packet.required_verification_commands == tuple(
         worker_packet["required_verification_commands"]
     )
+
+
+@pytest.mark.parametrize("compat_value", [False, []])
+def test_falsey_non_table_compat_policy_fails(compat_value: object) -> None:
+    data = _policy_data()
+    data["compat"] = compat_value
+
+    with pytest.raises(repo_config.RepoConfigError, match="compat must be a table"):
+        repo_config.policy_from_mapping(data)
+
+
+def test_python_compile_roots_are_required_to_avoid_sys_path_compileall() -> None:
+    data = _policy_data()
+    product = data["product"]
+    assert isinstance(product, dict)
+    product["python_compile_roots"] = []
+
+    with pytest.raises(repo_config.RepoConfigError, match="python_compile_roots"):
+        repo_config.policy_from_mapping(data)
 
 
 @pytest.mark.parametrize(

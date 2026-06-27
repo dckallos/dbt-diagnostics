@@ -315,6 +315,27 @@ def test_codex_quality_default_scan_reports_policy_semantic_violations(
     assert check["findings"]
 
 
+def test_codex_quality_default_scan_includes_extensionless_semantic_root(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = ["CODEOWNERS"]  # type: ignore[index]
+    paths["protected_surfaces"] = ["CODEOWNERS"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    (tmp_path / "CODEOWNERS").write_text(
+        "# This read-only tool must not close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is True
+    assert receipt["checks"][0]["checked_files"] == ["CODEOWNERS"]
+    assert receipt["semantically_checked_protected_paths"] == ["CODEOWNERS"]
+
+
 def test_codex_quality_explicit_paths_override_policy_semantic_scan_roots(
     tmp_path: Path,
 ) -> None:

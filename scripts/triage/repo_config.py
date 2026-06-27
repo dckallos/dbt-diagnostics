@@ -265,14 +265,31 @@ GH_MUTATING_SUBCOMMANDS = {
     ),
     "pr": frozenset(
         {
+            "create",
             "merge",
             "close",
             "edit",
+            "reopen",
             "ready",
             "lock",
             "unlock",
             "comment",
             "review",
+            "revert",
+            "update-branch",
+        }
+    ),
+    "repo": frozenset(
+        {
+            "archive",
+            "create",
+            "delete",
+            "deploy-key",
+            "edit",
+            "fork",
+            "rename",
+            "sync",
+            "unarchive",
         }
     ),
     "workflow": frozenset({"run", "disable", "enable"}),
@@ -289,6 +306,11 @@ GH_MUTATING_SUBCOMMANDS = {
 GH_GLOBAL_OPTIONS_WITH_VALUE = frozenset(
     {"--repo", "-R", "--hostname", "--config", "--jq", "--template"}
 )
+GH_API_FIELD_FLAGS = frozenset({"-f", "--raw-field", "-F", "--field"})
+SHELL_CONTROL_TOKENS = frozenset({";", "&&", "||", "|"})
+SHELL_COMMAND_WRAPPERS = frozenset({"bash", "sh", "zsh"})
+SHELL_COMMAND_OPTIONS = frozenset({"-c", "-lc", "-ic"})
+SHELL_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 
 FORBIDDEN_MUTATION_KEYS = frozenset(
     {
@@ -540,6 +562,16 @@ def _codex(value: Any, errors: list[str], label: str) -> CodexPolicy:
         script = _required_relative_path(
             event_table, "script", errors, f"{label}.codex.hooks.events.{event_name}"
         )
+        expected_script = {
+            "PreToolUse": "pre_tool_use.py",
+            "PermissionRequest": "permission_request.py",
+            "Stop": "stop.py",
+        }[event_name]
+        if script and script != expected_script:
+            errors.append(
+                f"{label}.codex.hooks.events.{event_name}.script must be "
+                f"{expected_script!r}; configurable hook launcher scripts are deferred"
+            )
         matcher = event_table.get("matcher")
         if matcher is not None and (
             not isinstance(matcher, str) or not matcher.strip()
@@ -593,7 +625,7 @@ def _product(value: Any, errors: list[str], label: str) -> ProductChecks:
         table.get("python_compile_roots", []),
         errors,
         f"{label}.product.python_compile_roots",
-        required=False,
+        required=True,
         allow_glob=False,
     )
     required_modules = _string_tuple(
@@ -678,7 +710,7 @@ def _product(value: Any, errors: list[str], label: str) -> ProductChecks:
 
 
 def _compat(value: Any, errors: list[str], label: str) -> tuple[CompatSchemaSet, ...]:
-    table = _table(value or {}, errors, f"{label}.compat")
+    table = _table({} if value is None else value, errors, f"{label}.compat")
     raw_sets = table.get("schema_sets", [])
     if not isinstance(raw_sets, list):
         errors.append(f"{label}.compat.schema_sets must be a list")
@@ -942,12 +974,73 @@ def github_mutation_command_reason(command: str) -> str | None:
     """Return a reason when a command string is shaped like a GitHub write."""
 
     try:
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command)
     except ValueError as exc:
         return f"must be shell-tokenizable: {exc}"
-    if not tokens or tokens[0] != "gh":
+    for segment in _shell_command_segments(tokens):
+        reason = _github_mutation_segment_reason(segment)
+        if reason is not None:
+            return reason
+    return None
+
+
+def _shell_tokens(command: str) -> tuple[str, ...]:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    return tuple(lexer)
+
+
+def _shell_command_segments(tokens: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    segments: list[tuple[str, ...]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in SHELL_CONTROL_TOKENS:
+            if current:
+                segments.append(tuple(current))
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(tuple(current))
+    return tuple(segments)
+
+
+def _github_mutation_segment_reason(tokens: Sequence[str]) -> str | None:
+    if not tokens:
         return None
-    gh_args = _gh_command_args(tokens)
+    index = 0
+    while index < len(tokens) and SHELL_ASSIGNMENT_RE.fullmatch(tokens[index]):
+        index += 1
+    if index >= len(tokens):
+        return None
+    command = tokens[index]
+    if command == "env":
+        index += 1
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--":
+                index += 1
+                break
+            if token.startswith("-"):
+                index += 1
+                continue
+            if SHELL_ASSIGNMENT_RE.fullmatch(token):
+                index += 1
+                continue
+            break
+        return _github_mutation_segment_reason(tokens[index:])
+    if command == "command":
+        return _github_mutation_segment_reason(tokens[index + 1 :])
+    if command in SHELL_COMMAND_WRAPPERS:
+        for option_index, token in enumerate(tokens[index + 1 :], start=index + 1):
+            if token in SHELL_COMMAND_OPTIONS and option_index + 1 < len(tokens):
+                return github_mutation_command_reason(tokens[option_index + 1])
+        return None
+    if command != "gh":
+        return None
+
+    gh_args = _gh_command_args(tokens[index:])
     if not gh_args:
         return None
 
@@ -959,11 +1052,13 @@ def github_mutation_command_reason(command: str) -> str | None:
 
     if area == "api":
         if subcommand == "graphql":
-            if GRAPHQL_MUTATION_RE.search(command):
+            if GRAPHQL_MUTATION_RE.search(" ".join(gh_args)):
                 return "must not contain GitHub GraphQL mutation command"
             return None
         method = _gh_api_method(gh_args)
-        if method in GH_MUTATING_METHODS and GH_API_MUTATION_TARGET_RE.search(command):
+        if method in GH_MUTATING_METHODS and GH_API_MUTATION_TARGET_RE.search(
+            " ".join(gh_args)
+        ):
             return (
                 "must not contain mutating gh api command against tracker, workflow, "
                 "secret, or variable surfaces"
@@ -993,17 +1088,29 @@ def _gh_command_args(tokens: Sequence[str]) -> tuple[str, ...]:
 
 def _gh_api_method(gh_args: Sequence[str]) -> str:
     method = "GET"
+    method_explicit = False
     index = 1
     while index < len(gh_args):
         token = gh_args[index]
         if token in {"--method", "-X"} and index + 1 < len(gh_args):
             method = gh_args[index + 1].upper()
+            method_explicit = True
+            index += 2
+            continue
+        if token in GH_API_FIELD_FLAGS:
+            if not method_explicit:
+                method = "POST"
             index += 2
             continue
         if token.startswith("--method="):
             method = token.split("=", 1)[1].upper()
+            method_explicit = True
         elif token.startswith("-X") and len(token) > 2:
             method = token[2:].upper()
+            method_explicit = True
+        elif token.startswith("--raw-field=") or token.startswith("--field="):
+            if not method_explicit:
+                method = "POST"
         index += 1
     return method
 

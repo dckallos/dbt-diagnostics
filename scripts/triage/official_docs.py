@@ -72,7 +72,7 @@ PROVIDERS = (
             r"\bclosingissuesreferences\b",
             r"\bauto-?close keywords?\b",
         ),
-        official_domains=("docs.github.com",),
+        official_domains=("docs.github.com", "cli.github.com"),
     ),
     OfficialDocsProvider(
         key="snowflake",
@@ -264,8 +264,9 @@ _NEGATED_LINE_PREFIX_RE = re.compile(
 
 
 def _matches_any_pattern(text: str, patterns: Iterable[str]) -> tuple[str, ...]:
-    lower = text.lower()
-    return tuple(pattern for pattern in patterns if re.search(pattern, lower))
+    return tuple(
+        pattern for pattern in patterns if re.search(pattern, text, re.IGNORECASE)
+    )
 
 
 def _requires_any_pattern(text: str, patterns: Iterable[str]) -> tuple[str, ...]:
@@ -479,6 +480,12 @@ def _unknown_provider_blocks_implementation(
     unknown_hosts: Iterable[str] = (),
 ) -> bool:
     lower = content.lower()
+    if re.search(
+        r"\b(?:not|no|never|without)\s+"
+        r"(?:an?\s+)?(?:implementation\s+)?(?:critical|blocker|blocking)\b",
+        lower,
+    ) or re.search(r"\bnot\s+critical\s+before implementation\b", lower):
+        return False
     return _unknown_provider_requires_verification(
         content,
         unknown_provider_values=unknown_provider_values,
@@ -496,17 +503,28 @@ def _unknown_provider_blocks_implementation(
 def _field_findings(content: str) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     checks = (
-        ("provider", r"\bprovider\s*:"),
-        ("supported claim or decision", r"\b(supported claim|claim|decision)\s*:"),
+        ("provider", r"(?im)^\s*[-*]?\s*provider\s*:"),
+        (
+            "supported claim or decision",
+            r"(?im)^\s*[-*]?\s*"
+            r"(supported claim or decision|supported claim|claim|decision)\s*:",
+        ),
         (
             "docs version or product version",
-            r"\b(docs version|product version|version)\s*:",
+            r"(?im)^\s*[-*]?\s*"
+            r"(docs version or product version|docs version|product version|version)\s*:",
         ),
-        ("retrieval date", r"\b(retrieval date|retrieved|accessed)\s*:"),
-        ("residual uncertainty", r"\b(residual uncertainty|uncertainty)\s*:"),
+        (
+            "retrieval date",
+            r"(?im)^\s*[-*]?\s*(retrieval date|retrieved|accessed)\s*:",
+        ),
+        (
+            "residual uncertainty",
+            r"(?im)^\s*[-*]?\s*(residual uncertainty|uncertainty)\s*:",
+        ),
     )
     for label, pattern in checks:
-        if not re.search(pattern, content, flags=re.IGNORECASE):
+        if not re.search(pattern, content):
             findings.append(
                 {
                     "level": "error",
@@ -551,8 +569,11 @@ def section_findings(
     *,
     unresolved_placeholder: str,
     has_decisions_blockers: bool = False,
+    decisions_blockers_content: str | None = None,
     official_docs_policy: Any | None = None,
 ) -> list[dict[str, Any]]:
+    if getattr(official_docs_policy, "enabled", True) is False:
+        return []
     providers = _providers_from_policy(official_docs_policy)
     urls = _extract_urls(content)
     required = tuple(requirements)
@@ -639,7 +660,12 @@ def section_findings(
             unknown_provider_values=unknown_provider_values,
             unknown_hosts=unknown_hosts,
         )
-        and not has_decisions_blockers
+        and not _verification_blocker_recorded(
+            decisions_blockers_content,
+            has_decisions_blockers=has_decisions_blockers,
+            unknown_provider_values=unknown_provider_values,
+            unknown_hosts=unknown_hosts,
+        )
     ):
         findings.append(
             {
@@ -653,3 +679,30 @@ def section_findings(
             }
         )
     return findings
+
+
+def _verification_blocker_recorded(
+    content: str | None,
+    *,
+    has_decisions_blockers: bool,
+    unknown_provider_values: Iterable[str],
+    unknown_hosts: Iterable[str],
+) -> bool:
+    if content is None:
+        return has_decisions_blockers
+    lower = content.lower()
+    if not lower.strip():
+        return False
+    if re.search(r"\b(?:no blockers|none|n/?a)\b", lower):
+        return False
+    if not re.search(r"\b(?:block|blocked|blocker|verify|verification|unverified)\b", lower):
+        return False
+    if re.search(r"\b(?:official|provider|source|host|domain|url)\b", lower):
+        return True
+    for value in unknown_provider_values:
+        if value and value.lower() in lower:
+            return True
+    for host in unknown_hosts:
+        if host and host.lower() in lower:
+            return True
+    return False

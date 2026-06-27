@@ -22,49 +22,23 @@ import codex_surface
 from scripts.triage import repo_config
 
 
-GITHUB_MUTATION_PATTERNS = (
-    re.compile(
-        r"\bgh\s+issue\s+"
-        r"(?:create|edit|close|reopen|delete|comment|lock|unlock|pin|unpin|transfer)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\bgh\s+pr\s+(?:merge|close|edit|ready|lock|unlock|comment|review)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"\bgh\s+repo\s+edit\b", re.IGNORECASE),
-    re.compile(r"\bgh\s+workflow\s+(?:run|disable|enable)\b", re.IGNORECASE),
-    re.compile(r"\bgh\s+secret\s+set\b", re.IGNORECASE),
-    re.compile(r"\bgh\s+variable\s+set\b", re.IGNORECASE),
-    re.compile(
-        r"\bgh\s+(?:label|milestone)\s+"
-        r"(?:create|edit|delete|clone|close|reopen)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\bgh\s+project\s+(?:create|edit|delete|item-(?:add|edit|delete|move))\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\bgh\s+api\b(?=.*(?:--method|-X)\s*(?:POST|PUT|PATCH|DELETE)\b)"
-        r"(?=.*\b(?:issues|pulls|labels|milestones|projects)\b)",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\bgh\s+api\s+graphql\b"
-        r"(?=.*(?:-f|--field|-F|--raw-field)\s+query\s*=\s*['\"]?\s*mutation\b)",
-        re.IGNORECASE | re.DOTALL,
-    ),
-)
-
 UNSAFE_COMMAND_PATTERNS = (
-    re.compile(r"\brm\s+(?:-[^\s]*[rf][^\s]*|-[^\s]*[fr][^\s]*)\b", re.IGNORECASE),
+    re.compile(
+        r"\brm\s+(?:-[^\s]*[rf][^\s]*|-[^\s]*[fr][^\s]*)\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\bgit\s+reset\s+--hard\b", re.IGNORECASE),
     re.compile(r"\bgit\s+clean\s+-[^\s]*f", re.IGNORECASE),
     re.compile(r"\bgit\s+checkout\s+--\b", re.IGNORECASE),
-    re.compile(r"\bgit\s+push\b(?=.*\s--force(?:-with-lease)?\b)", re.IGNORECASE),
+    re.compile(
+        r"\bgit\s+push\b(?=.*\s(?:--force(?:-with-lease)?|-[A-Za-z]*f[A-Za-z]*)\b)",
+        re.IGNORECASE,
+    ),
     re.compile(r"\bchmod\s+-R\b", re.IGNORECASE),
-    re.compile(r"\bcurl\b.+\|\s*(?:sh|bash|zsh)\b", re.IGNORECASE),
+    re.compile(
+        r"\bcurl\b.+\|\s*(?:sh|bash|zsh)\b",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -115,7 +89,7 @@ def command_from_payload(payload: Mapping[str, object]) -> str:
 def github_mutation_reason(command: str) -> str | None:
     if not command:
         return None
-    if any(pattern.search(command) for pattern in GITHUB_MUTATION_PATTERNS):
+    if repo_config.github_mutation_command_reason(command) is not None:
         return (
             "Blocked GitHub metadata mutation command. Continue only with exact "
             "maintainer approval for a one-off operator action outside read-only "

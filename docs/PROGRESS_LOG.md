@@ -1629,3 +1629,70 @@ End of session -- 2026-06-27 issue 119 repo policy adapter boundary
   or #118 extraction/distribution work.
 
 End of session -- 2026-06-27 issue 95 synthesis review packet CLI
+
+---
+
+## 2026-06-27 -- orphaned governance review hardening
+
+**What changed**
+- Opened orphaned draft PR #124 from `fix/review-comment-hardening` to
+  `donkey-kong-sandbox` after reviewing non-outdated comments from the last
+  four merged PRs.
+- Shared GitHub mutation command classification between repo policy validation
+  and Codex hooks, including compound shell commands, shell wrappers, repo/PR
+  metadata writes, implicit `gh api` POSTs from field flags, and safe inert
+  command text.
+- Hardened policy validation for non-canonical hook scripts, falsey non-table
+  compatibility config, and empty Python compile roots.
+- Hardened official-doc checks for field-label anchoring, disabled-but-retained
+  sections, relevant blocker text, negated criticality wording,
+  case-insensitive configured triggers, and GitHub CLI manual URLs.
+- Added extensionless configured file handling for path references and semantic
+  scans, and made the hook launcher return event-specific fail-closed JSON when
+  a hook script crashes.
+- Updated `AGENTS.md`, `docs/CODE_STANDARDS.md`, `.codex/README.md`, and
+  `CHANGELOG.md` for the landed operating-principle changes.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `python -m pytest -q scripts/triage/test_repo_config.py
+  scripts/triage/test_contract.py scripts/triage/test_triage.py
+  .codex/tests/test_codex_hooks.py .codex/tests/test_codex_quality.py` passed:
+  287 passed.
+- `python -m pytest -q scripts/triage/test_repo_config.py
+  scripts/triage/test_contract.py scripts/triage/test_readiness.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed:
+  303 passed.
+- `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py
+  .codex/tests/test_environment.py .codex/tests/test_task_context.py
+  .codex/tests/test_check_dist.py` passed: 91 passed.
+- `python -m compileall -q scripts .codex/scripts .codex/hooks .codex/tests`
+  passed.
+- `python -m py_compile scripts/triage/contract.py
+  scripts/triage/official_docs.py scripts/triage/triage.py
+  scripts/triage/repo_config.py .codex/hooks/hook_policy.py` passed.
+- `python -m json.tool .codex/hooks.json >/dev/null`, `bash -n
+  .codex/hooks/run_hook.sh`, and `for script in .codex/bin/*.sh; do bash -n
+  "$script"; done` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
+  tests 765 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+- `bash .codex/bin/action.sh codex-quality --json` passed and refreshed the
+  protected-file receipt.
+
+**Current state**
+- Branch `fix/review-comment-hardening` is pushed.
+- Draft PR #124 is open against `donkey-kong-sandbox`.
+
+**Next steps**
+- Review PR #124 and address CI or review feedback.
+
+**Be careful**
+- This PR intentionally has no attached issue and should not add an issue
+  close keyword.
+- Keep the shared command classifier as the source of truth for hook and
+  read-only artifact GitHub mutation checks.
+
+End of session -- 2026-06-27 orphaned governance review hardening

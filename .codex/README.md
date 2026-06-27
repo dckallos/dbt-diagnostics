@@ -138,6 +138,10 @@ quality receipt. They do not run live Snowflake, call GitHub write endpoints,
 or inspect secrets. Hook failures emit valid JSON and fail closed for the
 operation being evaluated.
 
+GitHub mutation command classification is shared with repository policy
+validation for worker-packet verification commands, so read-only artifacts and
+hook denial use the same command-boundary rules.
+
 The normal `codex-quality` action records two protected-path fields:
 
 - `semantically_checked_protected_paths` lists protected files that were

@@ -27,6 +27,18 @@ LEGACY_DEFAULT_SCAN_PATHS = (
 )
 
 TEXT_SUFFIXES = {".md", ".toml", ".yaml", ".yml", ".txt"}
+TEXT_FILE_NAMES = {
+    ".gitignore",
+    "CODEOWNERS",
+    "Dockerfile",
+    "Gemfile",
+    "LICENSE",
+    "Makefile",
+    "NOTICE",
+    "Procfile",
+    "Rakefile",
+    "SECURITY",
+}
 IGNORED_PARTS = {
     ".git",
     ".hypothesis",
@@ -178,7 +190,11 @@ def _eligible(path: Path, root: Path) -> bool:
         return False
     if path.is_dir():
         return True
-    return path.is_file() and path.suffix.lower() in TEXT_SUFFIXES
+    return path.is_file() and (
+        path.suffix.lower() in TEXT_SUFFIXES
+        or path.name in TEXT_FILE_NAMES
+        or (not path.suffix and path.name[:1].isupper())
+    )
 
 
 def _expand(paths: Iterable[Path], root: Path) -> list[Path]:
