@@ -11,8 +11,13 @@ import re
 import sys
 from typing import Iterable, Iterator, Sequence
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-DEFAULT_SCAN_PATHS = (
+from scripts.triage import repo_config
+
+LEGACY_DEFAULT_SCAN_PATHS = (
     "AGENTS.md",
     "docs/ISSUE_GOVERNANCE.md",
     "docs/ISSUE_CONTRACT_V1.md",
@@ -192,8 +197,26 @@ def _expand(paths: Iterable[Path], root: Path) -> list[Path]:
     return sorted(expanded, key=lambda item: _relative(item, root))
 
 
-def default_paths(root: Path) -> list[Path]:
-    return [root / item for item in DEFAULT_SCAN_PATHS if (root / item).exists()]
+def default_paths(
+    root: Path, *, repo_policy: repo_config.RepoPolicy | None = None
+) -> list[Path]:
+    policy = repo_policy
+    if policy is None:
+        try:
+            policy = repo_config.load_repo_policy()
+        except repo_config.RepoConfigError:
+            if repo_config.DEFAULT_POLICY_PATH.exists():
+                raise
+            return [
+                root / item
+                for item in LEGACY_DEFAULT_SCAN_PATHS
+                if (root / item).exists()
+            ]
+    return [
+        root / item
+        for item in policy.paths.semantic_scan_roots
+        if (root / item).exists()
+    ]
 
 
 def _paragraphs(text: str) -> Iterator[tuple[int, str]]:
@@ -283,9 +306,18 @@ def scan_text(text: str, *, path: str) -> list[Violation]:
     return violations
 
 
-def run_check(paths: Sequence[Path] | None = None, *, root: Path | None = None) -> CheckResult:
+def run_check(
+    paths: Sequence[Path] | None = None,
+    *,
+    root: Path | None = None,
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> CheckResult:
     root = (root or Path.cwd()).resolve()
-    requested = list(paths) if paths is not None else default_paths(root)
+    requested = (
+        list(paths)
+        if paths is not None
+        else default_paths(root, repo_policy=repo_policy)
+    )
     files = _expand(requested, root)
     violations: list[Violation] = []
     for path in files:
@@ -305,7 +337,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     root = Path.cwd().resolve()
     paths = [Path(item) for item in args.path] if args.path else None
-    result = run_check(paths, root=root)
+    try:
+        result = run_check(paths, root=root)
+    except repo_config.RepoConfigError as exc:
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "checked_files": [],
+                        "violations": [],
+                        "error": str(exc),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                    ensure_ascii=True,
+                )
+            )
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
     if args.json:
         print(json.dumps(result.to_json(), indent=2, sort_keys=True, ensure_ascii=True))

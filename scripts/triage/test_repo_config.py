@@ -30,6 +30,14 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
     assert policy.contract.version == "1.0"
     assert "dbt_diagnostics" in policy.paths.reference_roots
     assert ".codex/hooks/**" in policy.paths.protected_surfaces
+    assert policy.paths.semantic_scan_roots == (
+        "AGENTS.md",
+        "docs/ISSUE_GOVERNANCE.md",
+        "docs/ISSUE_CONTRACT_V1.md",
+        ".agents/skills",
+        ".codex/README.md",
+        ".codex/environments",
+    )
     assert policy.codex.environment_name == "dbt-diagnostics"
     assert policy.codex.venv_dir == ".venv"
     assert policy.codex.quality_receipt_path == "output/codex/quality-receipt.json"
@@ -75,6 +83,11 @@ def test_synthetic_non_dbt_policy_loads_without_dbt_assumptions() -> None:
     assert policy.repository.protected_branches == ("main", "trunk")
     assert policy.contract.id == "widgets.issue-contract.v1"
     assert "dbt_diagnostics" not in policy.paths.reference_roots
+    assert policy.paths.semantic_scan_roots == (
+        "AGENTS.md",
+        ".agents/skills",
+        "custom/governance",
+    )
     assert policy.product.package_roots == ()
     assert policy.product.cli.distribution_name is None
     assert policy.product.cli.commands == ()
@@ -126,6 +139,21 @@ def test_reference_roots_cannot_contain_absolute_paths() -> None:
     paths["reference_roots"].append("/outside")  # type: ignore[index]
 
     with pytest.raises(repo_config.RepoConfigError, match="relative"):
+        repo_config.policy_from_mapping(data)
+
+
+@pytest.mark.parametrize(
+    "semantic_root",
+    ["/outside", "../escape", "docs/*.md"],
+)
+def test_semantic_scan_roots_must_be_relative_non_glob_paths(
+    semantic_root: str,
+) -> None:
+    data = _policy_data()
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [semantic_root]  # type: ignore[index]
+
+    with pytest.raises(repo_config.RepoConfigError, match="semantic_scan_roots"):
         repo_config.policy_from_mapping(data)
 
 

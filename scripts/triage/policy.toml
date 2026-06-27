@@ -45,6 +45,14 @@ protected_surfaces = [
   "AGENTS.md",
   ".github/workflows/**",
 ]
+semantic_scan_roots = [
+  "AGENTS.md",
+  "docs/ISSUE_GOVERNANCE.md",
+  "docs/ISSUE_CONTRACT_V1.md",
+  ".agents/skills",
+  ".codex/README.md",
+  ".codex/environments",
+]
 
 [governance.official_docs]
 enabled = true

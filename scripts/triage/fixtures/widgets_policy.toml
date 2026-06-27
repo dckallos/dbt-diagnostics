@@ -27,6 +27,12 @@ protected_surfaces = [
   "scripts/triage/**",
   "docs/*schema*.json",
   "AGENTS.md",
+  "custom/governance/**",
+]
+semantic_scan_roots = [
+  "AGENTS.md",
+  ".agents/skills",
+  "custom/governance",
 ]
 
 [governance.official_docs]

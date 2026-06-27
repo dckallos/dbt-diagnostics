@@ -189,6 +189,7 @@ def test_default_governance_boundary_scan_includes_issue_contract() -> None:
     paths = {path.relative_to(ROOT).as_posix() for path in checker.default_paths(ROOT)}
 
     assert "docs/ISSUE_CONTRACT_V1.md" in paths
+    assert ".codex/README.md" in paths
 
 
 def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
@@ -269,6 +270,77 @@ def test_codex_quality_uses_configured_receipt_and_protected_surfaces(
 
     assert (tmp_path / "custom" / "receipt.json").is_file()
     assert receipt["freshness_bound_protected_paths"] == ["custom/tool.py"]
+
+
+def test_codex_quality_default_scan_uses_policy_semantic_scan_roots(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    rules = tmp_path / "custom" / "governance" / "rules.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text(
+        "This read-only tool must not close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is True
+    assert receipt["checks"][0]["checked_files"] == ["custom/governance/rules.md"]
+    assert receipt["semantically_checked_protected_paths"] == [
+        "custom/governance/rules.md"
+    ]
+    assert receipt["freshness_bound_protected_paths"] == []
+
+
+def test_codex_quality_default_scan_reports_policy_semantic_violations(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    rules = tmp_path / "custom" / "governance" / "rules.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text(
+        "This read-only tool may close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is False
+    check = receipt["checks"][0]
+    assert check["status"] == "failed"
+    assert check["checked_files"] == ["custom/governance/rules.md"]
+    assert check["findings"]
+
+
+def test_codex_quality_explicit_paths_override_policy_semantic_scan_roots(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    custom = tmp_path / "custom" / "governance" / "rules.md"
+    custom.parent.mkdir(parents=True)
+    custom.write_text(
+        "This read-only tool may close GitHub issues.\n",
+        encoding="ascii",
+    )
+    specific = tmp_path / "specific.md"
+    specific.write_text(
+        "This read-only tool must not close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(
+        root=tmp_path,
+        paths=[Path("specific.md")],
+        repo_policy=policy,
+    )
+
+    assert receipt["passed"] is True
+    assert receipt["checks"][0]["checked_files"] == ["specific.md"]
+    assert receipt["semantically_checked_protected_paths"] == []
 
 
 def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(

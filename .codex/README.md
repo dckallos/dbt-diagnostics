@@ -141,17 +141,18 @@ operation being evaluated.
 The normal `codex-quality` action records two protected-path fields:
 
 - `semantically_checked_protected_paths` lists protected files that were
-  actually scanned by deterministic quality checks.
+  actually scanned by deterministic quality checks. With no explicit `--path`,
+  the governance-boundary semantic scan uses the configured
+  `governance.paths.semantic_scan_roots` policy roots.
 - `freshness_bound_protected_paths` lists existing protected files from local
   git status, or from explicit `--path` values in targeted runs, that are bound
   to the receipt timestamp. This field proves `codex-quality` ran after those
   paths changed; it does not claim the files were semantically scanned.
 
-The semantic governance-boundary scan set is still code-owned in PR 1. Repository
-policy controls the receipt path, protected surfaces, and freshness binding, but
-it does not configure which instruction/doc files receive semantic mutation
-authorization checks. Making that scan set policy-owned is a later extraction
-seam.
+Semantic scanning and freshness binding are intentionally separate. A file being
+listed in `semantically_checked_protected_paths` never satisfies the Stop-hook
+freshness gate by itself; changed protected files still need
+`freshness_bound_protected_paths` coverage from a fresh passing receipt.
 
 ## Issue governance workflow
 

@@ -48,6 +48,7 @@ class GovernanceContract:
 class GovernancePaths:
     reference_roots: tuple[str, ...]
     protected_surfaces: tuple[str, ...]
+    semantic_scan_roots: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -154,6 +155,7 @@ class RepoPolicy:
                 "paths": {
                     "reference_roots": list(self.paths.reference_roots),
                     "protected_surfaces": list(self.paths.protected_surfaces),
+                    "semantic_scan_roots": list(self.paths.semantic_scan_roots),
                 },
                 "official_docs": {
                     "enabled": self.official_docs.enabled,
@@ -484,6 +486,13 @@ def _governance(
         required=True,
         allow_glob=True,
     )
+    semantic_scan_roots = _path_tuple(
+        paths_table.get("semantic_scan_roots"),
+        errors,
+        f"{label}.governance.paths.semantic_scan_roots",
+        required=True,
+        allow_glob=False,
+    )
     official_docs = _official_docs(
         table.get("official_docs"), errors, f"{label}.governance.official_docs"
     )
@@ -492,6 +501,7 @@ def _governance(
         GovernancePaths(
             reference_roots=reference_roots,
             protected_surfaces=protected_surfaces,
+            semantic_scan_roots=semantic_scan_roots,
         ),
         official_docs,
     )

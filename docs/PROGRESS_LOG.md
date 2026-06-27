@@ -1430,8 +1430,12 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
   loading fails instead of falling back to built-in protected surfaces; worker
   packet commands reject GitHub mutation shapes; PR-1 drift seams for
   `codex.venv_dir` and official-doc section title are rejected explicitly;
-  no-suffix package policies still inspect built artifacts; and the
-  codex-quality semantic scan split is documented as code-owned for PR 1.
+  and no-suffix package policies still inspect built artifacts.
+- Revised PR #122 locally for the codex-quality policy-awareness pass:
+  `governance.paths.semantic_scan_roots` now configures the default
+  governance-boundary semantic scan, `codex-quality` passes the active policy
+  into that scan, and the receipt still keeps semantic scan evidence separate
+  from Stop-hook freshness coverage.
 
 **Validation**
 - `python -m pytest -q scripts/triage/test_repo_config.py` passed: 41 passed.
@@ -1501,16 +1505,52 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
 - Second PR #122 review revision: `bash .codex/bin/action.sh check` passed:
   Codex tests 78 passed; offline tests 729 passed, 2 skipped, 20 deselected, 1
   warning; compatibility schema gate skipped as expected.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q scripts/triage/test_repo_config.py` passed: 69 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_codex_quality.py` passed: 23 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py` passed: 40 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_doctor.py` passed: 5 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q scripts/triage/test_contract.py
+  scripts/triage/test_readiness.py scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 203 passed.
+- Codex-quality policy-awareness revision:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py
+  .codex/tests/test_environment.py .codex/tests/test_task_context.py
+  .codex/tests/test_check_dist.py` passed: 81 passed.
+- Codex-quality policy-awareness revision: `python -m compileall -q scripts
+  .codex/scripts .codex/hooks .codex/tests` passed.
+- Codex-quality policy-awareness revision: `python -m py_compile
+  scripts/triage/contract.py scripts/triage/official_docs.py
+  scripts/triage/triage.py scripts/triage/repo_config.py` passed.
+- Codex-quality policy-awareness revision: `python -m json.tool
+  .codex/hooks.json`, `bash -n .codex/hooks/run_hook.sh`, and `bash -n` for
+  each `.codex/bin/*.sh` passed.
+- Codex-quality policy-awareness revision: `bash .codex/bin/action.sh doctor`
+  passed with 0 failures and expected local warnings for dirty worktree and
+  absent compat schema cache.
+- Codex-quality policy-awareness revision: `bash .codex/bin/action.sh
+  codex-quality --json` passed and refreshed the protected-file receipt.
+- Codex-quality policy-awareness revision: `bash .codex/bin/action.sh check`
+  passed: Codex tests 83 passed; offline tests 734 passed, 2 skipped, 20
+  deselected, 1 warning; compatibility schema gate skipped as expected.
+- Codex-quality policy-awareness revision:
+  `python scripts/triage/triage.py contract --issue 119` and
+  `python scripts/triage/triage.py contract --issue 115` passed.
 
 **Current state**
 - Work is on local branch `feat/119-repo-policy-adapter`.
 - Draft PR #122 is open against `donkey-kong-sandbox`.
-- The second review-hardening revision is local and not pushed. Keep it as a
-  separate incremental commit before pushing.
+- The codex-quality policy-awareness revision is local and not pushed. Keep it
+  as a separate incremental commit before pushing.
 
 **Next steps**
-- Review the focused hardening diff, then push the local revision only after
-  explicit GitHub-write approval.
+- Review the focused semantic-scan policy-awareness diff, then push the local
+  revision only after explicit GitHub-write approval.
 
 **Be careful**
 - Do not add config that authorizes GitHub writes or weakens hook denial

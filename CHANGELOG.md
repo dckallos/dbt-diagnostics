@@ -11,6 +11,9 @@
 - I moved the governance, Codex doctor, quality, hook, context, package, compat,
   and shell wrapper surfaces to consume the checked-in policy values while
   preserving current `dbt-diagnostics` behavior.
+- I made `codex-quality` semantically scan configured governance instruction
+  roots by default while keeping semantic scan evidence separate from Stop-hook
+  freshness coverage.
 - I added a synthetic `example/widgets-service` policy fixture that proves the
   reusable governance paths do not require `dbt_diagnostics`,
   `dbt-diagnostics`, `donkey-kong-sandbox`, package checks, or dbt schema

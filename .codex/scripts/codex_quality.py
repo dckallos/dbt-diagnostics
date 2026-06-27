@@ -128,7 +128,9 @@ def run_quality(
     if not receipt_path.is_absolute():
         receipt_path = root / receipt_path
 
-    governance_result = check_governance_boundary.run_check(paths, root=root)
+    governance_result = check_governance_boundary.run_check(
+        paths, root=root, repo_policy=active_policy
+    )
     checks = [
         {
             "name": "governance-boundary",

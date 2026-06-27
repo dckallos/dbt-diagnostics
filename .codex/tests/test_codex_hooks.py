@@ -473,6 +473,37 @@ def test_stop_blocks_receipt_that_did_not_pass(tmp_path: Path) -> None:
     assert "did not pass" in output["reason"]
 
 
+def test_stop_rejects_semantic_coverage_without_freshness_coverage(
+    tmp_path: Path,
+) -> None:
+    hook_policy = load_codex_hook("hook_policy")
+    protected = tmp_path / "AGENTS.md"
+    protected.write_text("changed\n", encoding="ascii")
+    receipt_path = tmp_path / "output" / "codex" / "quality-receipt.json"
+    receipt = {
+        "schema_version": 1,
+        "generated_at": "2026-06-27T00:00:00Z",
+        "tool": "codex-quality",
+        "passed": True,
+        "checks": [],
+        "freshness_bound_protected_paths": [],
+        "semantically_checked_protected_paths": ["AGENTS.md"],
+    }
+    receipt["quality_receipt_digest"] = hook_policy.receipt_digest(receipt)
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(json.dumps(receipt), encoding="ascii")
+
+    output = hook_policy.evaluate_stop(
+        stop_payload(tmp_path),
+        root=tmp_path,
+        changed_paths=("AGENTS.md",),
+        receipt_path=receipt_path,
+    )
+
+    assert output["decision"] == "block"
+    assert "not freshness-bound" in output["reason"]
+
+
 def test_stop_blocks_deleted_protected_file_even_if_receipt_claims_coverage(
     tmp_path: Path,
 ) -> None:
