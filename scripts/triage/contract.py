@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import re
 from typing import Any, Iterable, Mapping
 
+from scripts.triage import official_docs
 from scripts.triage.common import iter_markdown_lines, normalize_labels, slugify
 
 CONTRACT_VERSION = "1.0"
@@ -247,6 +248,17 @@ SECTION_DEFINITIONS = (
             "fixtures",
             "what requires a real snowflake account",
             "evidence needed before beginning safely",
+        ),
+    ),
+    SectionDefinition(
+        "official_docs",
+        "Official documentation evidence",
+        (
+            "official documentation evidence",
+            "official docs evidence",
+            "official documentation",
+            "official docs",
+            "official source documentation",
         ),
     ),
     SectionDefinition(
@@ -771,7 +783,7 @@ def _requires_terms(text: str, terms: Iterable[str]) -> bool:
 
 
 def conditional_requirements(
-    kind: str, labels: Iterable[str], body: str, milestone: Any
+    kind: str, labels: Iterable[str], body: str, milestone: Any, title: str = ""
 ) -> list[Requirement]:
     label_set = {label.lower() for label in labels}
     result: list[Requirement] = []
@@ -830,6 +842,16 @@ def conditional_requirements(
             Requirement.one_of(
                 "external_requirements",
                 rationale="External evidence, credentials, permissions, or fixtures must be explicit.",
+            )
+        )
+    if official_docs.requirements(title, labels, body):
+        result.append(
+            Requirement.one_of(
+                "official_docs",
+                rationale=(
+                    "External platform behavior and official contracts must cite "
+                    "official documentation evidence."
+                ),
             )
         )
     if _has_terms(
@@ -994,7 +1016,10 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
     elif kind == "governance":
         requirements = list(GOVERNANCE_REQUIREMENTS)
     requirements.extend(KIND_REQUIREMENTS[kind])
-    requirements.extend(conditional_requirements(kind, labels, body, milestone))
+    official_docs_required = official_docs.requirements(title, labels, body)
+    requirements.extend(
+        conditional_requirements(kind, labels, body, milestone, title=title)
+    )
     recommendations = list(RECOMMENDED[kind])
 
     missing_required: list[str] = []
@@ -1039,6 +1064,17 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
                 "message": f"section '{_TITLE_BY_KEY[key]}' is forbidden for issue kind '{kind}'",
                 "section": key,
             }
+        )
+
+    official_docs_section = section_map(sections).get("official_docs")
+    if official_docs_section is not None:
+        findings.extend(
+            official_docs.section_findings(
+                official_docs_section.content or "",
+                official_docs_required,
+                unresolved_placeholder=UNRESOLVED_PLACEHOLDER,
+                has_decisions_blockers="decisions_blockers" in present,
+            )
         )
 
     findings.extend(title_label_findings(title, labels, kind))
@@ -1166,6 +1202,7 @@ def preferred_section_order(kind: str) -> list[str]:
         "offline_behavior",
         "live_behavior_cost",
         "external_requirements",
+        "official_docs",
         "compatibility_json",
         "migration_rollback",
         "release_priority",
@@ -1178,6 +1215,7 @@ def preferred_section_order(kind: str) -> list[str]:
             "evidence_confidence",
             "investigation_tasks",
             "external_requirements",
+            "official_docs",
             "deliverable",
             "decision_criteria",
             "acceptance_criteria",
@@ -1196,6 +1234,7 @@ def preferred_section_order(kind: str) -> list[str]:
             "non_goals",
             "dependencies_traceability",
             "decisions_blockers",
+            "official_docs",
         ]
     if kind == "epic":
         return [
@@ -1228,7 +1267,9 @@ def propose_normalized_body(issue: Mapping[str, Any]) -> str:
         requirements = list(GOVERNANCE_REQUIREMENTS)
     requirements.extend(KIND_REQUIREMENTS[kind])
     requirements.extend(
-        conditional_requirements(kind, labels, body, issue.get("milestone"))
+        conditional_requirements(
+            kind, labels, body, issue.get("milestone"), title=title
+        )
     )
     mapped_keys = set(mapped)
     for requirement in requirements:

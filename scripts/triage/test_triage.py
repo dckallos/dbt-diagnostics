@@ -1681,6 +1681,324 @@ def test_offline_contract_review_and_standardize_are_local_only(
     assert runner.calls == []
 
 
+def test_official_docs_review_packet_and_standardize_flow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path = tmp_path / "policy.toml"
+    policy_path.write_text(
+        triage.DEFAULT_POLICY.read_text(encoding="ascii"), encoding="ascii"
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    configured_labels = sorted(
+        {label for values in loaded_policy["labels"].values() for label in values}
+    )
+    external_body = """## Summary
+
+I will complete one bounded GitHub Actions integration.
+
+## Evidence and confidence
+
+The current issue depends on GitHub Actions workflow dispatch semantics.
+
+## User-visible problem or current gap
+
+The implementation depends on GitHub Actions workflow_dispatch behavior.
+
+## Expected behavior or target outcome
+
+The issue records the official GitHub Actions documentation that supports the claim.
+
+## Acceptance criteria
+
+- A positive offline command succeeds.
+- An invalid input is rejected.
+- Existing metadata planning remains unchanged in regression tests.
+
+## Focused test plan
+
+I will run positive, negative, and regression tests.
+
+## Scope and likely files
+
+- scripts/triage/triage.py
+
+## Explicit non-goals
+
+- No GitHub metadata mutation.
+
+## Dependencies and traceability
+
+- Parent epic: #93.
+"""
+    saved_snapshot = snapshot(
+        [
+            issue(
+                115,
+                title="feat: verify GitHub Actions workflow dispatch",
+                body=external_body,
+                labels=["enhancement"],
+            )
+        ],
+        labels=configured_labels,
+    )
+    saved_snapshot["policy_sha256"] = triage.sha256_json(loaded_policy)
+    saved_snapshot["snapshot_sha256"] = triage.sha256_json(
+        triage.snapshot_without_digest(saved_snapshot)
+    )
+    snapshot_path = tmp_path / "snapshot.json"
+    write_json(snapshot_path, saved_snapshot)
+
+    semantic_path = tmp_path / "semantic.json"
+    write_json(
+        semantic_path,
+        {
+            "115": {
+                "status": "accepted",
+                "source_claims_checked": ["scripts/triage/triage.py"],
+                "tests_checked": ["scripts/triage/test_triage.py"],
+                "one_pr_coherent": True,
+                "confidence": "high",
+                "dependency_merge_evidence": True,
+            }
+        },
+    )
+    runner = QueueRunner([])
+    output_dir = tmp_path / "issue-115"
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "review-packet",
+                "--issue",
+                "115",
+                "--snapshot",
+                str(snapshot_path),
+                "--semantic-evidence",
+                str(semantic_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    capsys.readouterr()
+    proposed_path = output_dir / "proposed-body.md"
+    proposed = proposed_path.read_text(encoding="ascii")
+    assert "## Official documentation evidence" in proposed
+    assert triage.issue_contract.UNRESOLVED_PLACEHOLDER in proposed
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "standardize",
+                "--issue",
+                "115",
+                "--snapshot",
+                str(snapshot_path),
+                "--proposed-body",
+                str(proposed_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 1
+    )
+    unresolved = json.loads(capsys.readouterr().out)
+    assert unresolved["accepted"] is False
+    assert any(
+        item["code"] == "unresolved-placeholder-section"
+        and item["section"] == "official_docs"
+        for item in unresolved["contract"]["findings"]
+    )
+
+    proposed_path.write_text(
+        proposed.replace(
+            triage.issue_contract.UNRESOLVED_PLACEHOLDER,
+            """- Provider: GitHub Actions
+- Official URL: https://docs.github.com/en/actions
+- Supported claim: GitHub Actions workflow dispatch semantics are external to this repository.
+- Docs version or product version: Current hosted GitHub Docs; no pinned product version.
+- Retrieval date: 2026-06-27.
+- Residual uncertainty: Maintainer review must verify the issue interpretation.""",
+        ),
+        encoding="ascii",
+    )
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "standardize",
+                "--issue",
+                "115",
+                "--snapshot",
+                str(snapshot_path),
+                "--proposed-body",
+                str(proposed_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    accepted = json.loads(capsys.readouterr().out)
+    assert accepted["accepted"] is True
+    assert accepted["local_only"] is True
+    assert accepted["github_mutation"] is False
+    assert runner.calls == []
+
+
+def test_unknown_external_docs_review_packet_and_standardize_flow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path = tmp_path / "policy.toml"
+    policy_path.write_text(
+        triage.DEFAULT_POLICY.read_text(encoding="ascii"), encoding="ascii"
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    configured_labels = sorted(
+        {label for values in loaded_policy["labels"].values() for label in values}
+    )
+    external_body = """## Summary
+
+I will complete one bounded AcmeCloud CLI integration.
+
+## Evidence and confidence
+
+The current issue depends on an AcmeCloud CLI contract outside this repository.
+
+## User-visible problem or current gap
+
+The implementation depends on an AcmeCloud CLI flag guarantee.
+
+## Expected behavior or target outcome
+
+The issue records the official source or explicit uncertainty.
+
+## Acceptance criteria
+
+- A positive offline command succeeds.
+- An invalid input is rejected.
+- Existing metadata planning remains unchanged in regression tests.
+
+## Focused test plan
+
+I will run positive, negative, and regression tests.
+
+## Scope and likely files
+
+- scripts/triage/triage.py
+
+## Explicit non-goals
+
+- No GitHub metadata mutation.
+
+## Dependencies and traceability
+
+- Parent epic: #93.
+"""
+    saved_snapshot = snapshot(
+        [
+            issue(
+                115,
+                title="feat: document AcmeCloud CLI contract",
+                body=external_body,
+                labels=["enhancement"],
+            )
+        ],
+        labels=configured_labels,
+    )
+    saved_snapshot["policy_sha256"] = triage.sha256_json(loaded_policy)
+    saved_snapshot["snapshot_sha256"] = triage.sha256_json(
+        triage.snapshot_without_digest(saved_snapshot)
+    )
+    snapshot_path = tmp_path / "snapshot.json"
+    write_json(snapshot_path, saved_snapshot)
+
+    semantic_path = tmp_path / "semantic.json"
+    write_json(
+        semantic_path,
+        {
+            "115": {
+                "status": "accepted",
+                "source_claims_checked": ["scripts/triage/triage.py"],
+                "tests_checked": ["scripts/triage/test_triage.py"],
+                "one_pr_coherent": True,
+                "confidence": "high",
+                "dependency_merge_evidence": True,
+            }
+        },
+    )
+    runner = QueueRunner([])
+    output_dir = tmp_path / "issue-115"
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "review-packet",
+                "--issue",
+                "115",
+                "--snapshot",
+                str(snapshot_path),
+                "--semantic-evidence",
+                str(semantic_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
+    capsys.readouterr()
+    proposed_path = output_dir / "proposed-body.md"
+    proposed = proposed_path.read_text(encoding="ascii")
+    assert "## Official documentation evidence" in proposed
+    assert triage.issue_contract.UNRESOLVED_PLACEHOLDER in proposed
+
+    assert (
+        triage.main(
+            [
+                "--policy",
+                str(policy_path),
+                "standardize",
+                "--issue",
+                "115",
+                "--snapshot",
+                str(snapshot_path),
+                "--proposed-body",
+                str(proposed_path),
+                "--output-dir",
+                str(output_dir),
+                "--json",
+            ],
+            runner=runner,
+        )
+        == 1
+    )
+    unresolved = json.loads(capsys.readouterr().out)
+    assert unresolved["accepted"] is False
+    assert any(
+        item["code"] == "unresolved-placeholder-section"
+        and item["section"] == "official_docs"
+        for item in unresolved["contract"]["findings"]
+    )
+    assert runner.calls == []
+
+
 def test_standardize_rejects_unresolved_content_anchor(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

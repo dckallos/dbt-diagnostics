@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Require official documentation evidence for external contracts
+
+- I added a conditional `Official documentation evidence` issue-contract
+  section for issues that rely on external platform behavior, product docs,
+  API or CLI contracts, schema guarantees, hosted service rules,
+  package-manager behavior, CI-service behavior, or similar official source
+  material outside this repository, including unknown providers.
+- I made the contract and standardize paths validate official documentation
+  evidence offline with deterministic known-provider and generic external
+  triggers plus independent provider-field and URL-host checks, without
+  fetching docs, caching pages, running browser automation, or adding a GitHub
+  write path.
+- I added the unknown-provider workflow: maintainer-verified unknown sources
+  and unknown URL hosts must preserve verification context, while critical
+  unverified unknown sources must also appear in
+  `Maintainer decisions and blockers`.
+- I updated issue-governance docs and skill instructions so standardized issues
+  record the provider, official URL, supported claim, version context,
+  retrieval date, and residual uncertainty when the section is required.
+
 ### Add Codex mutation-blocking hooks
 
 - I added repo-local Codex hooks for `PreToolUse`, `PermissionRequest`, and

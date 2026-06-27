@@ -219,6 +219,25 @@ I use `contract` to audit exactly one issue against contract v1. It emits the
 inferred issue kind, governance state, acceptance-coverage checks, findings,
 and a body digest. With `--snapshot`, it performs no GitHub call.
 
+When the issue text clearly relies on an external provider contract, such as a
+hosted API, CLI behavior, schema guarantee, platform rule, product
+documentation, package-manager rule, or CI-service behavior, the contract
+requires `Official documentation evidence`. This applies even when the provider
+is unknown or not in the known-provider list. The check is deterministic and
+local: it parses the issue body, matches conservative known-provider and
+generic external-contract triggers, and validates URL hostnames against known
+official documentation domains. It checks provider field values and URL
+hostnames independently, so one known provider mention cannot mask a separate
+unknown provider or URL host. It does not retrieve URLs, cache web pages, check
+freshness, or certify that the documentation was interpreted correctly.
+
+Unknown documentation providers and unknown URL hosts are allowed only when the
+issue preserves the verification state. If I have verified that the URL is
+official, I record that fact in residual uncertainty and still leave
+interpretation for review. If the source is unverified and critical before
+implementation, I also record that unresolved verification under
+`Maintainer decisions and blockers`.
+
 ### Review packet
 
 ```bash
@@ -239,6 +258,10 @@ output/triage/issues/54/proposed-body.md
 The packet is bounded to one issue, direct dependencies, issue-specific parent
 excerpts, referenced paths, checked source and test entry points, uncertainty,
 and verification commands. It does not embed the full tracker.
+
+If official documentation evidence is required and missing, the proposed body
+contains a local placeholder section. The packet does not fetch documentation or
+turn documentation URLs into executable operations.
 
 ### Standardize
 
@@ -276,6 +299,13 @@ This layer is assistive and non-authoritative. It must:
 - keep proven and inferred separate -- hypothesis-label anything it cannot
   ground and list residual open questions, never fabricating acceptance facts,
   test results, or decisions to clear the gate;
+- include `Official documentation evidence` when the issue relies on external
+  platform behavior, and record provider, official URL, supported claim,
+  version context, retrieval date, and residual uncertainty without fetching the
+  page during standardization;
+- for unknown providers, either record maintainer verification in residual
+  uncertainty or, when verification is required before implementation, also add
+  the unresolved verification to `Maintainer decisions and blockers`;
 - prefix each drafted section with
   `> Draft (machine-authored; needs maintainer verification)`;
 - stop before any GitHub mutation. The maintainer reviews the diff and applies
