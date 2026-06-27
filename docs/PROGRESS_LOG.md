@@ -1219,15 +1219,19 @@ End of session -- 2026-06-27 PR 113 review fixes and governance hardening
   `Stop`, plus a JSON-safe `.codex/hooks/run_hook.sh` launcher. The launcher
   resolves the git root, requires the repository `.venv`, and fails closed with
   valid hook JSON if the root, interpreter, or hook script cannot be resolved.
+- Tightened `.codex/hooks.json` so each configured hook command resolves the
+  git root before invoking the launcher and emits event-specific fail-closed
+  JSON itself if that pre-launch root lookup fails.
 - Added shared hook policy code that blocks direct GitHub tracker metadata
   mutation shapes and unsafe shell command shapes before execution or
   escalation. The blocked GitHub shapes now include GraphQL mutations, PR
   comments/reviews, repository edits, workflow dispatch/toggle commands, and
   secret/variable writes.
-- Strengthened the Stop hook quality gate. `codex-quality` now writes a
-  digest-bound deterministic `covered_protected_paths` receipt field, and Stop
-  requires every changed protected path to be covered by that field, present on
-  disk, passing, digest-valid, and not newer than the receipt.
+- Strengthened the Stop hook quality gate. `codex-quality` now writes separate
+  digest-bound deterministic `semantically_checked_protected_paths` and
+  `freshness_bound_protected_paths` receipt fields. Stop requires every changed
+  protected path to be freshness-bound, present on disk, passing, digest-valid,
+  and not newer than the receipt.
 - Wired hook JSON, launcher, and script validation into the Codex doctor,
   compile, and check surfaces.
 - Documented local hook trust, launcher behavior, `.venv` execution, and
@@ -1252,28 +1256,38 @@ End of session -- 2026-06-27 PR 113 review fixes and governance hardening
   `python -m pytest -q .codex/tests/test_codex_hooks.py
   .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 16
   failed, 33 passed.
-- Focused revised tests passed:
+- First follow-up revision test run failed as intended before implementation:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 9 failed,
+  50 passed.
+- Focused revised tests passed after the first implementation:
   `python -m pytest -q .codex/tests/test_codex_hooks.py
   .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 55
   passed.
+- Focused follow-up tests passed:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 61
+  passed.
 - `python -m json.tool .codex/hooks.json` passed.
+- `bash -n .codex/hooks/run_hook.sh` passed.
 - `python -m py_compile .codex/scripts/*.py .codex/hooks/*.py
-  .codex/tests/*.py` passed after rerunning with approved filesystem
-  escalation for `.pyc` writes.
+  .codex/tests/*.py` passed.
 - `bash .codex/bin/action.sh codex-quality --json` passed with no findings and
-  wrote a receipt whose `covered_protected_paths` includes the changed
-  protected hook/script/config paths.
+  wrote a receipt whose `freshness_bound_protected_paths` includes the changed
+  protected hook/script/config paths, while
+  `semantically_checked_protected_paths` is limited to files actually scanned by
+  the governance-boundary check.
 - Stop hook smoke test passed with
   `{"systemMessage": "codex-quality receipt covers protected changes."}`.
-- `bash .codex/bin/action.sh check` passed: Codex tests 66 passed; offline
+- `bash .codex/bin/action.sh check` passed: Codex tests 72 passed; offline
   tests 641 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
 
 **Current state**
 - Work is on local branch `chore/106-codex-hooks`, tracking
   `origin/chore/106-codex-hooks` for draft PR #114 into `donkey-kong-sandbox`.
-- The PR #114 revision is local only. I did not push because this session's
-  scope explicitly kept GitHub writes out of scope.
+- The branch has been pushed to origin through commit `d3ded0a`. This follow-up
+  edit set is local until an explicit PR-branch push is authorized.
 - Live issue #106 has the approved conformant body.
 
 **Next steps**

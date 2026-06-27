@@ -25,6 +25,8 @@ EXPECTED_HOOK_SCRIPTS = {
     "PreToolUse": "pre_tool_use.py",
     "Stop": "stop.py",
 }
+HOOK_LAUNCHER_PATH = ".codex/hooks/run_hook.sh"
+ROOT_RESOLVED_HOOK_LAUNCHER = '"$root/.codex/hooks/run_hook.sh"'
 IGNORED_PARTS = {".git", ".venv", "__pycache__"}
 
 
@@ -252,10 +254,25 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} must run through bash -lc"
                     )
-                marker = ".codex/hooks/run_hook.sh"
-                if marker not in command:
+                script = argv[2] if len(argv) >= 3 else ""
+                if HOOK_LAUNCHER_PATH not in command:
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} must use the hook launcher"
+                    )
+                    continue
+                if "git rev-parse --show-toplevel" not in script:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must resolve the git root before launching hooks"
+                    )
+                    continue
+                if ROOT_RESOLVED_HOOK_LAUNCHER not in script:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must launch hooks from the resolved git root"
+                    )
+                    continue
+                if "cannot resolve git root" not in script or "printf" not in script:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must emit fail-closed JSON when git root resolution fails"
                     )
                     continue
                 expected_script = EXPECTED_HOOK_SCRIPTS[event]

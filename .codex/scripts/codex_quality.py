@@ -73,15 +73,26 @@ def changed_paths_from_git(root: Path) -> tuple[str, ...]:
     return tuple(paths)
 
 
-def covered_protected_paths(
+def semantically_checked_protected_paths(
+    *,
+    root: Path,
+    checked_files: Sequence[str],
+) -> tuple[str, ...]:
+    existing_checked_files = [
+        path
+        for path in checked_files
+        if path and (root / codex_surface.normalize_path(path)).exists()
+    ]
+    return codex_surface.protected_paths(existing_checked_files)
+
+
+def freshness_bound_protected_paths(
     *,
     root: Path,
     requested_paths: Sequence[Path] | None,
-    checked_files: Sequence[str],
 ) -> tuple[str, ...]:
     if requested_paths is None:
-        candidates = list(checked_files)
-        candidates.extend(changed_paths_from_git(root))
+        candidates = list(changed_paths_from_git(root))
     else:
         candidates = [
             codex_surface.normalize_requested_path(path, root=root)
@@ -118,10 +129,13 @@ def run_quality(
             ],
         }
     ]
-    covered_paths = covered_protected_paths(
+    semantically_checked_paths = semantically_checked_protected_paths(
+        root=root,
+        checked_files=governance_result.checked_files,
+    )
+    freshness_bound_paths = freshness_bound_protected_paths(
         root=root,
         requested_paths=paths,
-        checked_files=governance_result.checked_files,
     )
     passed = all(check["status"] == "passed" for check in checks)
     receipt: dict[str, object] = {
@@ -129,7 +143,8 @@ def run_quality(
         "generated_at": utc_now(),
         "tool": "codex-quality",
         "passed": passed,
-        "covered_protected_paths": list(covered_paths),
+        "freshness_bound_protected_paths": list(freshness_bound_paths),
+        "semantically_checked_protected_paths": list(semantically_checked_paths),
         "checks": checks,
     }
     receipt["quality_receipt_digest"] = receipt_digest(receipt)

@@ -221,15 +221,18 @@ def load_receipt(receipt_path: Path) -> tuple[dict[str, object] | None, str | No
     return value, None
 
 
-def receipt_covered_paths(
+def receipt_freshness_bound_paths(
     receipt: Mapping[str, object],
 ) -> tuple[tuple[str, ...] | None, str | None]:
-    value = receipt.get("covered_protected_paths")
+    value = receipt.get("freshness_bound_protected_paths")
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        return None, "codex-quality receipt has no valid covered_protected_paths"
+        return None, "codex-quality receipt has no valid freshness_bound_protected_paths"
     normalized = codex_surface.protected_paths(value)
     if list(normalized) != value:
-        return None, "codex-quality receipt covered_protected_paths is not deterministic"
+        return (
+            None,
+            "codex-quality receipt freshness_bound_protected_paths is not deterministic",
+        )
     return normalized, None
 
 
@@ -243,7 +246,7 @@ def receipt_covers_protected_paths(
     if error is not None:
         return False, error
 
-    covered_paths, error = receipt_covered_paths(receipt)
+    freshness_bound_paths, error = receipt_freshness_bound_paths(receipt)
     if error is not None:
         return False, error
 
@@ -256,10 +259,12 @@ def receipt_covers_protected_paths(
             missing_local_paths
         )
 
-    uncovered_paths = sorted(set(normalized_protected_paths) - set(covered_paths))
-    if uncovered_paths:
-        return False, "protected paths not covered by codex-quality receipt: " + ", ".join(
-            uncovered_paths
+    unbound_paths = sorted(set(normalized_protected_paths) - set(freshness_bound_paths))
+    if unbound_paths:
+        return (
+            False,
+            "protected paths not freshness-bound by codex-quality receipt: "
+            + ", ".join(unbound_paths),
         )
 
     receipt_mtime = receipt_path.stat().st_mtime_ns

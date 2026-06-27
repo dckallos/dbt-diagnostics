@@ -98,6 +98,12 @@ If the git root, `.venv/bin/python`, or hook script is unavailable, the
 launcher emits valid event-specific hook JSON and fails closed for the
 operation being evaluated.
 
+The commands in `.codex/hooks.json` also resolve the git root before invoking
+the launcher, because Codex may run hooks from the session working directory
+rather than the repository root. If that first root lookup fails before the
+launcher can run, the configured command emits event-specific fail-closed JSON
+itself.
+
 They are local safety checks only:
 
 - `PreToolUse` blocks direct GitHub metadata mutation commands and known unsafe
@@ -105,17 +111,22 @@ They are local safety checks only:
 - `PermissionRequest` denies escalation for known unsafe command shapes.
 - `Stop` blocks finalization when protected Codex or governance files changed
   without a digest-valid, passing `output/codex/quality-receipt.json` whose
-  deterministic `covered_protected_paths` field covers every changed protected
-  path. The receipt must also be newer than the covered protected files.
+  deterministic `freshness_bound_protected_paths` field includes every changed
+  protected path. The receipt must also be newer than those protected files.
 
 Hooks inspect the hook payload, command text, local git status, and the local
 quality receipt. They do not run live Snowflake, call GitHub write endpoints,
 or inspect secrets. Hook failures emit valid JSON and fail closed for the
 operation being evaluated.
 
-The normal `codex-quality` action records default governance-scan surfaces and
-any locally changed protected paths it can see from git status. A targeted run
-can pass `--path` values to cover a specific protected path set.
+The normal `codex-quality` action records two protected-path fields:
+
+- `semantically_checked_protected_paths` lists protected files that were
+  actually scanned by deterministic quality checks.
+- `freshness_bound_protected_paths` lists existing protected files from local
+  git status, or from explicit `--path` values in targeted runs, that are bound
+  to the receipt timestamp. This field proves `codex-quality` ran after those
+  paths changed; it does not claim the files were semantically scanned.
 
 ## Issue governance workflow
 

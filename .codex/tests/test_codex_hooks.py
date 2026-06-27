@@ -36,6 +36,12 @@ def run_hook(name: str, payload: object | str) -> dict[str, object]:
     return json.loads(result.stdout)
 
 
+def configured_hook_command(event: str) -> str:
+    config = json.loads((ROOT / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    groups = config["hooks"][event]
+    return groups[0]["hooks"][0]["command"]
+
+
 def bash_payload(
     command: str,
     *,
@@ -85,7 +91,9 @@ def test_hooks_config_uses_git_root_commands() -> None:
         for group in groups
         for handler in group["hooks"]
     ]
-    assert all(".codex/hooks/run_hook.sh" in command for command in commands)
+    assert all("git rev-parse --show-toplevel" in command for command in commands)
+    assert all('"$root/.codex/hooks/run_hook.sh"' in command for command in commands)
+    assert all("exec .codex/hooks/run_hook.sh" not in command for command in commands)
     assert any("pre_tool_use.py" in command for command in commands)
     assert any("permission_request.py" in command for command in commands)
     assert any("stop.py" in command for command in commands)
@@ -94,6 +102,81 @@ def test_hooks_config_uses_git_root_commands() -> None:
     )
     assert ".venv/bin/python" in launcher
     assert "git rev-parse --show-toplevel" in launcher
+
+
+def test_hooks_config_command_runs_from_repository_subdirectory() -> None:
+    command = configured_hook_command("PreToolUse")
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        cwd=ROOT / "docs",
+        input=json.dumps(bash_payload("python -V")),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == {
+        "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+    }
+
+
+@pytest.mark.parametrize(
+    ("event", "expected_key"),
+    [
+        ("PreToolUse", "permissionDecisionReason"),
+        ("PermissionRequest", "message"),
+        ("Stop", "reason"),
+    ],
+)
+def test_hooks_config_git_root_failure_emits_valid_event_json(
+    tmp_path: Path,
+    event: str,
+    expected_key: str,
+) -> None:
+    command = configured_hook_command(event)
+    payload = (
+        stop_payload(tmp_path)
+        if event == "Stop"
+        else bash_payload(
+            "python -V",
+            event=event,
+            description="check python" if event == "PermissionRequest" else None,
+        )
+    )
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        cwd=tmp_path,
+        input=json.dumps(payload),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    output = json.loads(result.stdout)
+    if event == "Stop":
+        assert output["decision"] == "block"
+        assert "cannot resolve git root" in output[expected_key]
+        return
+
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["hookEventName"] == event
+    if event == "PreToolUse":
+        assert hook_output["permissionDecision"] == "deny"
+        assert "cannot resolve git root" in hook_output[expected_key]
+    else:
+        decision = hook_output["decision"]
+        assert decision["behavior"] == "deny"
+        assert "cannot resolve git root" in decision[expected_key]
 
 
 def test_pre_tool_use_blocks_direct_github_issue_mutation() -> None:
@@ -270,7 +353,7 @@ def test_stop_blocks_protected_change_not_covered_by_receipt(tmp_path: Path) -> 
     )
 
     assert output["decision"] == "block"
-    assert "not covered" in output["reason"]
+    assert "not freshness-bound" in output["reason"]
 
 
 def test_stop_allows_protected_change_covered_by_receipt(tmp_path: Path) -> None:
@@ -314,7 +397,8 @@ def test_stop_blocks_receipt_with_invalid_digest(tmp_path: Path) -> None:
                 "tool": "codex-quality",
                 "passed": True,
                 "checks": [],
-                "covered_protected_paths": ["AGENTS.md"],
+                "freshness_bound_protected_paths": ["AGENTS.md"],
+                "semantically_checked_protected_paths": [],
                 "quality_receipt_digest": "wrong",
             }
         ),
@@ -343,7 +427,8 @@ def test_stop_blocks_receipt_that_did_not_pass(tmp_path: Path) -> None:
         "tool": "codex-quality",
         "passed": False,
         "checks": [],
-        "covered_protected_paths": ["AGENTS.md"],
+        "freshness_bound_protected_paths": ["AGENTS.md"],
+        "semantically_checked_protected_paths": [],
     }
     receipt["quality_receipt_digest"] = hook_policy.receipt_digest(receipt)
     receipt_path.parent.mkdir(parents=True)
@@ -371,7 +456,8 @@ def test_stop_blocks_deleted_protected_file_even_if_receipt_claims_coverage(
         "tool": "codex-quality",
         "passed": True,
         "checks": [],
-        "covered_protected_paths": ["AGENTS.md"],
+        "freshness_bound_protected_paths": ["AGENTS.md"],
+        "semantically_checked_protected_paths": [],
     }
     receipt["quality_receipt_digest"] = hook_policy.receipt_digest(receipt)
     receipt_path.parent.mkdir(parents=True)

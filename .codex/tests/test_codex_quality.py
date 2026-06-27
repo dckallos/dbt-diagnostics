@@ -209,14 +209,15 @@ def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
     assert saved["schema_version"] == 1
     assert saved["checks"][0]["name"] == "governance-boundary"
     assert saved["checks"][0]["status"] == "passed"
-    assert saved["covered_protected_paths"] == [
+    assert saved["semantically_checked_protected_paths"] == [
         ".agents/skills/issue-work/SKILL.md",
         "AGENTS.md",
     ]
+    assert saved["freshness_bound_protected_paths"] == []
     assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)
 
 
-def test_codex_quality_records_deterministic_covered_protected_paths(
+def test_codex_quality_records_deterministic_freshness_bound_protected_paths(
     tmp_path: Path,
 ) -> None:
     quality = _load_codex_script("codex_quality")
@@ -237,7 +238,35 @@ def test_codex_quality_records_deterministic_covered_protected_paths(
         ],
     )
 
-    assert receipt["covered_protected_paths"] == [".codex/hooks/stop.py"]
+    assert receipt["semantically_checked_protected_paths"] == []
+    assert receipt["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     saved = json.loads(receipt_path.read_text(encoding="ascii"))
-    assert saved["covered_protected_paths"] == [".codex/hooks/stop.py"]
+    assert saved["semantically_checked_protected_paths"] == []
+    assert saved["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)
+
+
+def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    hooks_dir = tmp_path / ".codex" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "stop.py").write_text("# stop hook\n", encoding="ascii")
+    (hooks_dir / "run_hook.sh").write_text("#!/usr/bin/env bash\n", encoding="ascii")
+    receipt_path = tmp_path / "output" / "codex" / "quality-receipt.json"
+
+    receipt = quality.run_quality(
+        root=tmp_path,
+        receipt_path=receipt_path,
+        paths=[
+            Path(".codex/hooks/stop.py"),
+            Path(".codex/hooks/run_hook.sh"),
+        ],
+    )
+
+    assert receipt["semantically_checked_protected_paths"] == []
+    assert receipt["freshness_bound_protected_paths"] == [
+        ".codex/hooks/run_hook.sh",
+        ".codex/hooks/stop.py",
+    ]
