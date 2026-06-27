@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Add synthesis review packet CLI
+
+- I added `python scripts/triage/triage.py synthesis-review-packet` to build a
+  bounded v1 review packet from local snapshot, readiness-audit,
+  backlog-synthesis, and optional project-plan artifacts.
+- The command validates source artifacts, checks digest lineage, validates the
+  packet before writing or printing, keeps `--json` stdout clean, and does not
+  add GitHub calls, issue comments, executable operations, or an apply path.
+
 ### Add repo policy adapter boundary for governance tooling
 
 - I added a typed `scripts/triage/policy.toml` loader for repository identity,

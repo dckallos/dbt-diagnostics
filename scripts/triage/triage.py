@@ -3524,6 +3524,51 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, help="write synthesis JSON locally"
     )
 
+    synthesis_review_packet = subparsers.add_parser(
+        "synthesis-review-packet",
+        help="emit a bounded read-only synthesis review packet",
+    )
+    synthesis_review_packet.add_argument(
+        "--snapshot",
+        dest="snapshot_file",
+        type=Path,
+        required=True,
+        help="use an existing snapshot without GitHub reads",
+    )
+    synthesis_review_packet.add_argument(
+        "--audit-file",
+        type=Path,
+        required=True,
+        help="consume an existing readiness audit JSON",
+    )
+    synthesis_review_packet.add_argument(
+        "--backlog-synthesis",
+        type=Path,
+        required=True,
+        help="consume an existing backlog-synthesis JSON report",
+    )
+    synthesis_review_packet.add_argument(
+        "--project-plan",
+        type=Path,
+        help="consume an optional existing project-plan JSON artifact",
+    )
+    synthesis_review_packet.add_argument(
+        "--max-age-hours",
+        type=int,
+        default=issue_frontier.DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS,
+        help="hard review-age threshold in hours; lower values are stricter",
+    )
+    synthesis_review_packet.add_argument(
+        "--issues",
+        help="comma-separated issue numbers to include from the source report",
+    )
+    synthesis_review_packet.add_argument(
+        "--json", action="store_true", help="emit packet JSON"
+    )
+    synthesis_review_packet.add_argument(
+        "--output", type=Path, help="write packet JSON locally"
+    )
+
     apply = subparsers.add_parser(
         "apply",
         help="preflight and optionally execute an explicitly approved plan batch",
@@ -3850,6 +3895,93 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 print(f"Wrote {args.output}", file=status_stream)
             if args.json or not args.output:
                 print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True))
+            return 0
+
+        if args.command == "synthesis-review-packet":
+            if args.max_age_hours <= 0:
+                raise TriageError("--max-age-hours must be a positive integer")
+            default_max_age = issue_frontier.DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS
+            if args.max_age_hours > default_max_age:
+                raise TriageError(
+                    "--max-age-hours cannot exceed the default hard review age "
+                    f"({default_max_age})"
+                )
+            readiness_audit = load_json_file(
+                args.audit_file, "readiness audit JSON"
+            )
+            validate_readiness_audit(readiness_audit, snapshot)
+            require_full_audit_coverage(
+                readiness_audit,
+                snapshot,
+                artifact_name="synthesis-review-packet",
+            )
+            backlog_report = load_json_file(
+                args.backlog_synthesis,
+                "backlog-synthesis JSON",
+            )
+            backlog_errors = issue_frontier.validate_backlog_synthesis_report(
+                backlog_report
+            )
+            if backlog_errors:
+                raise TriageError(
+                    "backlog-synthesis validation failed: "
+                    + "; ".join(backlog_errors)
+                )
+            project_plan_data = None
+            if args.project_plan:
+                project_plan_data = load_json_file(
+                    args.project_plan,
+                    "project-plan JSON",
+                )
+                project_errors = issue_frontier.validate_project_plan(
+                    project_plan_data
+                )
+                if project_errors:
+                    raise TriageError(
+                        "project-plan validation failed: "
+                        + "; ".join(project_errors)
+                    )
+            source_errors = issue_frontier.validate_synthesis_review_packet_sources(
+                snapshot,
+                readiness_audit,
+                backlog_report,
+                project_plan=project_plan_data,
+            )
+            if source_errors:
+                raise TriageError(
+                    "synthesis-review-packet source validation failed: "
+                    + "; ".join(source_errors)
+                )
+            issue_filter = parse_issue_filter(args.issues)
+            if issue_filter:
+                unknown = sorted(
+                    issue_filter - set(governance_common.issue_map(snapshot))
+                )
+                if unknown:
+                    raise TriageError(
+                        "synthesis-review-packet issue filter contains unknown "
+                        f"issue number(s): {unknown}"
+                    )
+            packet = issue_frontier.build_synthesis_review_packet(
+                snapshot,
+                readiness_audit,
+                backlog_report,
+                project_plan=project_plan_data,
+                issue_filter=issue_filter,
+                max_age_hours=args.max_age_hours,
+            )
+            packet_errors = issue_frontier.validate_synthesis_review_packet(packet)
+            if packet_errors:
+                raise TriageError(
+                    "synthesis-review-packet validation failed: "
+                    + "; ".join(packet_errors)
+                )
+            status_stream = sys.stderr if args.json else sys.stdout
+            if args.output:
+                write_json(args.output, packet)
+                print(f"Wrote {args.output}", file=status_stream)
+            if args.json or not args.output:
+                print(json.dumps(packet, indent=2, sort_keys=True, ensure_ascii=True))
             return 0
 
         semantic = load_semantic_evidence(getattr(args, "semantic_evidence", None))

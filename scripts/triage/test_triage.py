@@ -1561,7 +1561,7 @@ def write_cli_offline_inputs(
     return policy_path, snapshot_path, semantic_path, saved_snapshot
 
 
-def test_help_lists_and_parses_all_ten_commands(
+def test_help_lists_and_parses_all_commands(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     expected = {
@@ -1575,6 +1575,7 @@ def test_help_lists_and_parses_all_ten_commands(
         "frontier",
         "project-plan",
         "backlog-synthesis",
+        "synthesis-review-packet",
     }
     parser = triage.build_parser()
     top_help = parser.format_help()
@@ -2556,6 +2557,314 @@ def test_backlog_synthesis_cli_rejects_partial_audit(
         captured.err
     )
     assert not output_path.exists()
+
+
+def write_synthesis_review_packet_inputs(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path, Path, Path, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+    )
+    audit_path = tmp_path / "audit.json"
+    write_json(audit_path, readiness)
+    report = triage.issue_frontier.build_backlog_synthesis_report(
+        saved_snapshot, readiness
+    )
+    backlog_path = tmp_path / "backlog-synthesis.json"
+    write_json(backlog_path, report)
+    plan = triage.issue_frontier.build_project_plan(
+        saved_snapshot,
+        readiness,
+        policy=loaded_policy,
+    )
+    project_plan_path = tmp_path / "project-plan.json"
+    write_json(project_plan_path, plan)
+    return (
+        policy_path,
+        snapshot_path,
+        audit_path,
+        backlog_path,
+        project_plan_path,
+        saved_snapshot,
+        readiness,
+        report,
+    )
+
+
+def test_synthesis_review_packet_cli_emits_json_without_github_calls(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, _project_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+    runner = QueueRunner([])
+
+    def fail_collect(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise AssertionError("synthesis-review-packet must not collect live state")
+
+    def fail_subprocess(*_args: object, **_kwargs: object) -> triage.CommandResult:
+        raise AssertionError("synthesis-review-packet must not run subprocesses")
+
+    monkeypatch.setattr(triage, "collect_snapshot", fail_collect)
+    monkeypatch.setattr(triage.subprocess, "run", fail_subprocess)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--issues",
+            "101",
+            "--json",
+        ],
+        runner=runner,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.err == ""
+    packet = json.loads(captured.out)
+    assert (
+        packet["schema_version"]
+        == triage.issue_frontier.SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION
+    )
+    assert packet["packet_scope"]["issue_numbers"] == [101]
+    assert packet["source_artifacts"]["snapshot_digest"] == _rest[0]["snapshot_sha256"]
+    assert packet["safety"]["github_api_calls"] is False
+    assert packet["safety"]["github_mutations"] is False
+    assert "operations" not in packet
+    assert "body" not in json.dumps(packet, sort_keys=True)
+    assert runner.calls == []
+
+
+def test_synthesis_review_packet_cli_rejects_looser_max_age(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--max-age-hours",
+            "169",
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "--max-age-hours cannot exceed the default hard review age" in captured.err
+    assert captured.out == ""
+
+
+def test_synthesis_review_packet_cli_writes_output_and_status_to_stderr(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, project_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+    output_path = tmp_path / "synthesis-review-packet.json"
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--project-plan",
+            str(project_path),
+            "--output",
+            str(output_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert f"Wrote {output_path}" in captured.err
+    stdout_packet = json.loads(captured.out)
+    written_packet = json.loads(output_path.read_text(encoding="ascii"))
+    assert stdout_packet == written_packet
+    project_plan = json.loads(project_path.read_text(encoding="ascii"))
+    assert (
+        written_packet["source_artifacts"]["project_plan_digest"]
+        == project_plan["project_plan_digest"]
+    )
+
+
+def test_synthesis_review_packet_cli_missing_required_file_is_controlled(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+    backlog_path.unlink()
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "backlog-synthesis JSON not found" in captured.err
+    assert captured.out == ""
+
+
+def test_synthesis_review_packet_cli_rejects_invalid_backlog_before_build(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+
+    def fail_build(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise AssertionError("builder should not run after invalid backlog input")
+
+    monkeypatch.setattr(
+        triage.issue_frontier,
+        "build_synthesis_review_packet",
+        fail_build,
+    )
+    monkeypatch.setattr(
+        triage.issue_frontier,
+        "validate_backlog_synthesis_report",
+        lambda _report: ["broken backlog"],
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--output",
+            str(tmp_path / "packet.json"),
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "backlog-synthesis validation failed: broken backlog" in captured.err
+
+
+def test_synthesis_review_packet_cli_rejects_source_digest_mismatch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+    report = json.loads(backlog_path.read_text(encoding="ascii"))
+    report["snapshot_digest"] = "9" * 64
+    report["backlog_synthesis_digest"] = triage.sha256_json(
+        {
+            key: value
+            for key, value in report.items()
+            if key != "backlog_synthesis_digest"
+        }
+    )
+    write_json(backlog_path, report)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "backlog-synthesis snapshot digest does not match snapshot" in captured.err
+    assert captured.out == ""
+
+
+def test_synthesis_review_packet_cli_output_is_deterministic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+    args = [
+        "--policy",
+        str(policy_path),
+        "synthesis-review-packet",
+        "--snapshot",
+        str(snapshot_path),
+        "--audit-file",
+        str(audit_path),
+        "--backlog-synthesis",
+        str(backlog_path),
+        "--json",
+    ]
+
+    left_code = triage.main(args, runner=QueueRunner([]))
+    left = capsys.readouterr().out
+    right_code = triage.main(args, runner=QueueRunner([]))
+    right = capsys.readouterr().out
+
+    assert left_code == 0
+    assert right_code == 0
+    assert left == right
 
 
 def test_backlog_synthesis_requires_snapshot_argument() -> None:
