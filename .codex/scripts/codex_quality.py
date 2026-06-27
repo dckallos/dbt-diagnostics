@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 from typing import Sequence
 
@@ -16,6 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import check_governance_boundary
+import codex_surface
 
 
 SCHEMA_VERSION = 1
@@ -47,6 +49,64 @@ def utc_now() -> str:
     )
 
 
+def changed_paths_from_git(root: Path) -> tuple[str, ...]:
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=5,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ()
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        path = line[3:] if len(line) > 3 else ""
+        if " -> " in path:
+            paths.extend(part for part in path.split(" -> ") if part)
+        elif path:
+            paths.append(path)
+    return tuple(paths)
+
+
+def semantically_checked_protected_paths(
+    *,
+    root: Path,
+    checked_files: Sequence[str],
+) -> tuple[str, ...]:
+    existing_checked_files = [
+        path
+        for path in checked_files
+        if path and (root / codex_surface.normalize_path(path)).exists()
+    ]
+    return codex_surface.protected_paths(existing_checked_files)
+
+
+def freshness_bound_protected_paths(
+    *,
+    root: Path,
+    requested_paths: Sequence[Path] | None,
+) -> tuple[str, ...]:
+    if requested_paths is None:
+        candidates = list(changed_paths_from_git(root))
+    else:
+        candidates = [
+            codex_surface.normalize_requested_path(path, root=root)
+            for path in requested_paths
+        ]
+
+    existing_candidates = [
+        path
+        for path in candidates
+        if path and (root / codex_surface.normalize_path(path)).exists()
+    ]
+    return codex_surface.protected_paths(existing_candidates)
+
+
 def run_quality(
     *,
     root: Path | None = None,
@@ -69,12 +129,22 @@ def run_quality(
             ],
         }
     ]
+    semantically_checked_paths = semantically_checked_protected_paths(
+        root=root,
+        checked_files=governance_result.checked_files,
+    )
+    freshness_bound_paths = freshness_bound_protected_paths(
+        root=root,
+        requested_paths=paths,
+    )
     passed = all(check["status"] == "passed" for check in checks)
     receipt: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": utc_now(),
         "tool": "codex-quality",
         "passed": passed,
+        "freshness_bound_protected_paths": list(freshness_bound_paths),
+        "semantically_checked_protected_paths": list(semantically_checked_paths),
         "checks": checks,
     }
     receipt["quality_receipt_digest"] = receipt_digest(receipt)

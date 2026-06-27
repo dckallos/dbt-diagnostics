@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Add Codex mutation-blocking hooks
+
+- I added repo-local Codex hooks for `PreToolUse`, `PermissionRequest`, and
+  `Stop` so direct GitHub metadata mutation commands and known unsafe command
+  shapes are blocked before execution or escalation.
+- I made the Stop hook require a fresh digest-valid
+  `output/codex/quality-receipt.json` after protected Codex or governance
+  files change, and tightened that check so every changed protected path must
+  be present in the receipt's deterministic
+  `freshness_bound_protected_paths` field.
+- I expanded deterministic GitHub mutation blocking to include GraphQL
+  mutations, PR comments/reviews, repository edits, workflow dispatch/toggle
+  commands, and secret/variable writes while keeping read-only `gh` commands
+  allowed.
+- I added a JSON-safe hook launcher and root-resolving hook configuration that
+  fail closed when the git root, repo `.venv`, or hook script cannot be
+  resolved.
+- I wired hook JSON/script validation into the Codex check and doctor gates and
+  documented hook trust and local `.venv` execution in `.codex/README.md`.
+
 ### Add Codex quality and harden governance artifacts
 
 - I added `bash .codex/bin/action.sh codex-quality` as a local semantic quality

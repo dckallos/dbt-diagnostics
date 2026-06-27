@@ -19,6 +19,14 @@ from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_INSTRUCTION_LIMIT = 32 * 1024
 ALLOWED_ACTION_ICONS = {"build", "check", "run", "test", "tool"}
+ALLOWED_HOOK_EVENTS = {"PermissionRequest", "PreToolUse", "Stop"}
+EXPECTED_HOOK_SCRIPTS = {
+    "PermissionRequest": "permission_request.py",
+    "PreToolUse": "pre_tool_use.py",
+    "Stop": "stop.py",
+}
+HOOK_LAUNCHER_PATH = ".codex/hooks/run_hook.sh"
+ROOT_RESOLVED_HOOK_LAUNCHER = '"$root/.codex/hooks/run_hook.sh"'
 IGNORED_PARTS = {".git", ".venv", "__pycache__"}
 
 
@@ -168,6 +176,134 @@ def _validate_environment(root: Path) -> tuple[bool, str]:
     return True, f"valid version 1 configuration with {len(actions)} actions"
 
 
+def _validate_hooks(root: Path) -> tuple[bool, str]:
+    path = root / ".codex" / "hooks.json"
+    if not path.exists():
+        return False, "missing .codex/hooks.json"
+    try:
+        hooks_config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"cannot parse hooks.json: {type(exc).__name__}"
+
+    errors: list[str] = []
+    launcher_path = root / ".codex" / "hooks" / "run_hook.sh"
+    launcher_text = ""
+    if launcher_path.is_file():
+        try:
+            launcher_text = launcher_path.read_text(encoding="ascii")
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append(f"cannot read .codex/hooks/run_hook.sh: {type(exc).__name__}")
+    else:
+        errors.append("missing .codex/hooks/run_hook.sh")
+    if launcher_text:
+        if ".venv/bin/python" not in launcher_text:
+            errors.append("hook launcher must use the repo .venv")
+        if "git rev-parse --show-toplevel" not in launcher_text:
+            errors.append("hook launcher must resolve the git root")
+        if not os.access(launcher_path, os.X_OK):
+            errors.append(".codex/hooks/run_hook.sh must be executable")
+        syntax = _run(["bash", "-n", ".codex/hooks/run_hook.sh"], cwd=root)
+        if syntax.returncode != 0:
+            detail = (syntax.stderr or syntax.stdout).strip() or "unknown error"
+            errors.append(f".codex/hooks/run_hook.sh has invalid syntax: {detail}")
+
+    hooks = hooks_config.get("hooks") if isinstance(hooks_config, dict) else None
+    if not isinstance(hooks, dict) or not hooks:
+        errors.append("hooks must be a non-empty object")
+        hooks = {}
+
+    for event, groups in hooks.items():
+        if event not in ALLOWED_HOOK_EVENTS:
+            errors.append(f"unsupported hook event: {event}")
+            continue
+        if not isinstance(groups, list) or not groups:
+            errors.append(f"{event} must be a non-empty list")
+            continue
+        for group_index, group in enumerate(groups, start=1):
+            if not isinstance(group, dict):
+                errors.append(f"{event} group {group_index} is not an object")
+                continue
+            handlers = group.get("hooks")
+            if not isinstance(handlers, list) or not handlers:
+                errors.append(f"{event} group {group_index} has no hooks")
+                continue
+            for handler_index, handler in enumerate(handlers, start=1):
+                if not isinstance(handler, dict):
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} is not an object"
+                    )
+                    continue
+                if handler.get("type") != "command":
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must be command"
+                    )
+                command = handler.get("command")
+                if not isinstance(command, str) or not command.strip():
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} has no command"
+                    )
+                    continue
+                try:
+                    argv = shlex.split(command)
+                except ValueError:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} has invalid shell quoting"
+                    )
+                    continue
+                if len(argv) < 3 or argv[:2] != ["bash", "-lc"]:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must run through bash -lc"
+                    )
+                script = argv[2] if len(argv) >= 3 else ""
+                if HOOK_LAUNCHER_PATH not in command:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must use the hook launcher"
+                    )
+                    continue
+                if "git rev-parse --show-toplevel" not in script:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must resolve the git root before launching hooks"
+                    )
+                    continue
+                if ROOT_RESOLVED_HOOK_LAUNCHER not in script:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must launch hooks from the resolved git root"
+                    )
+                    continue
+                if "cannot resolve git root" not in script or "printf" not in script:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must emit fail-closed JSON when git root resolution fails"
+                    )
+                    continue
+                expected_script = EXPECTED_HOOK_SCRIPTS[event]
+                if expected_script not in command:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must launch {expected_script}"
+                    )
+                    continue
+                if event not in command:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must pass {event}"
+                    )
+                    continue
+                script_path = root / ".codex" / "hooks" / expected_script
+                if not script_path.is_file():
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} references missing {script_path.relative_to(root)}"
+                    )
+
+    if errors:
+        return False, "; ".join(errors)
+    handler_count = sum(
+        len(group.get("hooks", []))
+        for groups in hooks.values()
+        if isinstance(groups, list)
+        for group in groups
+        if isinstance(group, dict)
+    )
+    return True, f"valid hooks.json with {len(hooks)} event(s) and {handler_count} handler(s)"
+
+
 def collect_static_checks(root: Path) -> list[Check]:
     checks: list[Check] = []
     required_paths = (
@@ -215,6 +351,15 @@ def collect_static_checks(root: Path) -> list[Check]:
             "PASS" if valid_environment else "FAIL",
             "Codex environment file",
             environment_detail,
+        )
+    )
+
+    valid_hooks, hooks_detail = _validate_hooks(root)
+    checks.append(
+        Check(
+            "PASS" if valid_hooks else "FAIL",
+            "Codex hooks",
+            hooks_detail,
         )
     )
 

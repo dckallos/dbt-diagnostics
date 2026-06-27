@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -lc 'root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || { printf \"%s\\n\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"Hook launcher failed safely: cannot resolve git root.\\\"}}\"; exit 0; }; exec \"$root/.codex/hooks/run_hook.sh\" pre_tool_use.py PreToolUse'",
+            "timeout": 10,
+            "statusMessage": "Checking command safety"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -lc 'root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || { printf \"%s\\n\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PermissionRequest\\\",\\\"decision\\\":{\\\"behavior\\\":\\\"deny\\\",\\\"message\\\":\\\"Hook launcher failed safely: cannot resolve git root.\\\"}}}\"; exit 0; }; exec \"$root/.codex/hooks/run_hook.sh\" permission_request.py PermissionRequest'",
+            "timeout": 10,
+            "statusMessage": "Checking approval safety"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -lc 'root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || { printf \"%s\\n\" \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"Hook launcher failed safely: cannot resolve git root.\\\"}\"; exit 0; }; exec \"$root/.codex/hooks/run_hook.sh\" stop.py Stop'",
+            "timeout": 10,
+            "statusMessage": "Checking Codex quality receipt"
+          }
+        ]
+      }
+    ]
+  }
+}

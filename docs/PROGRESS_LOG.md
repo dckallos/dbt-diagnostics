@@ -1203,3 +1203,102 @@ End of session -- 2026-06-27 issue 94 synthesis review packet contract implement
 - Keep all further PR #113 progress notes inside this single entry.
 
 End of session -- 2026-06-27 PR 113 review fixes and governance hardening
+
+---
+
+## 2026-06-27 -- issue 106 Codex hook guardrails implemented
+
+**What changed**
+- Ran the issue-work gate for #106. The live issue body failed contract, so I
+  drafted only the missing local proposed-body sections under
+  `output/triage/issues/106/`, validated them with `standardize`, printed the
+  full proposed body for maintainer approval, applied the approved body to the
+  live issue after approval, and rechecked the live contract before
+  implementation.
+- Added repo-local Codex hooks for `PreToolUse`, `PermissionRequest`, and
+  `Stop`, plus a JSON-safe `.codex/hooks/run_hook.sh` launcher. The launcher
+  resolves the git root, requires the repository `.venv`, and fails closed with
+  valid hook JSON if the root, interpreter, or hook script cannot be resolved.
+- Tightened `.codex/hooks.json` so each configured hook command resolves the
+  git root before invoking the launcher and emits event-specific fail-closed
+  JSON itself if that pre-launch root lookup fails.
+- Added shared hook policy code that blocks direct GitHub tracker metadata
+  mutation shapes and unsafe shell command shapes before execution or
+  escalation. The blocked GitHub shapes now include GraphQL mutations, PR
+  comments/reviews, repository edits, workflow dispatch/toggle commands, and
+  secret/variable writes.
+- Strengthened the Stop hook quality gate. `codex-quality` now writes separate
+  digest-bound deterministic `semantically_checked_protected_paths` and
+  `freshness_bound_protected_paths` receipt fields. Stop requires every changed
+  protected path to be freshness-bound, present on disk, passing, digest-valid,
+  and not newer than the receipt.
+- Wired hook JSON, launcher, and script validation into the Codex doctor,
+  compile, and check surfaces.
+- Documented local hook trust, launcher behavior, `.venv` execution, and
+  receipt coverage in `.codex/README.md`.
+- Updated `CHANGELOG.md`.
+
+**Validation**
+- `python scripts/triage/triage.py contract --issue 106` failed on the original
+  live body, as expected before local standardization.
+- `python .codex/scripts/anchor_check.py output/triage/issues/106/proposed-body.md`
+  passed: anchored refs 6, unresolved 0, past EOF 0.
+- `python scripts/triage/triage.py standardize --issue 106 --proposed-body
+  output/triage/issues/106/proposed-body.md --output-dir output/triage/issues/106`
+  passed with `governance_state: conformant`; only the missing type-label
+  warning remains.
+- `gh issue edit 106 --repo dckallos/dbt-diagnostics --body-file
+  output/triage/issues/106/proposed-body.md` succeeded after maintainer
+  approval.
+- `python scripts/triage/triage.py contract --issue 106` passed on the live
+  body with `governance_state: conformant`.
+- First revision test run failed as intended before implementation:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 16
+  failed, 33 passed.
+- First follow-up revision test run failed as intended before implementation:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 9 failed,
+  50 passed.
+- Focused revised tests passed after the first implementation:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 55
+  passed.
+- Focused follow-up tests passed:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 61
+  passed.
+- `python -m json.tool .codex/hooks.json` passed.
+- `bash -n .codex/hooks/run_hook.sh` passed.
+- `python -m py_compile .codex/scripts/*.py .codex/hooks/*.py
+  .codex/tests/*.py` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed with no findings and
+  wrote a receipt whose `freshness_bound_protected_paths` includes the changed
+  protected hook/script/config paths, while
+  `semantically_checked_protected_paths` is limited to files actually scanned by
+  the governance-boundary check.
+- Stop hook smoke test passed with
+  `{"systemMessage": "codex-quality receipt covers protected changes."}`.
+- `bash .codex/bin/action.sh check` passed: Codex tests 72 passed; offline
+  tests 641 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on local branch `chore/106-codex-hooks`, tracking
+  `origin/chore/106-codex-hooks` for draft PR #114 into `donkey-kong-sandbox`.
+- The branch has been pushed to origin through commit `d3ded0a`. This follow-up
+  edit set is local until an explicit PR-branch push is authorized.
+- Live issue #106 has the approved conformant body.
+
+**Next steps**
+- Review the revised command-shape regex boundaries, Stop coverage semantics,
+  and launcher fail-closed behavior.
+- Push the local branch only after an explicit GitHub-write approval.
+
+**Be careful**
+- Keep hooks read-only and advisory: they inspect the hook payload, command
+  text, local git status, and local receipt; they do not inspect secrets, run
+  live warehouse checks, or perform GitHub writes.
+- Keep further PR #114 progress notes inside this single entry.
+
+End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented
