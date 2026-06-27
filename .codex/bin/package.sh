@@ -53,8 +53,14 @@ $commands
 EOF
 fi
 if [ -n "$CODEX_POLICY_CLI_DISTRIBUTION_NAME" ]; then
-  codex_run "$smoke_venv/bin/python" -c \
-    "import importlib.metadata as m; print('installed version:', m.version('$CODEX_POLICY_CLI_DISTRIBUTION_NAME'))"
+  codex_run "$smoke_venv/bin/python" - "$CODEX_POLICY_CLI_DISTRIBUTION_NAME" <<'PY'
+from __future__ import annotations
+
+import importlib.metadata as metadata
+import sys
+
+print("installed version:", metadata.version(sys.argv[1]))
+PY
 else
   codex_note "SKIP: no package distribution name configured."
 fi

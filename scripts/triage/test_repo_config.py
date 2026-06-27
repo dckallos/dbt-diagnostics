@@ -404,6 +404,27 @@ def test_shell_exports_are_bounded_to_wrapper_values() -> None:
     assert "operations" not in "\n".join(exports)
 
 
+def test_env_record_export_is_data_not_shell_code() -> None:
+    policy = repo_config.load_repo_policy(DBT_POLICY)
+    records = repo_config.export_env_records(policy)
+    parsed = dict(line.split("\t", 1) for line in records.splitlines())
+
+    assert parsed == repo_config.shell_exports(policy)
+    assert "CODEX_POLICY_VENV_DIR\t.venv" in records
+    assert "CODEX_POLICY_VENV_DIR=" not in records
+
+
+def test_shell_exports_reject_record_delimiters() -> None:
+    data = _policy_data()
+    codex = data["codex"]
+    assert isinstance(codex, dict)
+    codex["environment_name"] = "widgets\nservice"
+    policy = repo_config.policy_from_mapping(data)
+
+    with pytest.raises(repo_config.RepoConfigError, match="shell export value"):
+        repo_config.shell_exports(policy)
+
+
 def test_cli_and_compat_line_exports_are_deterministic() -> None:
     policy = repo_config.load_repo_policy(DBT_POLICY)
 

@@ -231,6 +231,7 @@ REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 DOMAIN_RE = re.compile(r"^[a-z0-9.-]+$")
 SHELL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CLI_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:@%+=,-]+$")
+SHELL_RECORD_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 SUPPORTED_HOOK_EVENTS = frozenset({"PreToolUse", "PermissionRequest", "Stop"})
 SUPPORTED_OPTIONAL_CHECKS = frozenset({"package", "compat_schema"})
 UNKNOWN_PROVIDER_POLICY = "preserve_verification_or_uncertainty"
@@ -998,7 +999,7 @@ def _gh_api_method(gh_args: Sequence[str]) -> str:
 
 
 def shell_exports(policy: RepoPolicy) -> dict[str, str]:
-    return {
+    exports = {
         "CODEX_POLICY_REPOSITORY_FULL_NAME": policy.repository.full_name,
         "CODEX_POLICY_DEFAULT_BRANCH": policy.repository.default_branch,
         "CODEX_POLICY_PROTECTED_BRANCHES": " ".join(
@@ -1032,12 +1033,25 @@ def shell_exports(policy: RepoPolicy) -> dict[str, str]:
             policy.product.dist.required_sdist_suffixes
         ),
     }
+    for key, value in exports.items():
+        if not SHELL_RECORD_KEY_RE.fullmatch(key):
+            raise RepoConfigError(f"policy shell export key is unsafe: {key!r}")
+        if any(char in value for char in "\n\t\0"):
+            raise RepoConfigError(f"policy shell export value is unsafe for {key}")
+    return exports
 
 
 def export_shell(policy: RepoPolicy) -> str:
     lines = []
     for key, value in sorted(shell_exports(policy).items()):
         lines.append(f"{key}={shlex.quote(value)}")
+    return "\n".join(lines) + "\n"
+
+
+def export_env_records(policy: RepoPolicy) -> str:
+    lines = []
+    for key, value in sorted(shell_exports(policy).items()):
+        lines.append(f"{key}\t{value}")
     return "\n".join(lines) + "\n"
 
 
@@ -1063,7 +1077,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("export-json", "export-shell", "cli-commands", "compat-records"),
+        choices=(
+            "export-json",
+            "export-shell",
+            "export-env",
+            "cli-commands",
+            "compat-records",
+        ),
     )
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY_PATH)
     args = parser.parse_args(argv)
@@ -1072,16 +1092,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     except RepoConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if args.command == "export-json":
-        print(json.dumps(policy.to_json(), indent=2, sort_keys=True, ensure_ascii=True))
-    elif args.command == "export-shell":
-        print(export_shell(policy), end="")
-    elif args.command == "cli-commands":
-        for line in cli_command_lines(policy):
-            print(line)
-    elif args.command == "compat-records":
-        for line in compat_record_lines(policy):
-            print(line)
+    try:
+        if args.command == "export-json":
+            print(
+                json.dumps(
+                    policy.to_json(), indent=2, sort_keys=True, ensure_ascii=True
+                )
+            )
+        elif args.command == "export-shell":
+            print(export_shell(policy), end="")
+        elif args.command == "export-env":
+            print(export_env_records(policy), end="")
+        elif args.command == "cli-commands":
+            for line in cli_command_lines(policy):
+                print(line)
+        elif args.command == "compat-records":
+            for line in compat_record_lines(policy):
+                print(line)
+    except RepoConfigError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
