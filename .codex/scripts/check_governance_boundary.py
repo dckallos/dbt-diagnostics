@@ -15,6 +15,7 @@ from typing import Iterable, Iterator, Sequence
 DEFAULT_SCAN_PATHS = (
     "AGENTS.md",
     "docs/ISSUE_GOVERNANCE.md",
+    "docs/ISSUE_CONTRACT_V1.md",
     ".agents/skills",
     ".codex/README.md",
     ".codex/environments",
@@ -33,14 +34,51 @@ IGNORED_PARTS = {
 
 SAFE_CONTEXT_RE = re.compile(
     r"\b("
-    r"do not|don't|never|must not|may not|cannot|can't|"
-    r"forbid|forbidden|not supported|unsupported|reject|rejected|"
-    r"read-only|no\s+github\s+writes?|no\s+github\s+mutation|"
+    r"do not|does not|will not|don't|never|must not|may not|cannot|can't|"
+    r"forbid|forbidden|not supported|unsupported|reject|rejected|rejects|"
+    r"without\s+mutating|without\s+mutation|"
+    r"no\s+github\s+writes?|no\s+github\s+mutation|"
     r"no\s+tracker\s+mutation|no\s+issue-body\s+write|"
-    r"separate(?:ly)?\s+(?:explicitly\s+)?authorized\s+writer|"
-    r"maintainer applies|maintainer-applied|applied by hand|manual"
+    r"maintainer applies|maintainer-applied|applied by hand"
     r")\b",
     re.IGNORECASE,
+)
+
+FORBIDDEN_OPERATION_IDS = (
+    "issue.create",
+    "issue.close",
+    "issue.reopen",
+    "issue.body.update",
+    "issue.title.update",
+    "label.create",
+    "label.delete",
+    "label.rename",
+    "milestone.create",
+    "milestone.close",
+    "project.create",
+)
+
+FORBIDDEN_OPERATION_IDS_RE = (
+    r"(?<![A-Za-z0-9_.-])(?:"
+    + "|".join(re.escape(operation_id) for operation_id in FORBIDDEN_OPERATION_IDS)
+    + r")(?![A-Za-z0-9_.-])"
+)
+
+MUTATION_VERB_RE = (
+    r"(?:create|edit|update|write|close|reopen|label|move|merge|mutate)"
+)
+SENTENCE_GAP_RE = r"[^.!?]{0,80}"
+IMPERATIVE_START_RE = r"(?:^|[.!?]\s+|[-*]\s+|\d+\.\s+)"
+TRACKER_OBJECT_RE = (
+    r"(?:"
+    r"GitHub\s+(?:issue|issues|item|items|Project|Projects|"
+    r"pull request|pull requests|PR|PRs|metadata)|"
+    r"issue[- ]body|live\s+issue\s+body|issue\s+(?:body|title|state)|"
+    r"Project\s+(?:item|items|field|fields)|"
+    r"tracker\s+(?:item|items|metadata|text)|"
+    r"(?:the|a|this|that|current|live)\s+issue\b|"
+    r"(?:the|a|this|that|current|live)\s+Project\s+item\b"
+    r")"
 )
 
 AUTHORIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -64,11 +102,22 @@ AUTHORIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "authorized-tracker-mutation",
         re.compile(
-            r"\b(?:may|can|allowed to|permitted to|should)\b.{0,80}"
-            r"\b(?:create|edit|close|label|milestone|move|merge|mutate)\b"
-            r".{0,100}\b(?:GitHub|issue|Project|pull request|PR|tracker)\b",
+            rf"\b(?:may|can|allowed to|permitted to|should)\b{SENTENCE_GAP_RE}"
+            rf"\b{MUTATION_VERB_RE}\b{SENTENCE_GAP_RE}\b{TRACKER_OBJECT_RE}\b",
             re.IGNORECASE | re.DOTALL,
         ),
+    ),
+    (
+        "verb-first-tracker-mutation",
+        re.compile(
+            rf"{IMPERATIVE_START_RE}\b{MUTATION_VERB_RE}\b"
+            rf"{SENTENCE_GAP_RE}\b{TRACKER_OBJECT_RE}\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "forbidden-operation-id",
+        re.compile(FORBIDDEN_OPERATION_IDS_RE, re.IGNORECASE),
     ),
 )
 
@@ -194,31 +243,43 @@ def _safe_context(text: str, start: int, end: int) -> bool:
     return bool(SAFE_CONTEXT_RE.search(sentence))
 
 
+def _safe_preceding_context(code: str, paragraph: str, previous_paragraph: str) -> bool:
+    if code != "forbidden-operation-id":
+        return False
+    if not paragraph.startswith("```") or not paragraph.endswith("```"):
+        return False
+    return bool(SAFE_CONTEXT_RE.search(previous_paragraph))
+
+
 def scan_text(text: str, *, path: str) -> list[Violation]:
     violations: list[Violation] = []
-    seen: set[tuple[int, str]] = set()
+    seen: set[tuple[int, str, int]] = set()
+    previous_normalized = ""
     for line_number, paragraph in _paragraphs(text):
         normalized = re.sub(r"\s+", " ", paragraph.strip())
         for code, pattern in AUTHORIZATION_PATTERNS:
-            match = pattern.search(normalized)
-            if match is None or _safe_context(normalized, match.start(), match.end()):
-                continue
-            key = (line_number, code)
-            if key in seen:
-                continue
-            seen.add(key)
-            violations.append(
-                Violation(
-                    path=path,
-                    line=line_number,
-                    code=code,
-                    message=(
-                        "possible GitHub mutation authorization in a read-only "
-                        "governance surface"
-                    ),
-                    excerpt=normalized[:240],
+            for match in pattern.finditer(normalized):
+                if _safe_context(
+                    normalized, match.start(), match.end()
+                ) or _safe_preceding_context(code, normalized, previous_normalized):
+                    continue
+                key = (line_number, code, match.start())
+                if key in seen:
+                    continue
+                seen.add(key)
+                violations.append(
+                    Violation(
+                        path=path,
+                        line=line_number,
+                        code=code,
+                        message=(
+                            "possible GitHub mutation authorization in a read-only "
+                            "governance surface"
+                        ),
+                        excerpt=normalized[:240],
+                    )
                 )
-            )
+        previous_normalized = normalized
     return violations
 
 

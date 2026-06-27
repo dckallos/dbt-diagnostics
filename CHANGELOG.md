@@ -10,6 +10,10 @@
 - I kept `issue-work` read-only for nonconformant issue bodies and added a PR
   publication guard so implementation PRs use `Closes #<issue>` instead of
   `Refs #<issue>` as the only issue link.
+- I tightened the Codex governance-boundary gate so it scans the issue contract,
+  rejects forbidden operation IDs and verb-first tracker mutation instructions,
+  and no longer treats generic read-only wording as enough to allow a mutation
+  sentence.
 - I hardened `project-plan`, `backlog-synthesis`, and
   `synthesis-review-packet` validation so partial audits, stale packets,
   under-reported byte sizes, nested comments/snapshots, and mutation-shaped
