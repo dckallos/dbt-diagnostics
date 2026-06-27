@@ -487,6 +487,8 @@ def infer_issue_kind(title: str, labels: Iterable[str] = ()) -> str:
     ):
         return "epic"
     prefix = re.split(r"[(:\s]", normalized_title.lstrip("["), maxsplit=1)[0].rstrip("]")
+    if prefix == "governance" or "governance" in label_set:
+        return "governance"
     if prefix in {"fix", "bug", "hotfix"} or "bug" in label_set:
         return "bug_fix"
     if prefix in {"feat", "feature", "enhancement"} or "enhancement" in label_set:
@@ -497,8 +499,6 @@ def infer_issue_kind(title: str, labels: Iterable[str] = ()) -> str:
         return "test_verification"
     if prefix in {"spike", "decision", "research"} or "spike" in label_set:
         return "spike_decision"
-    if prefix == "governance" or "governance" in label_set:
-        return "governance"
     if prefix in {"docs", "documentation", "chore", "release", "build", "ci"}:
         return "docs_chore_release"
     if label_set & {"docs", "documentation", "chore", "release"}:
@@ -1230,15 +1230,34 @@ def propose_normalized_body(issue: Mapping[str, Any]) -> str:
     requirements.extend(
         conditional_requirements(kind, labels, body, issue.get("milestone"))
     )
+    mapped_keys = set(mapped)
     for requirement in requirements:
-        # Select the smallest deterministic alternative for a proposed skeleton.
-        alternative = min(
-            requirement.alternatives, key=lambda group: (len(group), sorted(group))
+        present_alternatives = [
+            group for group in requirement.alternatives if group <= mapped_keys
+        ]
+        partial_present_alternatives = [
+            group for group in requirement.alternatives if group & mapped_keys
+        ]
+        # Preserve an already-present alternative before adding a placeholder for
+        # a different valid section spelling.
+        alternative = (
+            min(present_alternatives, key=lambda group: (len(group), sorted(group)))
+            if present_alternatives
+            else min(
+                partial_present_alternatives or requirement.alternatives,
+                key=lambda group: (len(group), sorted(group)),
+            )
         )
         required_keys.update(alternative)
 
     ordered = preferred_section_order(kind)
     keys = [key for key in ordered if key in mapped or key in required_keys]
+    keys.extend(
+        sorted(
+            (set(mapped) | required_keys) - set(keys),
+            key=lambda key: _TITLE_BY_KEY.get(key, key),
+        )
+    )
     lines: list[str] = []
     for key in keys:
         title_text = _TITLE_BY_KEY[key]

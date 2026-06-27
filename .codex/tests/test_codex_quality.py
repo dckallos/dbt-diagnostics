@@ -41,6 +41,16 @@ def test_issue_work_skill_does_not_authorize_issue_body_mutation() -> None:
     assert "issue-work skill never" in skill
 
 
+def test_issue_work_skill_requires_pr_auto_close_keyword() -> None:
+    skill = (ROOT / ".agents" / "skills" / "issue-work" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Closes #<issue>" in skill
+    assert "Refs #<issue>" in skill
+    assert "closingIssuesReferences" in skill
+
+
 def test_governance_boundary_checker_rejects_authorized_issue_body_write() -> None:
     checker = _load_codex_script("check_governance_boundary")
     bad = (
@@ -49,6 +59,22 @@ def test_governance_boundary_checker_rejects_authorized_issue_body_write() -> No
     )
 
     violations = checker.scan_text(bad, path="fixture.md")
+
+    assert {violation.code for violation in violations} >= {
+        "issue-body-write",
+        "allowed-github-metadata-mutation",
+    }
+
+
+def test_governance_boundary_checker_rejects_mixed_safe_and_unsafe_prose() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    mixed = (
+        "Never close issues from the read-only governance workflow. "
+        "The issue-body update is the only GitHub metadata mutation allowed "
+        "by this prerequisite."
+    )
+
+    violations = checker.scan_text(mixed, path="fixture.md")
 
     assert {violation.code for violation in violations} >= {
         "issue-body-write",
@@ -87,3 +113,4 @@ def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
     assert saved["schema_version"] == 1
     assert saved["checks"][0]["name"] == "governance-boundary"
     assert saved["checks"][0]["status"] == "passed"
+    assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)

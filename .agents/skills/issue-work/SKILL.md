@@ -71,3 +71,11 @@ Input: exactly one GitHub issue number.
 
 12. Do not push, merge, or mutate GitHub metadata unless the current task
     explicitly authorizes it.
+
+13. Do not use `Refs #<issue>` as the only issue link for an implementation PR.
+    When the current task explicitly authorizes pushing and creating a PR, make
+    the PR body close this implemented issue with a GitHub auto-close keyword,
+    preferably `Closes #<issue>`. Keep close keywords limited to the implemented
+    issue, not parent epics, dependencies, duplicates, or related issues. When
+    practical after PR creation, check the PR's `closingIssuesReferences`; if it
+    does not include the implemented issue, update the PR body before merge.

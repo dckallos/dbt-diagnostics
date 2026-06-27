@@ -661,6 +661,51 @@ def test_backlog_synthesis_reports_dependency_inversion_signal() -> None:
     assert frontier.validate_backlog_synthesis_report(report) == []
 
 
+def test_backlog_synthesis_sorts_dependency_inversion_issue_numbers() -> None:
+    snap = snapshot(
+        issue(10, title="feat: blocker"),
+        issue(20, title="feat: dependent"),
+    )
+    results = audit(
+        entry(20, dependencies=[10]),
+        entry(10, implementation="blocked", blockers=["blocked"]),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    inversions = signals_by_type(report, "dependency-inversion")
+    assert inversions[0]["issue_numbers"] == [10, 20]
+    assert inversions[0]["details"]["issue_number"] == 20
+    assert inversions[0]["details"]["dependency_issue_number"] == 10
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_reads_explicit_overlap_conflicting_issues() -> None:
+    snap = snapshot(
+        issue(1, title="feat: owner one"),
+        issue(2, title="feat: owner two"),
+    )
+    results = audit(
+        entry(
+            1,
+            overlap_conflicts=[
+                {
+                    "claim": "same artifact",
+                    "conflicting_issues": [2],
+                }
+            ],
+        ),
+        entry(2),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    overlaps = signals_by_type(report, "explicit-overlap")
+    assert len(overlaps) == 1
+    assert overlaps[0]["issue_numbers"] == [1, 2]
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
 def test_backlog_synthesis_semantic_disposition_overrides_mechanical_map() -> None:
     snap = snapshot(issue(1, title="feat: duplicate"), issue(2, title="feat: owner"))
     results = audit(
@@ -682,6 +727,28 @@ def test_backlog_synthesis_semantic_disposition_overrides_mechanical_map() -> No
     assert first["semantic_hypothesis"] == "likely-duplicate-of #2"
     assert first["recommended_disposition"] == "likely-duplicate-of #2"
     assert first["semantic_evidence_status"] == "provided"
+    semantic = signals_by_type(report, "semantic-disposition")
+    assert semantic[0]["issue_numbers"] == [1, 2]
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_semantic_disposition_parses_issue_urls() -> None:
+    snap = snapshot(issue(1, title="feat: duplicate"), issue(2, title="feat: owner"))
+    results = audit(
+        entry(
+            1,
+            recommended_disposition="implement",
+            semantic_disposition_hypothesis=(
+                "likely-duplicate-of "
+                "https://github.com/dckallos/dbt-diagnostics/issues/2"
+            ),
+            semantic_disposition_evidence=["semantic review points at the owner URL"],
+        ),
+        entry(2),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
     semantic = signals_by_type(report, "semantic-disposition")
     assert semantic[0]["issue_numbers"] == [1, 2]
     assert frontier.validate_backlog_synthesis_report(report) == []
@@ -767,6 +834,11 @@ def test_synthesis_review_packet_machine_schema_documents_required_surface() -> 
     assert (
         schema["properties"]["safety"]["properties"]["github_mutations"]["const"]
         is False
+    )
+    assert "forbiddenReadOnlyShape" in schema["$defs"]
+    assert (
+        schema["properties"]["evidence_items"]["items"]["allOf"][0]["$ref"]
+        == "#/$defs/safeObject"
     )
 
 
@@ -864,7 +936,31 @@ def test_synthesis_review_packet_validation_enforces_byte_not_token_limit() -> N
     )
 
 
-def test_synthesis_review_packet_validation_rejects_reviewable_stale_packet() -> None:
+def test_synthesis_review_packet_validation_enforces_actual_serialized_bytes() -> None:
+    packet = synthesis_review_packet()
+    packet["budget"]["serialized_bytes"] = 1024
+    packet["evidence_items"] = [
+        {
+            "evidence_id": "oversized",
+            "excerpt": "x" * 308000,
+        }
+    ]
+    packet = sign_packet(packet)
+
+    assert (
+        "synthesis_review_packet serialized bytes must not exceed budget.hard_bytes"
+        in frontier.validate_synthesis_review_packet(packet)
+    )
+
+
+def test_synthesis_review_packet_validation_rejects_stale_packets() -> None:
+    not_reviewable = synthesis_review_packet(
+        staleness={
+            "max_age_hours": 24,
+            "stale": True,
+            "llm_review_allowed": False,
+        }
+    )
     packet = synthesis_review_packet(
         staleness={
             "max_age_hours": 24,
@@ -877,6 +973,35 @@ def test_synthesis_review_packet_validation_rejects_reviewable_stale_packet() ->
         "staleness.llm_review_allowed must be false when staleness.stale is true"
         in frontier.validate_synthesis_review_packet(packet)
     )
+    assert (
+        "staleness.stale packets are not valid for LLM review"
+        in frontier.validate_synthesis_review_packet(not_reviewable)
+    )
+
+
+def test_synthesis_review_packet_rejects_nested_read_only_forbidden_shapes() -> None:
+    packet = synthesis_review_packet(
+        evidence_items=[
+            {
+                "evidence_id": "comments",
+                "comments": ["issue comment text"],
+            },
+            {
+                "evidence_id": "snapshot",
+                "snapshot": {"issues": [], "pulls": []},
+            },
+            {
+                "evidence_id": "metadata",
+                "label_updates": [{"issue_number": 1, "add": ["bug"]}],
+            },
+        ]
+    )
+
+    errors = frontier.validate_synthesis_review_packet(packet)
+
+    assert "evidence_items[0].comments is forbidden" in errors
+    assert "evidence_items[1].snapshot is a forbidden full tracker snapshot" in errors
+    assert "evidence_items[2].label_updates is forbidden" in errors
 
 
 def test_read_only_artifact_validators_reject_operations_regression() -> None:

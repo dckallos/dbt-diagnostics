@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -19,6 +20,25 @@ import check_governance_boundary
 
 SCHEMA_VERSION = 1
 DEFAULT_RECEIPT = Path("output/codex/quality-receipt.json")
+
+
+def canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+
+
+def receipt_digest(receipt: dict[str, object]) -> str:
+    unsigned = {
+        key: value
+        for key, value in receipt.items()
+        if key != "quality_receipt_digest"
+    }
+    return hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
 
 
 def utc_now() -> str:
@@ -57,6 +77,7 @@ def run_quality(
         "passed": passed,
         "checks": checks,
     }
+    receipt["quality_receipt_digest"] = receipt_digest(receipt)
 
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(

@@ -56,7 +56,7 @@ AUTHORIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "allowed-github-metadata-mutation",
         re.compile(
-            r"\b(?:only|sole)\b.{0,120}\bGitHub metadata mutation\b"
+            r"(?<!-)\b(?:only|sole)\b.{0,120}\bGitHub metadata mutation\b"
             r".{0,120}\b(?:allowed|permitted)\b",
             re.IGNORECASE | re.DOTALL,
         ),
@@ -165,9 +165,33 @@ def _paragraphs(text: str) -> Iterator[tuple[int, str]]:
         yield start_line, "\n".join(buffer)
 
 
-def _safe_context(excerpt: str) -> bool:
-    normalized = re.sub(r"\s+", " ", excerpt.strip())
-    return bool(SAFE_CONTEXT_RE.search(normalized))
+def _sentence_for_span(text: str, start: int, end: int) -> str:
+    sentence_start = max(
+        text.rfind(".", 0, start),
+        text.rfind("!", 0, start),
+        text.rfind("?", 0, start),
+        text.rfind("\n", 0, start),
+    )
+    if sentence_start == -1:
+        sentence_start = 0
+    else:
+        sentence_start += 1
+    sentence_end_candidates = [
+        index for index in (
+            text.find(".", end),
+            text.find("!", end),
+            text.find("?", end),
+            text.find("\n", end),
+        )
+        if index != -1
+    ]
+    sentence_end = min(sentence_end_candidates) if sentence_end_candidates else len(text)
+    return text[sentence_start:sentence_end].strip()
+
+
+def _safe_context(text: str, start: int, end: int) -> bool:
+    sentence = _sentence_for_span(text, start, end)
+    return bool(SAFE_CONTEXT_RE.search(sentence))
 
 
 def scan_text(text: str, *, path: str) -> list[Violation]:
@@ -175,10 +199,9 @@ def scan_text(text: str, *, path: str) -> list[Violation]:
     seen: set[tuple[int, str]] = set()
     for line_number, paragraph in _paragraphs(text):
         normalized = re.sub(r"\s+", " ", paragraph.strip())
-        if _safe_context(normalized):
-            continue
         for code, pattern in AUTHORIZATION_PATTERNS:
-            if not pattern.search(normalized):
+            match = pattern.search(normalized)
+            if match is None or _safe_context(normalized, match.start(), match.end()):
                 continue
             key = (line_number, code)
             if key in seen:

@@ -472,6 +472,45 @@ def test_governance_proposed_body_uses_reduced_section_set() -> None:
     assert "## Scope and likely files" not in proposed
 
 
+def test_governance_proposed_body_prefers_existing_decision_criteria() -> None:
+    issue = {
+        "number": 80,
+        "title": "governance: normalize this",
+        "labels": ["governance"],
+        "body": """## Summary
+
+Current text.
+
+## Decision criteria
+
+Keep the already-written decision rule.
+""",
+    }
+
+    proposed = contract.propose_normalized_body(issue)
+
+    assert "## Decision criteria" in proposed
+    assert "Keep the already-written decision rule." in proposed
+    assert "## Acceptance criteria" not in proposed
+
+
+def test_governance_proposed_body_includes_conditional_sections() -> None:
+    issue = {
+        "number": 80,
+        "title": "governance: normalize warehouse review",
+        "labels": ["governance"],
+        "body": """## Summary
+
+Current text mentions warehouse access.
+""",
+    }
+
+    proposed = contract.propose_normalized_body(issue)
+
+    assert "## Live behavior and cost tier" in proposed
+    assert "## Offline behavior" in proposed
+
+
 def test_contract_output_is_ascii() -> None:
     issue = {
         "number": 5,
@@ -519,6 +558,7 @@ def test_scoped_conventional_commit_prefixes_infer_kind_without_label() -> None:
     ("title", "labels", "expected_kind"),
     [
         ("governance: decide tracker shape", [], "governance"),
+        ("governance: decide tracker shape", ["test"], "governance"),
         ("test: verify live evidence", [], "test_verification"),
         ("test(triage): keep product-test classification", [], "test_verification"),
         ("spike: choose identity attestation", [], "spike_decision"),

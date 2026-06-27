@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Add Codex quality and harden governance artifacts
+
+- I added `bash .codex/bin/action.sh codex-quality` as a local semantic quality
+  gate for repository instruction surfaces and wrote a digest-bound local
+  receipt under `output/codex/`.
+- I kept `issue-work` read-only for nonconformant issue bodies and added a PR
+  publication guard so implementation PRs use `Closes #<issue>` instead of
+  `Refs #<issue>` as the only issue link.
+- I hardened `project-plan`, `backlog-synthesis`, and
+  `synthesis-review-packet` validation so partial audits, stale packets,
+  under-reported byte sizes, nested comments/snapshots, and mutation-shaped
+  metadata payloads are rejected before advisory artifacts are emitted or
+  consumed.
+- I fixed governance issue normalization to preserve existing decision criteria,
+  include conditional required sections, and treat `governance:` as authoritative
+  even when legacy type labels are still present.
+
 ### Define the synthesis review packet contract
 
 - I added the v1 `synthesis-review-packet` schema docs and machine schema for

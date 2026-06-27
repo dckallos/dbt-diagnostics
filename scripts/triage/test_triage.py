@@ -2005,6 +2005,59 @@ def test_project_plan_cli_rejects_invalid_self_check(
     assert runner.calls == []
 
 
+def test_project_plan_cli_rejects_partial_audit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    saved_snapshot["issues"].append(
+        issue(
+            102,
+            title="fix: second issue",
+            body=cli_contract_body(),
+            labels=["bug"],
+        )
+    )
+    saved_snapshot["snapshot_sha256"] = triage.sha256_json(
+        triage.snapshot_without_digest(saved_snapshot)
+    )
+    write_json(snapshot_path, saved_snapshot)
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+        issue_filter={101},
+    )
+    audit_path = tmp_path / "partial-audit.json"
+    write_json(audit_path, readiness)
+    output_path = tmp_path / "project-plan.json"
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "project-plan",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--output",
+            str(output_path),
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "readiness audit does not cover the requested project-plan issue(s)" in (
+        captured.err
+    )
+    assert not output_path.exists()
+
+
 def test_backlog_synthesis_cli_emits_json_without_github_calls(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -2095,6 +2148,68 @@ def test_backlog_synthesis_cli_rejects_invalid_self_check(
     assert "backlog-synthesis validation failed: broken shape" in captured.err
     assert not output_path.exists()
     assert runner.calls == []
+
+
+def test_backlog_synthesis_cli_rejects_partial_audit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, semantic_path, saved_snapshot = (
+        write_cli_offline_inputs(tmp_path)
+    )
+    saved_snapshot["issues"].append(
+        issue(
+            102,
+            title="fix: second issue",
+            body=cli_contract_body(),
+            labels=["bug"],
+        )
+    )
+    saved_snapshot["snapshot_sha256"] = triage.sha256_json(
+        triage.snapshot_without_digest(saved_snapshot)
+    )
+    write_json(snapshot_path, saved_snapshot)
+    loaded_policy = triage.load_policy(policy_path)
+    semantic = triage.load_semantic_evidence(semantic_path)
+    readiness = triage.make_readiness_audit(
+        saved_snapshot,
+        loaded_policy,
+        semantic_evidence=semantic,
+        issue_filter={101},
+    )
+    audit_path = tmp_path / "partial-audit.json"
+    write_json(audit_path, readiness)
+    output_path = tmp_path / "backlog-synthesis.json"
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-synthesis",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--output",
+            str(output_path),
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "readiness audit does not cover the requested backlog-synthesis issue(s)" in (
+        captured.err
+    )
+    assert not output_path.exists()
+
+
+def test_backlog_synthesis_requires_snapshot_argument() -> None:
+    parser = triage.build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["backlog-synthesis", "--json"])
+
+    assert exc.value.code == 2
 
 
 def test_frontier_rejects_conflicting_audit_sources() -> None:

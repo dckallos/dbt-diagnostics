@@ -1137,3 +1137,45 @@ End of session -- 2026-06-26 issue 91 architecture handoff prompt added
   gate.
 
 End of session -- 2026-06-27 issue 94 synthesis review packet contract implemented
+
+---
+
+## 2026-06-27 -- PR 113 review fixes and governance hardening
+
+**What changed**
+- Reviewed PR #113 locally and fixed the new `codex-quality` wrapper mode,
+  governance-boundary scanner behavior, and digest-bound quality receipt.
+- Carried the `issue-work` PR auto-close guard into this branch: implementation
+  PRs must use `Closes #<issue>` or an equivalent auto-close keyword, not only
+  `Refs #<issue>`.
+- Addressed the outstanding review findings from the last five merged PRs:
+  hardened synthesis review packet validation/schema, added full-audit coverage
+  gates for `project-plan` and `backlog-synthesis`, fixed backlog signal
+  extraction/order, and repaired governance issue normalization.
+
+**Validation**
+- `python -m pytest -q .codex/tests/test_codex_quality.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py
+  scripts/triage/test_contract.py` passed: 151 passed.
+- `python -m json.tool docs/synthesis-review-packet-schema-v1.json` passed.
+- `python /Users/daniel/.codex/skills/.system/skill-creator/scripts/quick_validate.py
+  .agents/skills/issue-work` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed.
+- `python -m compileall -q .codex/scripts scripts/triage` passed with approved
+  pycache writes.
+- `bash .codex/bin/action.sh check` passed: 641 passed, 2 skipped,
+  20 deselected, 1 warning; compatibility schema gate skipped as expected.
+
+**Current state**
+- Work is on branch `chore/105-codex-quality-v2` for PR #113.
+- The branch includes the PR #113 review fixes and the issue-work carry-over
+  change; it is ready to push after commit.
+
+**Next steps**
+- Push the branch update to PR #113 and review the expanded scope carefully.
+
+**Be careful**
+- Keep `issue-governance` read-only. Nonconformant issue-body updates remain a
+  maintainer-applied step or a separate authorized writer flow.
+
+End of session -- 2026-06-27 PR 113 review fixes and governance hardening

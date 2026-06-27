@@ -8,6 +8,7 @@ import re
 from typing import Any, ClassVar, Mapping
 
 from scripts.triage.common import (
+    canonical_json,
     issue_map,
     pull_map,
     repository_name,
@@ -1037,6 +1038,10 @@ class SynthesisReviewPacketStalenessShape:
                 "staleness.llm_review_allowed must be false when "
                 "staleness.stale is true"
             )
+        if self.value.get("stale") is True:
+            context.errors.append(
+                "staleness.stale packets are not valid for LLM review"
+            )
 
 
 @dataclass(frozen=True)
@@ -1096,6 +1101,34 @@ class SynthesisReviewPacketValidator:
         "mutation_request",
         "mutation_requests",
     }
+    COMMENT_KEYS: ClassVar[set[str]] = {
+        "comment",
+        "comments",
+        "issue_comment",
+        "issue_comments",
+        "review_comment",
+        "review_comments",
+        "review_thread",
+        "review_threads",
+    }
+    METADATA_MUTATION_KEYS: ClassVar[set[str]] = {
+        "body_update",
+        "body_updates",
+        "close_request",
+        "close_requests",
+        "label_update",
+        "label_updates",
+        "milestone_update",
+        "milestone_updates",
+        "project_update",
+        "project_updates",
+        "reopen_request",
+        "reopen_requests",
+        "state_update",
+        "state_updates",
+        "title_update",
+        "title_updates",
+    }
 
     def validate(self) -> list[str]:
         context = ValidationContext()
@@ -1121,6 +1154,7 @@ class SynthesisReviewPacketValidator:
         self._validate_evidence_items(context)
         self._validate_comments(context)
         self._validate_budget(context)
+        self._validate_actual_serialized_size(context)
         self._validate_staleness(context)
         self._validate_safety(context)
         actual_digest = sha256_json(_synthesis_review_packet_without_digest(self.value))
@@ -1185,6 +1219,20 @@ class SynthesisReviewPacketValidator:
             return
         SynthesisReviewPacketBudgetShape(budget).validate(context)
 
+    def _validate_actual_serialized_size(self, context: ValidationContext) -> None:
+        budget = self.value.get("budget")
+        if not isinstance(budget, Mapping):
+            return
+        hard = budget.get("hard_bytes")
+        if not _is_non_negative_int(hard):
+            return
+        serialized_bytes = len(canonical_json(self.value).encode("utf-8"))
+        if serialized_bytes > int(hard):
+            context.errors.append(
+                "synthesis_review_packet serialized bytes must not exceed "
+                "budget.hard_bytes"
+            )
+
     def _validate_staleness(self, context: ValidationContext) -> None:
         staleness = self.value.get("staleness")
         if not isinstance(staleness, Mapping):
@@ -1213,8 +1261,14 @@ class SynthesisReviewPacketValidator:
                     if path
                     else "GitHub request payload is forbidden"
                 )
-            if path == "" and "issues" in value and "pulls" in value:
-                context.errors.append("full tracker snapshot shape is forbidden")
+            if "issues" in value and (
+                "pulls" in value or "pull_requests" in value
+            ):
+                context.errors.append(
+                    f"{path} is a forbidden full tracker snapshot"
+                    if path
+                    else "full tracker snapshot shape is forbidden"
+                )
             for key, item in value.items():
                 item_path = f"{path}.{key}" if path else str(key)
                 if key == "operations":
@@ -1224,6 +1278,10 @@ class SynthesisReviewPacketValidator:
                         else f"{item_path} is forbidden"
                     )
                 if key in self.GITHUB_REQUEST_KEYS:
+                    context.errors.append(f"{item_path} is forbidden")
+                if key in self.COMMENT_KEYS:
+                    context.errors.append(f"{item_path} is forbidden")
+                if key in self.METADATA_MUTATION_KEYS:
                     context.errors.append(f"{item_path} is forbidden")
                 if key in {"body", "state"}:
                     context.errors.append(f"{item_path} is forbidden")
@@ -1485,30 +1543,36 @@ def _explicit_overlap_signals(
             continue
         conflicts = entries[number].get("overlap_conflicts") or []
         for conflict in conflicts:
-            other = None
+            other_numbers: list[int] = []
             if isinstance(conflict, Mapping):
                 raw = conflict.get("issue_number") or conflict.get("number")
                 if _is_positive_int(raw):
-                    other = int(raw)
-            if other is None or other not in open_issue_numbers:
-                continue
-            issue_numbers = tuple(sorted({number, other}))
-            if issue_numbers in seen:
-                continue
-            seen.add(issue_numbers)
-            signals.append(
-                BacklogSynthesisSignal(
-                    signal_type="explicit-overlap",
-                    issue_numbers=issue_numbers,
-                    confidence="high",
-                    summary=(
-                        f"#{issue_numbers[0]} and #{issue_numbers[1]} declare "
-                        "overlapping ownership"
-                    ),
-                    evidence=("readiness audit reported explicit overlap",),
-                    details={"source_issue_number": number},
+                    other_numbers.append(int(raw))
+                conflicting = conflict.get("conflicting_issues")
+                if isinstance(conflicting, list):
+                    other_numbers.extend(
+                        int(item) for item in conflicting if _is_positive_int(item)
+                    )
+            for other in sorted(set(other_numbers)):
+                if other not in open_issue_numbers:
+                    continue
+                issue_numbers = tuple(sorted({number, other}))
+                if issue_numbers in seen:
+                    continue
+                seen.add(issue_numbers)
+                signals.append(
+                    BacklogSynthesisSignal(
+                        signal_type="explicit-overlap",
+                        issue_numbers=issue_numbers,
+                        confidence="high",
+                        summary=(
+                            f"#{issue_numbers[0]} and #{issue_numbers[1]} declare "
+                            "overlapping ownership"
+                        ),
+                        evidence=("readiness audit reported explicit overlap",),
+                        details={"source_issue_number": number},
+                    )
                 )
-            )
     return signals
 
 
@@ -1555,7 +1619,7 @@ def _dependency_inversion_signals(
         signals.append(
             BacklogSynthesisSignal(
                 signal_type="dependency-inversion",
-                issue_numbers=(int(issue_number), int(dependency)),
+                issue_numbers=tuple(sorted({int(issue_number), int(dependency)})),
                 confidence="high",
                 summary=str(conflict.get("message") or ""),
                 evidence=(
@@ -1578,7 +1642,9 @@ def _refs_in_text(value: str) -> list[int]:
     return sorted(
         {
             int(match.group("number"))
-            for match in re.finditer(r"#(?P<number>[1-9][0-9]*)", value)
+            for match in re.finditer(
+                r"(?:#|/issues/)(?P<number>[1-9][0-9]*)", value
+            )
         }
     )
 
