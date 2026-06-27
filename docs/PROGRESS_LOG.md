@@ -1203,3 +1203,73 @@ End of session -- 2026-06-27 issue 94 synthesis review packet contract implement
 - Keep all further PR #113 progress notes inside this single entry.
 
 End of session -- 2026-06-27 PR 113 review fixes and governance hardening
+
+---
+
+## 2026-06-27 -- issue 106 Codex hook guardrails implemented
+
+**What changed**
+- Ran the issue-work gate for #106. The live issue body failed contract, so I
+  drafted only the missing local proposed-body sections under
+  `output/triage/issues/106/`, validated them with `standardize`, printed the
+  full proposed body for maintainer approval, applied the approved body to the
+  live issue, and rechecked the live contract before implementation.
+- Added repo-local Codex hooks for `PreToolUse`, `PermissionRequest`, and
+  `Stop`. The command hooks run through the repository `.venv` and resolve hook
+  scripts from the git root.
+- Added shared hook policy code that blocks direct GitHub tracker metadata
+  mutation shapes and unsafe shell command shapes before execution or
+  escalation.
+- Added a Stop hook quality gate that blocks finalization after protected
+  Codex/governance files change unless `output/codex/quality-receipt.json` is
+  fresh, digest-valid, and passing.
+- Wired hook JSON and script validation into the Codex doctor, compile, and
+  check surfaces.
+- Documented local hook trust, `.venv` execution, and receipt behavior in
+  `.codex/README.md`.
+- Updated `CHANGELOG.md`.
+
+**Validation**
+- `python scripts/triage/triage.py contract --issue 106` failed on the original
+  live body, as expected before local standardization.
+- `python .codex/scripts/anchor_check.py output/triage/issues/106/proposed-body.md`
+  passed: anchored refs 6, unresolved 0, past EOF 0.
+- `python scripts/triage/triage.py standardize --issue 106 --proposed-body
+  output/triage/issues/106/proposed-body.md --output-dir output/triage/issues/106`
+  passed with `governance_state: conformant`; only the missing type-label
+  warning remains.
+- `gh issue edit 106 --repo dckallos/dbt-diagnostics --body-file
+  output/triage/issues/106/proposed-body.md` succeeded after maintainer
+  approval.
+- `python scripts/triage/triage.py contract --issue 106` passed on the live
+  body with `governance_state: conformant`; only the missing type-label warning
+  remains.
+- `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` passed:
+  33 passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed with no findings and
+  wrote a fresh digest-bound receipt.
+- Stop hook smoke test passed with
+  `{"systemMessage": "codex-quality receipt is fresh for protected changes."}`.
+- `bash .codex/bin/action.sh check` passed: Codex tests 44 passed; offline
+  tests 641 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on local branch `chore/106-codex-hooks`, based on
+  `origin/donkey-kong-sandbox`.
+- Implementation changes are local and ready to commit. Live issue #106 has the
+  approved conformant body.
+
+**Next steps**
+- Commit the local branch and open a PR into `donkey-kong-sandbox` when push/PR
+  creation is explicitly authorized.
+- Review the command-shape regex boundaries and Stop-hook protected path list.
+
+**Be careful**
+- Keep hooks read-only and advisory: they inspect the hook payload, command
+  text, local git status, and local receipt; they do not inspect secrets, run
+  live warehouse checks, or perform GitHub writes.
+- Keep further progress for this PR in this single entry.
+
+End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented

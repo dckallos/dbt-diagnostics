@@ -12,7 +12,8 @@ codex_header "Codex command surface"
 for script in .codex/bin/*.sh; do
   codex_run bash -n "$script"
 done
-codex_run "$python_path" -m py_compile .codex/scripts/*.py .codex/tests/*.py
+codex_run "$python_path" -m json.tool .codex/hooks.json
+codex_run "$python_path" -m py_compile .codex/scripts/*.py .codex/hooks/*.py .codex/tests/*.py
 codex_run "$python_path" -m pytest -q .codex/tests
 codex_run "$python_path" .codex/scripts/doctor.py --config-only
 codex_run "$python_path" -m pip check
@@ -33,7 +34,7 @@ fi
 
 codex_header "Compile"
 codex_run "$python_path" -m compileall -q -f \
-  dbt_diagnostics scripts .codex/scripts .codex/tests
+  dbt_diagnostics scripts .codex/scripts .codex/hooks .codex/tests
 
 codex_header "Tests (normal offline gate)"
 codex_run "$python_path" -m pytest -q -m "not live and not chaos"

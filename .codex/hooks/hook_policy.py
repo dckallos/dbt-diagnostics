@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+"""Local Codex hook policy for protected repository surfaces."""
+
+from __future__ import annotations
+
+import fnmatch
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Iterable, Mapping, Sequence
+
+
+DEFAULT_RECEIPT = Path("output/codex/quality-receipt.json")
+
+PROTECTED_PATTERNS = (
+    ".agents/skills/**",
+    ".codex/bin/**",
+    ".codex/scripts/**",
+    ".codex/hooks/**",
+    ".codex/hooks.json",
+    "scripts/triage/**",
+    "docs/*SCHEMA*.md",
+    "docs/*schema*.json",
+    "docs/ISSUE_GOVERNANCE.md",
+    "AGENTS.md",
+    ".github/workflows/**",
+)
+
+GITHUB_MUTATION_PATTERNS = (
+    re.compile(
+        r"\bgh\s+issue\s+"
+        r"(?:create|edit|close|reopen|delete|comment|lock|unlock|pin|unpin|transfer)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bgh\s+pr\s+(?:merge|close|edit|ready|lock|unlock)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bgh\s+(?:label|milestone)\s+"
+        r"(?:create|edit|delete|clone|close|reopen)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bgh\s+project\s+(?:create|edit|delete|item-(?:add|edit|delete|move))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bgh\s+api\b(?=.*(?:--method|-X)\s*(?:POST|PUT|PATCH|DELETE)\b)"
+        r"(?=.*\b(?:issues|pulls|labels|milestones|projects)\b)",
+        re.IGNORECASE,
+    ),
+)
+
+UNSAFE_COMMAND_PATTERNS = (
+    re.compile(r"\brm\s+(?:-[^\s]*[rf][^\s]*|-[^\s]*[fr][^\s]*)\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+reset\s+--hard\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+clean\s+-[^\s]*f", re.IGNORECASE),
+    re.compile(r"\bgit\s+checkout\s+--\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+push\b(?=.*\s--force(?:-with-lease)?\b)", re.IGNORECASE),
+    re.compile(r"\bchmod\s+-R\b", re.IGNORECASE),
+    re.compile(r"\bcurl\b.+\|\s*(?:sh|bash|zsh)\b", re.IGNORECASE),
+)
+
+
+def canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+
+
+def receipt_digest(receipt: Mapping[str, object]) -> str:
+    unsigned = {
+        key: value
+        for key, value in receipt.items()
+        if key != "quality_receipt_digest"
+    }
+    return hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
+
+
+def load_payload(stdin: str) -> dict[str, object]:
+    value = json.loads(stdin)
+    if not isinstance(value, dict):
+        raise ValueError("hook payload must be a JSON object")
+    return value
+
+
+def read_stdin_payload() -> dict[str, object]:
+    return load_payload(sys.stdin.read())
+
+
+def command_from_payload(payload: Mapping[str, object]) -> str:
+    if payload.get("tool_name") != "Bash":
+        return ""
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, str):
+        return tool_input
+    if isinstance(tool_input, Mapping):
+        for key in ("cmd", "command", "shell_command"):
+            value = tool_input.get(key)
+            if isinstance(value, str):
+                return value
+    return ""
+
+
+def github_mutation_reason(command: str) -> str | None:
+    if not command:
+        return None
+    if any(pattern.search(command) for pattern in GITHUB_MUTATION_PATTERNS):
+        return (
+            "Blocked GitHub metadata mutation command. Continue only with exact "
+            "maintainer approval for a one-off operator action outside read-only "
+            "governance artifacts."
+        )
+    return None
+
+
+def unsafe_command_reason(command: str) -> str | None:
+    if not command:
+        return None
+    if any(pattern.search(command) for pattern in UNSAFE_COMMAND_PATTERNS):
+        return "Blocked known unsafe command shape."
+    return None
+
+
+def pre_tool_use_pass() -> dict[str, object]:
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def pre_tool_use_deny(reason: str) -> dict[str, object]:
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
+def permission_request_pass() -> dict[str, object]:
+    return {"hookSpecificOutput": {"hookEventName": "PermissionRequest"}}
+
+
+def permission_request_deny(reason: str) -> dict[str, object]:
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {
+                "behavior": "deny",
+                "message": reason,
+            },
+        }
+    }
+
+
+def evaluate_pre_tool_use(payload: Mapping[str, object]) -> dict[str, object]:
+    command = command_from_payload(payload)
+    reason = github_mutation_reason(command) or unsafe_command_reason(command)
+    if reason:
+        return pre_tool_use_deny(reason)
+    return pre_tool_use_pass()
+
+
+def evaluate_permission_request(payload: Mapping[str, object]) -> dict[str, object]:
+    command = command_from_payload(payload)
+    reason = unsafe_command_reason(command) or github_mutation_reason(command)
+    if reason:
+        return permission_request_deny(reason)
+    return permission_request_pass()
+
+
+def normalize_path(path: str) -> str:
+    normalized = path.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def is_protected_path(path: str) -> bool:
+    normalized = normalize_path(path)
+    return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in PROTECTED_PATTERNS)
+
+
+def changed_paths_from_git(root: Path) -> tuple[str, ...] | None:
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=5,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        path = line[3:] if len(line) > 3 else ""
+        if " -> " in path:
+            paths.extend(part for part in path.split(" -> ") if part)
+        elif path:
+            paths.append(path)
+    return tuple(paths)
+
+
+def load_receipt(receipt_path: Path) -> tuple[dict[str, object] | None, str | None]:
+    if not receipt_path.is_file():
+        return None, f"missing {receipt_path.as_posix()}"
+    try:
+        value = json.loads(receipt_path.read_text(encoding="ascii"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, f"cannot read codex-quality receipt: {type(exc).__name__}"
+    if not isinstance(value, dict):
+        return None, "codex-quality receipt is not a JSON object"
+    expected = value.get("quality_receipt_digest")
+    if not isinstance(expected, str) or expected != receipt_digest(value):
+        return None, "codex-quality receipt digest is invalid"
+    if value.get("passed") is not True:
+        return None, "codex-quality receipt did not pass"
+    return value, None
+
+
+def receipt_is_fresh(
+    *,
+    root: Path,
+    receipt_path: Path,
+    protected_paths: Iterable[str],
+) -> tuple[bool, str | None]:
+    _receipt, error = load_receipt(receipt_path)
+    if error is not None:
+        return False, error
+    receipt_mtime = receipt_path.stat().st_mtime_ns
+    stale_paths: list[str] = []
+    unverifiable_paths: list[str] = []
+    for raw_path in protected_paths:
+        path = root / normalize_path(raw_path)
+        if not path.exists():
+            unverifiable_paths.append(normalize_path(raw_path))
+            continue
+        if path.stat().st_mtime_ns > receipt_mtime:
+            stale_paths.append(normalize_path(raw_path))
+    if stale_paths:
+        return False, "receipt is older than protected changes: " + ", ".join(
+            sorted(stale_paths)
+        )
+    if unverifiable_paths:
+        return False, "cannot verify missing protected paths: " + ", ".join(
+            sorted(unverifiable_paths)
+        )
+    return True, None
+
+
+def evaluate_stop(
+    payload: Mapping[str, object],
+    *,
+    root: Path | None = None,
+    changed_paths: Sequence[str] | None = None,
+    receipt_path: Path | None = None,
+) -> dict[str, object]:
+    if payload.get("stop_hook_active") is True:
+        return {"systemMessage": "stop hook already active; skipping nested run."}
+
+    root = root or Path(str(payload.get("cwd") or ".")).resolve()
+    receipt_path = receipt_path or (root / DEFAULT_RECEIPT)
+    discovered_paths: Sequence[str] | None = changed_paths
+    if discovered_paths is None:
+        discovered_paths = changed_paths_from_git(root)
+    if discovered_paths is None:
+        return {
+            "decision": "block",
+            "reason": (
+                "Unable to inspect local git status for protected Codex surfaces. "
+                "Resolve git status visibility before finalizing."
+            ),
+        }
+
+    protected_paths = tuple(path for path in discovered_paths if is_protected_path(path))
+    if not protected_paths:
+        return {"systemMessage": "no protected Codex surfaces changed."}
+
+    fresh, reason = receipt_is_fresh(
+        root=root,
+        receipt_path=receipt_path,
+        protected_paths=protected_paths,
+    )
+    if fresh:
+        return {"systemMessage": "codex-quality receipt is fresh for protected changes."}
+    detail = f" ({reason})" if reason else ""
+    return {
+        "decision": "block",
+        "reason": (
+            "Protected Codex/governance files changed without a fresh "
+            f"codex-quality receipt before final response.{detail}"
+        ),
+    }
+
+
+def emit_json(output: Mapping[str, object]) -> None:
+    print(json.dumps(output, sort_keys=True, ensure_ascii=True))
+
+
+def main_pre_tool_use() -> int:
+    try:
+        output = evaluate_pre_tool_use(read_stdin_payload())
+    except Exception:
+        output = pre_tool_use_deny("Invalid hook payload; refusing to evaluate tool use.")
+    emit_json(output)
+    return 0
+
+
+def main_permission_request() -> int:
+    try:
+        output = evaluate_permission_request(read_stdin_payload())
+    except Exception:
+        output = permission_request_deny(
+            "Invalid hook payload; refusing to approve permission request."
+        )
+    emit_json(output)
+    return 0
+
+
+def main_stop() -> int:
+    try:
+        output = evaluate_stop(read_stdin_payload())
+    except Exception as exc:
+        output = {
+            "decision": "block",
+            "reason": f"Stop hook failed safely: {type(exc).__name__}",
+        }
+    emit_json(output)
+    return 0

@@ -15,6 +15,7 @@ def test_static_codex_configuration_has_no_failures() -> None:
     checks = doctor.collect_checks(ROOT, config_only=True)
     assert checks
     assert [check for check in checks if check.level == "FAIL"] == []
+    assert [check for check in checks if check.name == "Codex hooks"]
 
 
 def test_environment_validation_rejects_missing_file(tmp_path) -> None:

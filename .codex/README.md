@@ -80,6 +80,33 @@ calls a GitHub write endpoint. Additional governance shell actions are exposed
 through the stable dispatcher without adding app-menu buttons: `frontier` and
 `project-plan`.
 
+## Local hooks
+
+This repository includes project-local Codex hooks in `.codex/hooks.json`.
+Codex loads them only after the project `.codex/` layer is trusted. Review and
+trust changed hooks with `/hooks` before relying on them.
+
+The hooks use the repository-controlled interpreter:
+
+```bash
+root="$(git rev-parse --show-toplevel)"
+"$root/.venv/bin/python" "$root/.codex/hooks/<hook>.py"
+```
+
+They are local safety checks only:
+
+- `PreToolUse` blocks direct GitHub metadata mutation commands and known unsafe
+  command shapes before tool execution.
+- `PermissionRequest` denies escalation for known unsafe command shapes.
+- `Stop` blocks finalization when protected Codex or governance files changed
+  without a fresh `output/codex/quality-receipt.json` from
+  `bash .codex/bin/action.sh codex-quality`.
+
+Hooks inspect the hook payload, command text, local git status, and the local
+quality receipt. They do not run live Snowflake, call GitHub write endpoints,
+or inspect secrets. Hook failures emit valid JSON and fail closed for the
+operation being evaluated.
+
 ## Issue governance workflow
 
 The full planning surface is available directly:

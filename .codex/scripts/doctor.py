@@ -19,6 +19,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_INSTRUCTION_LIMIT = 32 * 1024
 ALLOWED_ACTION_ICONS = {"build", "check", "run", "test", "tool"}
+ALLOWED_HOOK_EVENTS = {"PermissionRequest", "PreToolUse", "Stop"}
 IGNORED_PARTS = {".git", ".venv", "__pycache__"}
 
 
@@ -168,6 +169,97 @@ def _validate_environment(root: Path) -> tuple[bool, str]:
     return True, f"valid version 1 configuration with {len(actions)} actions"
 
 
+def _validate_hooks(root: Path) -> tuple[bool, str]:
+    path = root / ".codex" / "hooks.json"
+    if not path.exists():
+        return False, "missing .codex/hooks.json"
+    try:
+        hooks_config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"cannot parse hooks.json: {type(exc).__name__}"
+
+    errors: list[str] = []
+    hooks = hooks_config.get("hooks") if isinstance(hooks_config, dict) else None
+    if not isinstance(hooks, dict) or not hooks:
+        errors.append("hooks must be a non-empty object")
+        hooks = {}
+
+    for event, groups in hooks.items():
+        if event not in ALLOWED_HOOK_EVENTS:
+            errors.append(f"unsupported hook event: {event}")
+            continue
+        if not isinstance(groups, list) or not groups:
+            errors.append(f"{event} must be a non-empty list")
+            continue
+        for group_index, group in enumerate(groups, start=1):
+            if not isinstance(group, dict):
+                errors.append(f"{event} group {group_index} is not an object")
+                continue
+            handlers = group.get("hooks")
+            if not isinstance(handlers, list) or not handlers:
+                errors.append(f"{event} group {group_index} has no hooks")
+                continue
+            for handler_index, handler in enumerate(handlers, start=1):
+                if not isinstance(handler, dict):
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} is not an object"
+                    )
+                    continue
+                if handler.get("type") != "command":
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must be command"
+                    )
+                command = handler.get("command")
+                if not isinstance(command, str) or not command.strip():
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} has no command"
+                    )
+                    continue
+                try:
+                    argv = shlex.split(command)
+                except ValueError:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} has invalid shell quoting"
+                    )
+                    continue
+                if len(argv) < 3 or argv[:2] != ["bash", "-lc"]:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must run through bash -lc"
+                    )
+                if ".venv/bin/python" not in command:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must use the repo .venv"
+                    )
+                marker = ".codex/hooks/"
+                if marker not in command:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must target .codex/hooks"
+                    )
+                    continue
+                script_name = command.split(marker, 1)[1].split('"', 1)[0].split("'", 1)[0]
+                if not script_name.endswith(".py"):
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} target is not Python"
+                    )
+                    continue
+                script_path = root / ".codex" / "hooks" / script_name
+                if not script_path.is_file():
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} references missing {script_path.relative_to(root)}"
+                    )
+
+    if errors:
+        return False, "; ".join(errors)
+    handler_count = sum(
+        len(group.get("hooks", []))
+        for groups in hooks.values()
+        if isinstance(groups, list)
+        for group in groups
+        if isinstance(group, dict)
+    )
+    return True, f"valid hooks.json with {len(hooks)} event(s) and {handler_count} handler(s)"
+
+
 def collect_static_checks(root: Path) -> list[Check]:
     checks: list[Check] = []
     required_paths = (
@@ -215,6 +307,15 @@ def collect_static_checks(root: Path) -> list[Check]:
             "PASS" if valid_environment else "FAIL",
             "Codex environment file",
             environment_detail,
+        )
+    )
+
+    valid_hooks, hooks_detail = _validate_hooks(root)
+    checks.append(
+        Check(
+            "PASS" if valid_hooks else "FAIL",
+            "Codex hooks",
+            hooks_detail,
         )
     )
 
