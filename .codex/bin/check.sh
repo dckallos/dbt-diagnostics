@@ -12,6 +12,9 @@ codex_header "Codex command surface"
 for script in .codex/bin/*.sh; do
   codex_run bash -n "$script"
 done
+for script in .codex/hooks/*.sh; do
+  codex_run bash -n "$script"
+done
 codex_run "$python_path" -m json.tool .codex/hooks.json
 codex_run "$python_path" -m py_compile .codex/scripts/*.py .codex/hooks/*.py .codex/tests/*.py
 codex_run "$python_path" -m pytest -q .codex/tests

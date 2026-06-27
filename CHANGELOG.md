@@ -9,7 +9,14 @@
   shapes are blocked before execution or escalation.
 - I made the Stop hook require a fresh digest-valid
   `output/codex/quality-receipt.json` after protected Codex or governance
-  files change.
+  files change, and tightened that check so every changed protected path must
+  be covered by the receipt's deterministic `covered_protected_paths` field.
+- I expanded deterministic GitHub mutation blocking to include GraphQL
+  mutations, PR comments/reviews, repository edits, workflow dispatch/toggle
+  commands, and secret/variable writes while keeping read-only `gh` commands
+  allowed.
+- I added a JSON-safe hook launcher that fails closed when the git root, repo
+  `.venv`, or hook script cannot be resolved.
 - I wired hook JSON/script validation into the Codex check and doctor gates and
   documented hook trust and local `.venv` execution in `.codex/README.md`.
 

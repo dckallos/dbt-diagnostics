@@ -3,31 +3,22 @@
 
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import json
 from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import codex_surface
 
 
 DEFAULT_RECEIPT = Path("output/codex/quality-receipt.json")
-
-PROTECTED_PATTERNS = (
-    ".agents/skills/**",
-    ".codex/bin/**",
-    ".codex/scripts/**",
-    ".codex/hooks/**",
-    ".codex/hooks.json",
-    "scripts/triage/**",
-    "docs/*SCHEMA*.md",
-    "docs/*schema*.json",
-    "docs/ISSUE_GOVERNANCE.md",
-    "AGENTS.md",
-    ".github/workflows/**",
-)
 
 GITHUB_MUTATION_PATTERNS = (
     re.compile(
@@ -36,9 +27,13 @@ GITHUB_MUTATION_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"\bgh\s+pr\s+(?:merge|close|edit|ready|lock|unlock)\b",
+        r"\bgh\s+pr\s+(?:merge|close|edit|ready|lock|unlock|comment|review)\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\bgh\s+repo\s+edit\b", re.IGNORECASE),
+    re.compile(r"\bgh\s+workflow\s+(?:run|disable|enable)\b", re.IGNORECASE),
+    re.compile(r"\bgh\s+secret\s+set\b", re.IGNORECASE),
+    re.compile(r"\bgh\s+variable\s+set\b", re.IGNORECASE),
     re.compile(
         r"\bgh\s+(?:label|milestone)\s+"
         r"(?:create|edit|delete|clone|close|reopen)\b",
@@ -52,6 +47,11 @@ GITHUB_MUTATION_PATTERNS = (
         r"\bgh\s+api\b(?=.*(?:--method|-X)\s*(?:POST|PUT|PATCH|DELETE)\b)"
         r"(?=.*\b(?:issues|pulls|labels|milestones|projects)\b)",
         re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bgh\s+api\s+graphql\b"
+        r"(?=.*(?:-f|--field|-F|--raw-field)\s+query\s*=\s*['\"]?\s*mutation\b)",
+        re.IGNORECASE | re.DOTALL,
     ),
 )
 
@@ -176,16 +176,8 @@ def evaluate_permission_request(payload: Mapping[str, object]) -> dict[str, obje
     return permission_request_pass()
 
 
-def normalize_path(path: str) -> str:
-    normalized = path.strip().replace("\\", "/")
-    while normalized.startswith("./"):
-        normalized = normalized[2:]
-    return normalized
-
-
-def is_protected_path(path: str) -> bool:
-    normalized = normalize_path(path)
-    return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in PROTECTED_PATTERNS)
+normalize_path = codex_surface.normalize_path
+is_protected_path = codex_surface.is_protected_path
 
 
 def changed_paths_from_git(root: Path) -> tuple[str, ...] | None:
@@ -229,32 +221,56 @@ def load_receipt(receipt_path: Path) -> tuple[dict[str, object] | None, str | No
     return value, None
 
 
-def receipt_is_fresh(
+def receipt_covered_paths(
+    receipt: Mapping[str, object],
+) -> tuple[tuple[str, ...] | None, str | None]:
+    value = receipt.get("covered_protected_paths")
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None, "codex-quality receipt has no valid covered_protected_paths"
+    normalized = codex_surface.protected_paths(value)
+    if list(normalized) != value:
+        return None, "codex-quality receipt covered_protected_paths is not deterministic"
+    return normalized, None
+
+
+def receipt_covers_protected_paths(
     *,
     root: Path,
     receipt_path: Path,
-    protected_paths: Iterable[str],
+    protected_paths: Sequence[str],
 ) -> tuple[bool, str | None]:
-    _receipt, error = load_receipt(receipt_path)
+    receipt, error = load_receipt(receipt_path)
     if error is not None:
         return False, error
+
+    covered_paths, error = receipt_covered_paths(receipt)
+    if error is not None:
+        return False, error
+
+    normalized_protected_paths = codex_surface.protected_paths(protected_paths)
+    missing_local_paths = [
+        path for path in normalized_protected_paths if not (root / path).exists()
+    ]
+    if missing_local_paths:
+        return False, "protected paths deleted or unavailable: " + ", ".join(
+            missing_local_paths
+        )
+
+    uncovered_paths = sorted(set(normalized_protected_paths) - set(covered_paths))
+    if uncovered_paths:
+        return False, "protected paths not covered by codex-quality receipt: " + ", ".join(
+            uncovered_paths
+        )
+
     receipt_mtime = receipt_path.stat().st_mtime_ns
     stale_paths: list[str] = []
-    unverifiable_paths: list[str] = []
-    for raw_path in protected_paths:
-        path = root / normalize_path(raw_path)
-        if not path.exists():
-            unverifiable_paths.append(normalize_path(raw_path))
-            continue
+    for raw_path in normalized_protected_paths:
+        path = root / raw_path
         if path.stat().st_mtime_ns > receipt_mtime:
-            stale_paths.append(normalize_path(raw_path))
+            stale_paths.append(raw_path)
     if stale_paths:
         return False, "receipt is older than protected changes: " + ", ".join(
             sorted(stale_paths)
-        )
-    if unverifiable_paths:
-        return False, "cannot verify missing protected paths: " + ", ".join(
-            sorted(unverifiable_paths)
         )
     return True, None
 
@@ -287,18 +303,18 @@ def evaluate_stop(
     if not protected_paths:
         return {"systemMessage": "no protected Codex surfaces changed."}
 
-    fresh, reason = receipt_is_fresh(
+    covered, reason = receipt_covers_protected_paths(
         root=root,
         receipt_path=receipt_path,
         protected_paths=protected_paths,
     )
-    if fresh:
-        return {"systemMessage": "codex-quality receipt is fresh for protected changes."}
+    if covered:
+        return {"systemMessage": "codex-quality receipt covers protected changes."}
     detail = f" ({reason})" if reason else ""
     return {
         "decision": "block",
         "reason": (
-            "Protected Codex/governance files changed without a fresh "
+            "Protected Codex/governance files changed without a covering "
             f"codex-quality receipt before final response.{detail}"
         ),
     }

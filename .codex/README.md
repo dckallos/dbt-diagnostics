@@ -86,12 +86,17 @@ This repository includes project-local Codex hooks in `.codex/hooks.json`.
 Codex loads them only after the project `.codex/` layer is trusted. Review and
 trust changed hooks with `/hooks` before relying on them.
 
-The hooks use the repository-controlled interpreter:
+The hook commands delegate to `.codex/hooks/run_hook.sh`. The launcher resolves
+the git root, requires the repository-controlled interpreter, and then runs the
+selected hook script:
 
 ```bash
-root="$(git rev-parse --show-toplevel)"
-"$root/.venv/bin/python" "$root/.codex/hooks/<hook>.py"
+.codex/hooks/run_hook.sh <hook>.py <EventName>
 ```
+
+If the git root, `.venv/bin/python`, or hook script is unavailable, the
+launcher emits valid event-specific hook JSON and fails closed for the
+operation being evaluated.
 
 They are local safety checks only:
 
@@ -99,13 +104,18 @@ They are local safety checks only:
   command shapes before tool execution.
 - `PermissionRequest` denies escalation for known unsafe command shapes.
 - `Stop` blocks finalization when protected Codex or governance files changed
-  without a fresh `output/codex/quality-receipt.json` from
-  `bash .codex/bin/action.sh codex-quality`.
+  without a digest-valid, passing `output/codex/quality-receipt.json` whose
+  deterministic `covered_protected_paths` field covers every changed protected
+  path. The receipt must also be newer than the covered protected files.
 
 Hooks inspect the hook payload, command text, local git status, and the local
 quality receipt. They do not run live Snowflake, call GitHub write endpoints,
 or inspect secrets. Hook failures emit valid JSON and fail closed for the
 operation being evaluated.
+
+The normal `codex-quality` action records default governance-scan surfaces and
+any locally changed protected paths it can see from git status. A targeted run
+can pass `--path` values to cover a specific protected path set.
 
 ## Issue governance workflow
 

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -lc 'root=\"$(git rev-parse --show-toplevel)\"; exec \"$root/.venv/bin/python\" \"$root/.codex/hooks/pre_tool_use.py\"'",
+            "command": "bash -lc 'exec .codex/hooks/run_hook.sh pre_tool_use.py PreToolUse'",
             "timeout": 10,
             "statusMessage": "Checking command safety"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -lc 'root=\"$(git rev-parse --show-toplevel)\"; exec \"$root/.venv/bin/python\" \"$root/.codex/hooks/permission_request.py\"'",
+            "command": "bash -lc 'exec .codex/hooks/run_hook.sh permission_request.py PermissionRequest'",
             "timeout": 10,
             "statusMessage": "Checking approval safety"
           }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -lc 'root=\"$(git rev-parse --show-toplevel)\"; exec \"$root/.venv/bin/python\" \"$root/.codex/hooks/stop.py\"'",
+            "command": "bash -lc 'exec .codex/hooks/run_hook.sh stop.py Stop'",
             "timeout": 10,
             "statusMessage": "Checking Codex quality receipt"
           }

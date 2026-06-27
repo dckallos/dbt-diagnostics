@@ -1213,20 +1213,25 @@ End of session -- 2026-06-27 PR 113 review fixes and governance hardening
   drafted only the missing local proposed-body sections under
   `output/triage/issues/106/`, validated them with `standardize`, printed the
   full proposed body for maintainer approval, applied the approved body to the
-  live issue, and rechecked the live contract before implementation.
+  live issue after approval, and rechecked the live contract before
+  implementation.
 - Added repo-local Codex hooks for `PreToolUse`, `PermissionRequest`, and
-  `Stop`. The command hooks run through the repository `.venv` and resolve hook
-  scripts from the git root.
+  `Stop`, plus a JSON-safe `.codex/hooks/run_hook.sh` launcher. The launcher
+  resolves the git root, requires the repository `.venv`, and fails closed with
+  valid hook JSON if the root, interpreter, or hook script cannot be resolved.
 - Added shared hook policy code that blocks direct GitHub tracker metadata
   mutation shapes and unsafe shell command shapes before execution or
-  escalation.
-- Added a Stop hook quality gate that blocks finalization after protected
-  Codex/governance files change unless `output/codex/quality-receipt.json` is
-  fresh, digest-valid, and passing.
-- Wired hook JSON and script validation into the Codex doctor, compile, and
-  check surfaces.
-- Documented local hook trust, `.venv` execution, and receipt behavior in
-  `.codex/README.md`.
+  escalation. The blocked GitHub shapes now include GraphQL mutations, PR
+  comments/reviews, repository edits, workflow dispatch/toggle commands, and
+  secret/variable writes.
+- Strengthened the Stop hook quality gate. `codex-quality` now writes a
+  digest-bound deterministic `covered_protected_paths` receipt field, and Stop
+  requires every changed protected path to be covered by that field, present on
+  disk, passing, digest-valid, and not newer than the receipt.
+- Wired hook JSON, launcher, and script validation into the Codex doctor,
+  compile, and check surfaces.
+- Documented local hook trust, launcher behavior, `.venv` execution, and
+  receipt coverage in `.codex/README.md`.
 - Updated `CHANGELOG.md`.
 
 **Validation**
@@ -1242,34 +1247,44 @@ End of session -- 2026-06-27 PR 113 review fixes and governance hardening
   output/triage/issues/106/proposed-body.md` succeeded after maintainer
   approval.
 - `python scripts/triage/triage.py contract --issue 106` passed on the live
-  body with `governance_state: conformant`; only the missing type-label warning
-  remains.
-- `python -m pytest -q .codex/tests/test_codex_hooks.py
-  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` passed:
-  33 passed.
+  body with `governance_state: conformant`.
+- First revision test run failed as intended before implementation:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 16
+  failed, 33 passed.
+- Focused revised tests passed:
+  `python -m pytest -q .codex/tests/test_codex_hooks.py
+  .codex/tests/test_codex_quality.py .codex/tests/test_doctor.py` -> 55
+  passed.
+- `python -m json.tool .codex/hooks.json` passed.
+- `python -m py_compile .codex/scripts/*.py .codex/hooks/*.py
+  .codex/tests/*.py` passed after rerunning with approved filesystem
+  escalation for `.pyc` writes.
 - `bash .codex/bin/action.sh codex-quality --json` passed with no findings and
-  wrote a fresh digest-bound receipt.
+  wrote a receipt whose `covered_protected_paths` includes the changed
+  protected hook/script/config paths.
 - Stop hook smoke test passed with
-  `{"systemMessage": "codex-quality receipt is fresh for protected changes."}`.
-- `bash .codex/bin/action.sh check` passed: Codex tests 44 passed; offline
+  `{"systemMessage": "codex-quality receipt covers protected changes."}`.
+- `bash .codex/bin/action.sh check` passed: Codex tests 66 passed; offline
   tests 641 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
 
 **Current state**
-- Work is on local branch `chore/106-codex-hooks`, based on
-  `origin/donkey-kong-sandbox`.
-- Implementation changes are local and ready to commit. Live issue #106 has the
-  approved conformant body.
+- Work is on local branch `chore/106-codex-hooks`, tracking
+  `origin/chore/106-codex-hooks` for draft PR #114 into `donkey-kong-sandbox`.
+- The PR #114 revision is local only. I did not push because this session's
+  scope explicitly kept GitHub writes out of scope.
+- Live issue #106 has the approved conformant body.
 
 **Next steps**
-- Commit the local branch and open a PR into `donkey-kong-sandbox` when push/PR
-  creation is explicitly authorized.
-- Review the command-shape regex boundaries and Stop-hook protected path list.
+- Review the revised command-shape regex boundaries, Stop coverage semantics,
+  and launcher fail-closed behavior.
+- Push the local branch only after an explicit GitHub-write approval.
 
 **Be careful**
 - Keep hooks read-only and advisory: they inspect the hook payload, command
   text, local git status, and local receipt; they do not inspect secrets, run
   live warehouse checks, or perform GitHub writes.
-- Keep further progress for this PR in this single entry.
+- Keep further PR #114 progress notes inside this single entry.
 
 End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented

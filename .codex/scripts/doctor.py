@@ -20,6 +20,11 @@ from urllib.parse import urlsplit, urlunsplit
 DEFAULT_INSTRUCTION_LIMIT = 32 * 1024
 ALLOWED_ACTION_ICONS = {"build", "check", "run", "test", "tool"}
 ALLOWED_HOOK_EVENTS = {"PermissionRequest", "PreToolUse", "Stop"}
+EXPECTED_HOOK_SCRIPTS = {
+    "PermissionRequest": "permission_request.py",
+    "PreToolUse": "pre_tool_use.py",
+    "Stop": "stop.py",
+}
 IGNORED_PARTS = {".git", ".venv", "__pycache__"}
 
 
@@ -179,6 +184,27 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
         return False, f"cannot parse hooks.json: {type(exc).__name__}"
 
     errors: list[str] = []
+    launcher_path = root / ".codex" / "hooks" / "run_hook.sh"
+    launcher_text = ""
+    if launcher_path.is_file():
+        try:
+            launcher_text = launcher_path.read_text(encoding="ascii")
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append(f"cannot read .codex/hooks/run_hook.sh: {type(exc).__name__}")
+    else:
+        errors.append("missing .codex/hooks/run_hook.sh")
+    if launcher_text:
+        if ".venv/bin/python" not in launcher_text:
+            errors.append("hook launcher must use the repo .venv")
+        if "git rev-parse --show-toplevel" not in launcher_text:
+            errors.append("hook launcher must resolve the git root")
+        if not os.access(launcher_path, os.X_OK):
+            errors.append(".codex/hooks/run_hook.sh must be executable")
+        syntax = _run(["bash", "-n", ".codex/hooks/run_hook.sh"], cwd=root)
+        if syntax.returncode != 0:
+            detail = (syntax.stderr or syntax.stdout).strip() or "unknown error"
+            errors.append(f".codex/hooks/run_hook.sh has invalid syntax: {detail}")
+
     hooks = hooks_config.get("hooks") if isinstance(hooks_config, dict) else None
     if not isinstance(hooks, dict) or not hooks:
         errors.append("hooks must be a non-empty object")
@@ -226,23 +252,24 @@ def _validate_hooks(root: Path) -> tuple[bool, str]:
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} must run through bash -lc"
                     )
-                if ".venv/bin/python" not in command:
-                    errors.append(
-                        f"{event} group {group_index} hook {handler_index} must use the repo .venv"
-                    )
-                marker = ".codex/hooks/"
+                marker = ".codex/hooks/run_hook.sh"
                 if marker not in command:
                     errors.append(
-                        f"{event} group {group_index} hook {handler_index} must target .codex/hooks"
+                        f"{event} group {group_index} hook {handler_index} must use the hook launcher"
                     )
                     continue
-                script_name = command.split(marker, 1)[1].split('"', 1)[0].split("'", 1)[0]
-                if not script_name.endswith(".py"):
+                expected_script = EXPECTED_HOOK_SCRIPTS[event]
+                if expected_script not in command:
                     errors.append(
-                        f"{event} group {group_index} hook {handler_index} target is not Python"
+                        f"{event} group {group_index} hook {handler_index} must launch {expected_script}"
                     )
                     continue
-                script_path = root / ".codex" / "hooks" / script_name
+                if event not in command:
+                    errors.append(
+                        f"{event} group {group_index} hook {handler_index} must pass {event}"
+                    )
+                    continue
+                script_path = root / ".codex" / "hooks" / expected_script
                 if not script_path.is_file():
                     errors.append(
                         f"{event} group {group_index} hook {handler_index} references missing {script_path.relative_to(root)}"
