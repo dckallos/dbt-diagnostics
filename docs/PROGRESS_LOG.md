@@ -1357,12 +1357,14 @@ End of session -- 2026-06-27 issue 106 Codex hook guardrails implemented
   gate skipped as expected.
 
 **Current state**
-- Work is local on branch `feat/115-official-docs-evidence`.
-- The branch is not pushed and no PR has been opened.
+- Work is on branch `feat/115-official-docs-evidence`, tracking
+  `origin/feat/115-official-docs-evidence`.
+- Draft PR #117 is open into `donkey-kong-sandbox` with `Closes #115` in the
+  PR body, and GitHub reports issue #115 in `closingIssuesReferences`.
 
 **Next steps**
-- Review provider trigger boundaries and the initial official-domain allowlist,
-  then commit and open a PR into `donkey-kong-sandbox` when approved.
+- Review provider trigger boundaries, the initial official-domain allowlist,
+  and the unknown-provider blocker wording in PR #117.
 
 **Be careful**
 - Do not add retrieval, freshness checks, browser automation, or any issue-body
