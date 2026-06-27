@@ -29,6 +29,18 @@ controlled `.venv`; multi-version coverage is CI's responsibility.
 3. Load only the issue, direct dependencies, relevant parent excerpt,
    referenced paths, direct callers, tests, and design docs. Do not preload the
    whole repository.
+4. When an issue relies on external platform behavior, product documentation,
+   API or CLI contracts, schema guarantees, hosted service rules, or similar
+   official source-of-truth material outside this repository, include
+   `Official documentation evidence` in the proposed body. Record provider,
+   official URL, supported claim or decision, docs/product version when
+   available, retrieval date, and residual uncertainty. Do not fetch URLs,
+   cache pages, use browser automation, or treat a URL as proof that the issue
+   interpretation is correct.
+5. For unknown documentation providers, record either maintainer verification
+   of the official source or explicit uncertainty. If the source remains
+   unverified and is required before implementation, also add that unresolved
+   verification to `Maintainer decisions and blockers`.
 
 ## 2. Disposition hypothesis (cheap, single-issue only)
 

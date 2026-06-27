@@ -115,6 +115,39 @@ fixture, publisher setup, license choice, security contact, or other authority
 outside the checkout. Missing evidence is a blocker, not a reason to invent a
 result.
 
+### Official documentation evidence
+
+Required when an issue depends on external platform behavior, product
+documentation, API or CLI contracts, schema guarantees, hosted service rules, or
+other official source-of-truth material outside this repository. This is
+separate from credentials, permissions, real fixtures, and maintainer decisions:
+it preserves the official public documentation that supports a claim, while
+those other sections preserve access, authority, or unresolved choice.
+
+The section must name:
+
+- provider;
+- official URL;
+- supported claim or decision;
+- docs version or product version when available;
+- retrieval date;
+- residual uncertainty.
+
+The deterministic contract check is local-only. It detects conservative known
+provider triggers, checks URL hostnames against known official documentation
+domains, rejects clearly unofficial URLs for known providers, and requires
+explicit maintainer verification or residual uncertainty for unknown providers.
+It does not fetch URLs, cache pages, use a browser, check freshness, or prove
+that the issue interprets the documentation correctly.
+
+For an unknown provider, use the section to preserve the uncertainty instead of
+inventing a trusted domain. If the maintainer has verified that the URL is
+official, say that in residual uncertainty and keep semantic interpretation
+separate. If the source is still unverified and implementation-critical, also
+record the unresolved verification in `Maintainer decisions and blockers`; the
+contract rejects a critical unknown-provider source that says verification is
+required before implementation but has no blocker section.
+
 ### Compatibility and canonical JSON implications
 
 Required when work affects the public JSON contract, artifact versions,
@@ -395,3 +428,8 @@ python scripts/triage/triage.py standardize --issue 55 \
 `standardize` never edits GitHub. Its output is a review artifact. The process
 stops before tracker mutation and requires explicit approval for the exact body
 text through the maintainer's normal GitHub workflow.
+
+When `review-packet` or `standardize` sees a known-provider external contract
+claim, it includes or requires `Official documentation evidence` in the same
+local-only flow. A placeholder section still blocks acceptance until the exact
+body records real documentation evidence and residual uncertainty.
