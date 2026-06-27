@@ -17,17 +17,17 @@ Input: exactly one GitHub issue number.
    accepted, STOP issue-work and run the `issue-governance` skill on this same
    issue first. Resume issue-work only once
    `python scripts/triage/triage.py standardize --issue <issue> --proposed-body <path>`
-   returns exit 0 on the final body, the maintainer explicitly approves that
-   exact proposed body, the live issue body is updated to that approved body,
-   and `python scripts/triage/triage.py contract --issue <issue>` accepts the
-   live issue. To get approval, print the entire final `proposed-body.md`
-   inline in chat and ask the maintainer to approve it before doing any
-   implementation work. The issue-body update is the only GitHub metadata
-   mutation allowed by this prerequisite, and only after exact maintainer
-   approval. Escalate instead of implementing when `issue-governance` stops for
-   a disposition other than `keep`, for a section that cannot be grounded, or
-   when the maintainer does not approve the exact body. Never implement against
-   a non-conformant spec, and never loosen the contract to pass this gate.
+   returns exit 0 on the final body, the maintainer has reviewed the exact
+   proposed body, and `python scripts/triage/triage.py contract --issue <issue>`
+   accepts the live issue. The issue-governance skill and issue-work skill never
+   modify GitHub tracker text. Present the final `proposed-body.md` for
+   maintainer-applied review, then stop. Resume only after the live issue
+   changes outside issue-work and the contract audit accepts the live issue.
+   Escalate
+   instead of implementing when `issue-governance` stops for a disposition other
+   than `keep`, for a section that cannot be grounded, or when the maintainer
+   does not approve the exact body. Never implement against a non-conformant
+   spec, and never loosen the contract to pass this gate.
 
 3. Treat the live, standardized issue as the current task specification.
 
@@ -72,3 +72,11 @@ Input: exactly one GitHub issue number.
 
 12. Do not push, merge, or mutate GitHub metadata unless the current task
     explicitly authorizes it.
+
+13. Do not use `Refs #<issue>` as the only issue link for an implementation PR.
+    When the current task explicitly authorizes pushing and creating a PR, make
+    the PR body close this implemented issue with a GitHub auto-close keyword,
+    preferably `Closes #<issue>`. Keep close keywords limited to the implemented
+    issue, not parent epics, dependencies, duplicates, or related issues. When
+    practical after PR creation, check the PR's `closingIssuesReferences`; if it
+    does not include the implemented issue, update the PR body before merge.

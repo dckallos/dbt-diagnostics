@@ -86,7 +86,9 @@ The byte budget is authoritative:
 - `target_bytes`: `204800`
 - `hard_bytes`: `307200`
 
-`serialized_bytes` must not exceed `hard_bytes`.
+`serialized_bytes` must not exceed `hard_bytes`. The validator also recomputes
+the packet's actual canonical serialized byte length and rejects packets whose
+real size exceeds `hard_bytes`, even if `serialized_bytes` under-reports size.
 
 Token estimates are advisory telemetry:
 
@@ -130,10 +132,11 @@ mutation.
 
 ## Forbidden Shape
 
-The top-level `operations` key is forbidden. The packet must not carry GitHub
-request payloads, apply operations, issue title/body update payloads, label
-updates, milestone updates, Project updates, close/reopen requests, issue
-`state` mutation targets, or unbounded issue `body` content.
+Forbidden shape checks are recursive. The packet must not carry `operations`,
+GitHub request payloads, apply operations, issue title/body update payloads,
+label updates, milestone updates, Project updates, close/reopen requests, issue
+`state` mutation targets, issue comments, unbounded issue `body` content, or a
+full tracker snapshot at any depth.
 
 Use bounded evidence excerpts with `evidence_id` instead of embedding
 `issue.body`.
@@ -142,7 +145,7 @@ Use bounded evidence excerpts with `evidence_id` instead of embedding
 
 `scripts/triage/frontier.py:validate_synthesis_review_packet` validates
 required keys, field types, source digests, comments status, budget constants,
-byte-budget enforcement, staleness reviewability, read-only safety fields,
-forbidden mutation shape, and the canonical packet digest. It returns an empty
-list for a valid packet and a list of specific error strings for malformed or
-stale packets.
+self-reported and actual byte-budget enforcement, staleness reviewability,
+read-only safety fields, recursive forbidden mutation shape, and the canonical
+packet digest. It returns an empty list for a valid packet and a list of
+specific error strings for malformed or stale packets.

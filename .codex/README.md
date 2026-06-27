@@ -100,14 +100,19 @@ python scripts/triage/triage.py plan --output-dir output/triage
 python scripts/triage/triage.py project-plan \
   --snapshot output/triage/snapshot.json \
   --audit-file output/triage/audit.json --json
+python scripts/triage/triage.py backlog-synthesis \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json --json
 python scripts/triage/triage.py frontier --mode audit --json
 python scripts/triage/triage.py frontier --mode implement --json
 ```
 
 For credential-free use, pass `--snapshot output/triage/snapshot.json` to the
-commands that inspect tracker state. `audit.json` written by `plan` or `audit
---output` can be passed directly to `frontier --audit-file` or
-`project-plan --audit-file`.
+commands that inspect tracker state. `audit.json` written by `plan` can be
+passed directly to `frontier --audit-file`, `project-plan --audit-file`, or
+`backlog-synthesis --audit-file`. An `audit --issues ... --output` file is
+partial; use it only with a matching scoped frontier, not with full
+`project-plan` or `backlog-synthesis` artifacts.
 
 `plan` writes a normalized snapshot, a full readiness audit, a digest-bound
 metadata plan, a human-readable summary, and an approval template that approves

@@ -24,6 +24,7 @@ Actions:
   frontier MODE Select the read-only audit or implementation frontier
   project-plan   Emit the read-only advisory Project plan
   package        Build, inspect, install, and smoke-test wheel and sdist
+  codex-quality  Run repository-specific Codex semantic quality gates
   help           Show this message
 USAGE
 }
@@ -69,6 +70,9 @@ case "$action" in
     ;;
   package)
     exec bash .codex/bin/package.sh "$@"
+    ;;
+  codex-quality)
+    exec bash .codex/bin/codex-quality.sh "$@"
     ;;
   help|-h|--help)
     usage

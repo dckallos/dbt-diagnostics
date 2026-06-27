@@ -3176,6 +3176,17 @@ def audit_coverage_gap(
     return sorted(number for number in required if number not in audited)
 
 
+def require_full_audit_coverage(
+    audit: Mapping[str, Any], snapshot: Mapping[str, Any], *, artifact_name: str
+) -> None:
+    uncovered = audit_coverage_gap(audit, snapshot, None)
+    if uncovered:
+        raise TriageError(
+            f"readiness audit does not cover the requested {artifact_name} "
+            f"issue(s): {uncovered}; rerun the audit without --issues"
+        )
+
+
 def readiness_audit_has_errors(audit: Mapping[str, Any]) -> bool:
     findings: list[Mapping[str, Any]] = []
     global_findings = audit.get("global_findings")
@@ -3477,6 +3488,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--snapshot",
         dest="snapshot_file",
         type=Path,
+        required=True,
         help="use an existing snapshot without GitHub reads",
     )
     backlog_synthesis_audit_source = backlog_synthesis.add_mutually_exclusive_group()
@@ -3547,6 +3559,9 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 args.audit_file, "readiness audit JSON"
             )
             validate_readiness_audit(readiness_audit, snapshot)
+            require_full_audit_coverage(
+                readiness_audit, snapshot, artifact_name="project-plan"
+            )
             plan = issue_frontier.build_project_plan(
                 snapshot,
                 readiness_audit,
@@ -3781,6 +3796,9 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                     snapshot, policy, semantic_evidence=semantic
                 )
                 validate_readiness_audit(readiness_audit, snapshot)
+            require_full_audit_coverage(
+                readiness_audit, snapshot, artifact_name="backlog-synthesis"
+            )
             report = issue_frontier.build_backlog_synthesis_report(
                 snapshot, readiness_audit
             )
