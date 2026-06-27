@@ -7,6 +7,253 @@
 owner = "dckallos"
 name = "dbt-diagnostics"
 default_branch = "donkey-kong-sandbox"
+protected_branches = ["main", "donkey-kong-sandbox"]
+progress_log_path = "docs/PROGRESS_LOG.md"
+
+[governance.contract]
+id = "dbt-diagnostics.issue-contract.v1"
+version = "1.0"
+
+[governance.paths]
+reference_roots = [
+  "AGENTS.md",
+  "CONTRIBUTING.md",
+  "README.md",
+  "CHANGELOG.md",
+  "SECURITY.md",
+  "LICENSE",
+  "pyproject.toml",
+  ".gitignore",
+  ".pre-commit-config.yaml",
+  "docs",
+  "scripts",
+  ".github",
+  ".codex",
+  ".agents",
+  "dbt_diagnostics",
+]
+protected_surfaces = [
+  ".agents/skills/**",
+  ".codex/bin/**",
+  ".codex/scripts/**",
+  ".codex/hooks/**",
+  ".codex/hooks.json",
+  "scripts/triage/**",
+  "docs/*SCHEMA*.md",
+  "docs/*schema*.json",
+  "docs/ISSUE_GOVERNANCE.md",
+  "AGENTS.md",
+  ".github/workflows/**",
+]
+
+[governance.official_docs]
+enabled = true
+section_title = "Official documentation evidence"
+unknown_provider_policy = "preserve_verification_or_uncertainty"
+critical_unverified_requires_blocker = true
+network_retrieval = false
+browser_automation = false
+freshness_enforcement = false
+
+[[governance.official_docs.providers]]
+key = "openai"
+display_name = "OpenAI/Codex"
+trigger_patterns = [
+  '\bopenai\b',
+  '\bcodex\b',
+  '\bchatgpt\b',
+  '\bresponses api\b',
+  '\bagents sdk\b',
+]
+official_domains = [
+  "developers.openai.com",
+  "platform.openai.com",
+  "help.openai.com",
+]
+
+[[governance.official_docs.providers]]
+key = "dbt"
+display_name = "dbt"
+trigger_patterns = [
+  '(?<![a-z0-9-])dbt(?![a-z0-9-])',
+  '\bdbt[- ]core\b',
+  '\bdbt cloud\b',
+  '\bdbt docs?\b',
+]
+official_domains = ["docs.getdbt.com"]
+
+[[governance.official_docs.providers]]
+key = "github"
+display_name = "GitHub"
+trigger_patterns = [
+  '\bgithub actions\b',
+  '\bgithub api\b',
+  '\bgithub cli\b',
+  '\bgithub graphql\b',
+  '\bgithub rest\b',
+  '\bgithub workflow\b',
+  '\bgh api\b',
+  '\bworkflow_dispatch\b',
+  '\bclosingissuesreferences\b',
+  '\bauto-?close keywords?\b',
+]
+official_domains = ["docs.github.com"]
+
+[[governance.official_docs.providers]]
+key = "snowflake"
+display_name = "Snowflake"
+trigger_patterns = [
+  '\bsnowflake\b',
+  '\binformation_schema\b',
+  '\bquery history\b',
+]
+official_domains = ["docs.snowflake.com"]
+
+[[governance.official_docs.providers]]
+key = "bigquery"
+display_name = "BigQuery"
+trigger_patterns = ['\bbigquery\b', '\bgoogle cloud\b']
+official_domains = ["cloud.google.com", "docs.cloud.google.com"]
+
+[[governance.official_docs.providers]]
+key = "postgres"
+display_name = "Postgres"
+trigger_patterns = ['\bpostgres\b', '\bpostgresql\b']
+official_domains = ["postgresql.org", "www.postgresql.org"]
+
+[[governance.official_docs.providers]]
+key = "duckdb"
+display_name = "DuckDB"
+trigger_patterns = ['\bduckdb\b']
+official_domains = ["duckdb.org"]
+
+[[governance.official_docs.providers]]
+key = "python"
+display_name = "Python"
+trigger_patterns = [
+  '\bpython api\b',
+  '\bpython version\b',
+  '\bpython packaging\b',
+  '\bpep\s*[0-9]',
+]
+official_domains = ["docs.python.org", "packaging.python.org"]
+
+[[governance.official_docs.providers]]
+key = "pypi"
+display_name = "PyPI"
+trigger_patterns = [
+  '\bpypi\b',
+  '\bpip\b',
+  '\bpackaging\b',
+]
+official_domains = [
+  "docs.pypi.org",
+  "pypi.org",
+  "packaging.python.org",
+  "pip.pypa.io",
+]
+
+[[governance.official_docs.providers]]
+key = "npm"
+display_name = "npm"
+trigger_patterns = ['\bnpm\b', '\bpackage manager\b']
+official_domains = ["docs.npmjs.com"]
+
+[[governance.official_docs.providers]]
+key = "uv"
+display_name = "uv"
+trigger_patterns = ['\buv\b', '\bastral uv\b']
+official_domains = ["docs.astral.sh"]
+
+[codex]
+environment_name = "dbt-diagnostics"
+venv_dir = ".venv"
+quality_receipt_path = "output/codex/quality-receipt.json"
+
+[codex.hooks]
+config_path = ".codex/hooks.json"
+launcher_path = ".codex/hooks/run_hook.sh"
+
+[codex.hooks.events.PreToolUse]
+matcher = "Bash"
+script = "pre_tool_use.py"
+
+[codex.hooks.events.PermissionRequest]
+matcher = "Bash"
+script = "permission_request.py"
+
+[codex.hooks.events.Stop]
+script = "stop.py"
+
+[product]
+package_roots = ["dbt_diagnostics"]
+python_compile_roots = [
+  "dbt_diagnostics",
+  "scripts",
+  ".codex/scripts",
+  ".codex/hooks",
+  ".codex/tests",
+]
+required_modules = [
+  "dbt_diagnostics",
+  "pytest",
+  "hypothesis",
+  "sqlglot",
+  "yaml",
+  "jinja2",
+  "build",
+  "twine",
+  "pre_commit",
+]
+live_modules = ["snowflake.connector", "dotenv", "cryptography"]
+live_install_env_vars = ["CODEX_INSTALL_LIVE", "DBT_DIAGNOSTICS_INSTALL_LIVE"]
+optional_checks = ["package", "compat_schema"]
+
+[product.cli]
+distribution_name = "dbt-diagnostics"
+commands = [["dbt-diagnostics", "--help"]]
+
+[product.dist]
+required_wheel_suffixes = [
+  "dbt_diagnostics/__init__.py",
+  "dbt_diagnostics/templates/report.j2",
+  ".dist-info/METADATA",
+  ".dist-info/entry_points.txt",
+]
+required_sdist_suffixes = [
+  "pyproject.toml",
+  "dbt_diagnostics/__init__.py",
+]
+
+[[compat.schema_sets]]
+name = "manifest"
+sentinel = "dbt_diagnostics/fixtures/schemas/manifest/v12.json"
+artifact = "manifest"
+versions = [4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+[[compat.schema_sets]]
+name = "run-results"
+sentinel = "dbt_diagnostics/fixtures/schemas/run-results/v6.json"
+artifact = "run-results"
+versions = [4, 5, 6]
+
+[[compat.schema_sets]]
+name = "catalog"
+sentinel = "dbt_diagnostics/fixtures/schemas/catalog/v1.json"
+artifact = "catalog"
+versions = [1]
+
+[[compat.schema_sets]]
+name = "sources"
+sentinel = "dbt_diagnostics/fixtures/schemas/sources/v3.json"
+artifact = "sources"
+versions = [3]
+
+[worker_packet]
+required_verification_commands = [
+  "python -m compileall -q dbt_diagnostics scripts/triage",
+  "pytest -q",
+]
 
 [release]
 # Milestone numbers are stable repository-local identifiers. The live snapshot
