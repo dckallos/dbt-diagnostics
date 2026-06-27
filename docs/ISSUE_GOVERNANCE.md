@@ -18,6 +18,11 @@ python scripts/triage/triage.py backlog-synthesis \
   --snapshot output/triage/snapshot.json \
   --audit-file output/triage/audit.json \
   --output output/triage/backlog-synthesis.json
+python scripts/triage/triage.py synthesis-review-packet \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --backlog-synthesis output/triage/backlog-synthesis.json \
+  --output output/triage/synthesis-review-packet.json
 python scripts/triage/triage.py plan --output-dir output/triage
 python scripts/triage/triage.py project-plan \
   --snapshot output/triage/snapshot.json \
@@ -369,6 +374,27 @@ The command writes only a local artifact and validates the artifact before
 printing or writing it. The report has no `operations` payload, no issue bodies,
 no tracker state changes, and no GitHub mutation path. Its contract is
 documented in `docs/BACKLOG_SYNTHESIS_SIGNALS_SCHEMA_V1.md`.
+
+### Synthesis Review Packet
+
+```bash
+python scripts/triage/triage.py synthesis-review-packet \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --backlog-synthesis output/triage/backlog-synthesis.json \
+  --output output/triage/synthesis-review-packet.json
+```
+
+`synthesis-review-packet` turns local deterministic artifacts into a bounded v1
+review packet. It consumes a snapshot, readiness audit, backlog-synthesis
+report, and optional project-plan artifact. The command validates each source,
+checks digest lineage, builds the packet, validates the packet, and then prints
+or writes JSON.
+
+The command is offline when local artifacts are supplied. It does not fetch
+GitHub, collect comments, run subprocesses for tracker state, emit executable
+operations, or add an apply path. `--json` stdout is reserved for packet JSON;
+status output goes to stderr when `--json` is used.
 
 ### Offline forms
 

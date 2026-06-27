@@ -825,6 +825,98 @@ def test_synthesis_review_packet_validation_accepts_minimal_packet() -> None:
     assert packet["comment_evidence_status"] == "not_collected"
 
 
+def test_build_synthesis_review_packet_from_valid_sources() -> None:
+    snap = snapshot(issue(95), issue(96))
+    results = audit(
+        entry(
+            95,
+            semantic_disposition_hypothesis="keep",
+            semantic_disposition_evidence=["contract accepted"],
+        ),
+        entry(96),
+    )
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    packet = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        issue_filter={95},
+        max_age_hours=168,
+    )
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+    assert packet["schema_version"] == frontier.SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION
+    assert packet["repository"] == "dckallos/dbt-diagnostics"
+    assert packet["source_generated_at"] == snap["generated_at"]
+    assert packet["source_artifacts"] == {
+        "snapshot_digest": "a" * 64,
+        "audit_digest": "b" * 64,
+        "backlog_synthesis_digest": report["backlog_synthesis_digest"],
+    }
+    assert packet["packet_scope"]["issue_numbers"] == [95]
+    assert packet["staleness"]["max_age_hours"] == 168
+    assert packet["staleness"]["stale"] is False
+    assert packet["staleness"]["llm_review_allowed"] is True
+    assert packet["safety"]["github_api_calls"] is False
+    assert packet["safety"]["github_mutations"] is False
+    assert "operations" not in packet
+    assert "body" not in json.dumps(packet, sort_keys=True)
+
+
+def test_build_synthesis_review_packet_records_project_plan_digest() -> None:
+    snap = snapshot(issue(95))
+    results = audit(entry(95))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+    plan = frontier.build_project_plan(
+        snap,
+        results,
+        policy={"project": {"enabled": False}},
+    )
+
+    packet = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        project_plan=plan,
+    )
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+    assert (
+        packet["source_artifacts"]["project_plan_digest"]
+        == plan["project_plan_digest"]
+    )
+
+
+def test_synthesis_review_packet_source_validation_rejects_digest_mismatch() -> None:
+    snap = snapshot(issue(95))
+    results = audit(entry(95))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+    report["audit_digest"] = "9" * 64
+    report["backlog_synthesis_digest"] = frontier.sha256_json(
+        {
+            key: value
+            for key, value in report.items()
+            if key != "backlog_synthesis_digest"
+        }
+    )
+
+    errors = frontier.validate_synthesis_review_packet_sources(snap, results, report)
+
+    assert errors == ["backlog-synthesis audit digest does not match readiness audit"]
+
+
+def test_build_synthesis_review_packet_is_deterministic() -> None:
+    snap = snapshot(issue(95))
+    results = audit(entry(95))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    left = frontier.build_synthesis_review_packet(snap, results, report)
+    right = frontier.build_synthesis_review_packet(snap, results, report)
+
+    assert json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+
+
 def test_synthesis_review_packet_machine_schema_documents_required_surface() -> None:
     schema = json.loads(
         Path("docs/synthesis-review-packet-schema-v1.json").read_text()

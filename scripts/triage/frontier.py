@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
-from typing import Any, ClassVar, Mapping
+from typing import Any, ClassVar, Mapping, Sequence
 
 from scripts.triage.common import (
     canonical_json,
@@ -26,6 +26,11 @@ BACKLOG_SYNTHESIS_SCHEMA_VERSION = 1
 SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION = 1
 MAX_WORKER_ISSUE_BODY_CHARS = 30000
 MAX_PROGRESS_CONTEXT_CHARS = 4000
+SYNTHESIS_REVIEW_TARGET_BYTES = 204800
+SYNTHESIS_REVIEW_HARD_BYTES = 307200
+SYNTHESIS_REVIEW_TARGET_TOKENS = 50000
+SYNTHESIS_REVIEW_HARD_TOKENS = 75000
+DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS = 168
 
 AUDIT_STATE_PRIORITY = {
     "unsafe": 1200,
@@ -1726,6 +1731,276 @@ def build_backlog_synthesis_report(
         issue_dispositions=dispositions,
         signals=_sort_signals(signals),
     ).to_json()
+
+
+def validate_synthesis_review_packet_sources(
+    snapshot: Mapping[str, Any],
+    audit: Mapping[str, Any],
+    backlog_synthesis: Mapping[str, Any],
+    *,
+    project_plan: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """Validate the source digest lineage for a synthesis-review packet."""
+
+    errors: list[str] = []
+    repository = repository_name(snapshot)
+    snapshot_id = snapshot_digest(snapshot)
+    audit_id = str(audit.get("audit_digest") or "")
+    backlog_id = str(backlog_synthesis.get("backlog_synthesis_digest") or "")
+
+    if backlog_synthesis.get("repository") != repository:
+        errors.append("backlog-synthesis repository does not match snapshot")
+    if backlog_synthesis.get("snapshot_digest") != snapshot_id:
+        errors.append("backlog-synthesis snapshot digest does not match snapshot")
+    if backlog_synthesis.get("audit_digest") != audit_id:
+        errors.append(
+            "backlog-synthesis audit digest does not match readiness audit"
+        )
+    if not re.fullmatch(r"[0-9a-f]{64}", backlog_id):
+        errors.append("backlog-synthesis digest is missing or invalid")
+
+    if project_plan is not None:
+        if project_plan.get("repository") != repository:
+            errors.append("project-plan repository does not match snapshot")
+        if project_plan.get("snapshot_digest") != snapshot_id:
+            errors.append("project-plan snapshot digest does not match snapshot")
+        if project_plan.get("audit_digest") != audit_id:
+            errors.append("project-plan audit digest does not match readiness audit")
+        plan_id = str(project_plan.get("project_plan_digest") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", plan_id):
+            errors.append("project-plan digest is missing or invalid")
+
+    return errors
+
+
+def _filtered_issue_numbers(
+    backlog_synthesis: Mapping[str, Any], issue_filter: set[int] | None
+) -> list[int]:
+    if issue_filter is not None:
+        return sorted(issue_filter)
+    values: set[int] = set()
+    for signal in backlog_synthesis.get("signals") or []:
+        if not isinstance(signal, Mapping):
+            continue
+        for number in signal.get("issue_numbers") or []:
+            if _is_positive_int(number):
+                values.add(int(number))
+    return sorted(values)
+
+
+def _signal_in_scope(signal: Mapping[str, Any], issue_filter: set[int] | None) -> bool:
+    if issue_filter is None:
+        return True
+    return any(
+        _is_positive_int(number) and int(number) in issue_filter
+        for number in signal.get("issue_numbers") or []
+    )
+
+
+def _packet_evidence_item(
+    *,
+    evidence_id: str,
+    source: str,
+    excerpt: str,
+    issue_numbers: Sequence[int] = (),
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "evidence_id": evidence_id,
+        "source": source,
+        "excerpt": excerpt[:1000],
+    }
+    if issue_numbers:
+        item["issue_numbers"] = list(issue_numbers)
+    return item
+
+
+def _packet_candidate_sets(
+    backlog_synthesis: Mapping[str, Any], issue_filter: set[int] | None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    candidate_sets: list[dict[str, Any]] = []
+    evidence_items: list[dict[str, Any]] = []
+    for index, signal in enumerate(backlog_synthesis.get("signals") or [], start=1):
+        if not isinstance(signal, Mapping) or not _signal_in_scope(
+            signal, issue_filter
+        ):
+            continue
+        issue_numbers = [
+            int(number)
+            for number in signal.get("issue_numbers") or []
+            if _is_positive_int(number)
+        ]
+        candidate_set_id = f"candidate-set-{len(candidate_sets) + 1:03d}"
+        evidence_id = f"evidence-{len(evidence_items) + 1:03d}"
+        summary = str(signal.get("summary") or signal.get("signal_type") or "")
+        candidate_sets.append(
+            {
+                "candidate_set_id": candidate_set_id,
+                "source_signal_index": index,
+                "signal_type": str(signal.get("signal_type") or "unknown"),
+                "confidence": str(signal.get("confidence") or "unknown"),
+                "issue_numbers": sorted(set(issue_numbers)),
+                "summary": summary,
+                "evidence_ids": [evidence_id],
+            }
+        )
+        evidence_text = "; ".join(
+            item for item in signal.get("evidence") or [] if isinstance(item, str)
+        )
+        evidence_items.append(
+            _packet_evidence_item(
+                evidence_id=evidence_id,
+                source="backlog-synthesis",
+                excerpt=evidence_text or summary or "backlog synthesis signal",
+                issue_numbers=sorted(set(issue_numbers)),
+            )
+        )
+    return candidate_sets, evidence_items
+
+
+def _packet_disposition_evidence(
+    backlog_synthesis: Mapping[str, Any],
+    issue_filter: set[int] | None,
+    *,
+    start_index: int,
+) -> list[dict[str, Any]]:
+    evidence_items: list[dict[str, Any]] = []
+    for disposition in backlog_synthesis.get("issue_dispositions") or []:
+        if not isinstance(disposition, Mapping):
+            continue
+        number = disposition.get("issue_number")
+        if not _is_positive_int(number):
+            continue
+        issue_number = int(number)
+        if issue_filter is not None and issue_number not in issue_filter:
+            continue
+        evidence = "; ".join(
+            item
+            for item in disposition.get("evidence") or []
+            if isinstance(item, str)
+        )
+        excerpt = evidence or str(
+            disposition.get("recommended_disposition") or "issue disposition"
+        )
+        evidence_items.append(
+            _packet_evidence_item(
+                evidence_id=f"evidence-{start_index + len(evidence_items):03d}",
+                source="readiness-audit",
+                excerpt=excerpt,
+                issue_numbers=(issue_number,),
+            )
+        )
+    return evidence_items
+
+
+def _packet_omissions() -> list[dict[str, Any]]:
+    return [
+        {
+            "omission_id": "issue-comments-not-collected",
+            "reason": "issue discussion text is not collected in v1",
+        },
+        {
+            "omission_id": "full-issue-bodies-not-embedded",
+            "reason": "v1 uses bounded evidence excerpts instead of full tracker text",
+        },
+    ]
+
+
+def _finalize_synthesis_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    result = dict(packet)
+    result["synthesis_review_packet_digest"] = "0" * 64
+    for _attempt in range(10):
+        serialized_bytes = len(canonical_json(result).encode("utf-8"))
+        budget = dict(result["budget"])
+        budget["serialized_bytes"] = serialized_bytes
+        budget["estimated_tokens"] = (serialized_bytes + 3) // 4
+        result["budget"] = budget
+        digest = sha256_json(_synthesis_review_packet_without_digest(result))
+        if (
+            result.get("synthesis_review_packet_digest") == digest
+            and serialized_bytes == len(canonical_json(result).encode("utf-8"))
+        ):
+            return result
+        result["synthesis_review_packet_digest"] = digest
+    return result
+
+
+def build_synthesis_review_packet(
+    snapshot: Mapping[str, Any],
+    audit: Mapping[str, Any],
+    backlog_synthesis: Mapping[str, Any],
+    *,
+    project_plan: Mapping[str, Any] | None = None,
+    issue_filter: set[int] | None = None,
+    max_age_hours: int = DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS,
+) -> dict[str, Any]:
+    """Build a bounded read-only synthesis review packet from local artifacts."""
+
+    source_artifacts = {
+        "snapshot_digest": snapshot_digest(snapshot),
+        "audit_digest": str(audit.get("audit_digest") or ""),
+        "backlog_synthesis_digest": str(
+            backlog_synthesis.get("backlog_synthesis_digest") or ""
+        ),
+    }
+    if project_plan is not None:
+        source_artifacts["project_plan_digest"] = str(
+            project_plan.get("project_plan_digest") or ""
+        )
+
+    candidate_sets, signal_evidence = _packet_candidate_sets(
+        backlog_synthesis, issue_filter
+    )
+    disposition_evidence = _packet_disposition_evidence(
+        backlog_synthesis,
+        issue_filter,
+        start_index=len(signal_evidence) + 1,
+    )
+    issue_numbers = _filtered_issue_numbers(backlog_synthesis, issue_filter)
+    packet: dict[str, Any] = {
+        "schema_version": SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION,
+        "repository": repository_name(snapshot),
+        "generated_at": str(snapshot.get("generated_at") or "unknown"),
+        "source_generated_at": str(snapshot.get("generated_at") or "unknown"),
+        "source_artifacts": source_artifacts,
+        "packet_scope": {
+            "review_task": "backlog-synthesis",
+            "issue_numbers": issue_numbers,
+            "candidate_set_ids": [
+                str(item["candidate_set_id"]) for item in candidate_sets
+            ],
+        },
+        "candidate_sets": candidate_sets,
+        "evidence_items": signal_evidence + disposition_evidence,
+        "near_misses": [],
+        "omissions": _packet_omissions(),
+        "comments_included": False,
+        "comment_evidence_status": "not_collected",
+        "budget": {
+            "serialized_bytes": 0,
+            "target_bytes": SYNTHESIS_REVIEW_TARGET_BYTES,
+            "hard_bytes": SYNTHESIS_REVIEW_HARD_BYTES,
+            "estimated_tokens": 0,
+            "target_estimated_tokens": SYNTHESIS_REVIEW_TARGET_TOKENS,
+            "hard_estimated_tokens": SYNTHESIS_REVIEW_HARD_TOKENS,
+            "token_estimate_method": "bytes_div_4",
+        },
+        "staleness": {
+            "max_age_hours": max_age_hours,
+            "stale": False,
+            "llm_review_allowed": True,
+        },
+        "safety": {
+            "read_only": True,
+            "github_api_calls": False,
+            "github_mutations": False,
+            "contains_executable_operations": False,
+            "contains_full_tracker_snapshot": False,
+            "contains_issue_comments": False,
+            "comments_included": False,
+            "llm_verdicts_are_advisory": True,
+        },
+    }
+    return _finalize_synthesis_review_packet(packet)
 
 
 def validate_backlog_synthesis_report(value: Mapping[str, Any]) -> list[str]:

@@ -1561,3 +1561,56 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
   move reusable logic out of this checkout in PR 1.
 
 End of session -- 2026-06-27 issue 119 repo policy adapter boundary
+
+---
+
+## 2026-06-27 -- issue 95 synthesis review packet CLI
+
+**What changed**
+- Started `feat/95-synthesis-review-packet` from updated
+  `donkey-kong-sandbox`.
+- The live #95 issue initially failed the contract gate. I drafted a local
+  standardized body, revised it after reading the updated #96 two-threshold
+  freshness requirements, validated it with `standardize`, and applied that
+  exact body to #95 after explicit maintainer authorization.
+- Added `python scripts/triage/triage.py synthesis-review-packet` as a
+  read-only local artifact builder. It consumes snapshot, readiness-audit,
+  backlog-synthesis, and optional project-plan JSON, validates source artifact
+  lineage, builds a bounded v1 packet, validates the packet, and prints or
+  writes JSON.
+- Added focused builder and CLI tests covering valid packets, optional
+  project-plan digests, digest mismatch rejection, invalid backlog inputs,
+  missing files, clean `--json` stdout, output writes, deterministic output, and
+  no GitHub/subprocess state collection with local inputs.
+- Updated `CHANGELOG.md` and `docs/ISSUE_GOVERNANCE.md` with the landed command
+  behavior only.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 95 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 95` passed after the
+  maintainer-authorized issue body update.
+- `python -m pytest -q scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 126 passed.
+- `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 83 passed; offline
+  tests 744 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is local on branch `feat/95-synthesis-review-packet`.
+- No PR has been opened yet.
+
+**Next steps**
+- Refresh the Codex quality receipt for the protected governance changes.
+- Review the diff, then commit and push only after explicit approval.
+
+**Be careful**
+- This issue intentionally does not implement #96 budget/freshness gates beyond
+  preserving the two-threshold model in the command surface.
+- Do not add retrieval, issue comments, executable operations, GitHub mutation,
+  or #118 extraction/distribution work.
+
+End of session -- 2026-06-27 issue 95 synthesis review packet CLI
