@@ -21,6 +21,7 @@ COORDINATOR_SCHEMA_VERSION = 1
 WORKER_PACKET_SCHEMA_VERSION = 1
 PROJECT_PLAN_SCHEMA_VERSION = 1
 BACKLOG_SYNTHESIS_SCHEMA_VERSION = 1
+SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION = 1
 MAX_WORKER_ISSUE_BODY_CHARS = 30000
 MAX_PROGRESS_CONTEXT_CHARS = 4000
 
@@ -180,6 +181,14 @@ def _backlog_synthesis_without_digest(report: Mapping[str, Any]) -> dict[str, An
         key: value
         for key, value in report.items()
         if key != "backlog_synthesis_digest"
+    }
+
+
+def _synthesis_review_packet_without_digest(packet: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in packet.items()
+        if key != "synthesis_review_packet_digest"
     }
 
 
@@ -934,6 +943,304 @@ class BacklogSynthesisReportValidator:
         BacklogSynthesisSafetyShape(safety).validate(context)
 
 
+@dataclass(frozen=True)
+class SynthesisReviewPacketSourceArtifactsShape:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "snapshot_digest",
+        "audit_digest",
+        "backlog_synthesis_digest",
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        for key in self.REQUIRED_KEYS | {"project_plan_digest"}:
+            if key in self.value:
+                context.require_digest(
+                    self.value.get(key), name=f"source_artifacts.{key}"
+                )
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketBudgetShape:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "serialized_bytes",
+        "target_bytes",
+        "hard_bytes",
+        "estimated_tokens",
+        "target_estimated_tokens",
+        "hard_estimated_tokens",
+        "token_estimate_method",
+    }
+    EXPECTED_CONSTANTS: ClassVar[dict[str, int]] = {
+        "target_bytes": 204800,
+        "hard_bytes": 307200,
+        "target_estimated_tokens": 50000,
+        "hard_estimated_tokens": 75000,
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        for key in (
+            "serialized_bytes",
+            "target_bytes",
+            "hard_bytes",
+            "estimated_tokens",
+            "target_estimated_tokens",
+            "hard_estimated_tokens",
+        ):
+            context.require_non_negative_int(self.value.get(key), name=f"budget.{key}")
+        for key, expected in self.EXPECTED_CONSTANTS.items():
+            if self.value.get(key) != expected:
+                context.errors.append(f"budget.{key} must be {expected}")
+        context.require_non_empty_string(
+            self.value.get("token_estimate_method"),
+            name="budget.token_estimate_method",
+        )
+        serialized = self.value.get("serialized_bytes")
+        hard = self.value.get("hard_bytes")
+        if _is_non_negative_int(serialized) and _is_non_negative_int(hard):
+            if int(serialized) > int(hard):
+                context.errors.append(
+                    "budget.serialized_bytes must not exceed budget.hard_bytes"
+                )
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketStalenessShape:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "max_age_hours",
+        "stale",
+        "llm_review_allowed",
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        context.require_positive_int(
+            self.value.get("max_age_hours"), name="staleness.max_age_hours"
+        )
+        context.require_bool(self.value.get("stale"), name="staleness.stale")
+        context.require_bool(
+            self.value.get("llm_review_allowed"),
+            name="staleness.llm_review_allowed",
+        )
+        if (
+            self.value.get("stale") is True
+            and self.value.get("llm_review_allowed") is not False
+        ):
+            context.errors.append(
+                "staleness.llm_review_allowed must be false when "
+                "staleness.stale is true"
+            )
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketSafetyShape:
+    value: Mapping[str, Any]
+
+    EXPECTED: ClassVar[dict[str, bool]] = {
+        "read_only": True,
+        "github_api_calls": False,
+        "github_mutations": False,
+        "contains_executable_operations": False,
+        "contains_full_tracker_snapshot": False,
+        "contains_issue_comments": False,
+        "comments_included": False,
+        "llm_verdicts_are_advisory": True,
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        for key, expected in self.EXPECTED.items():
+            if self.value.get(key) is not expected:
+                context.errors.append(f"safety.{key} must be {str(expected).lower()}")
+
+
+@dataclass(frozen=True)
+class SynthesisReviewPacketValidator:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "schema_version",
+        "repository",
+        "generated_at",
+        "source_generated_at",
+        "source_artifacts",
+        "packet_scope",
+        "candidate_sets",
+        "evidence_items",
+        "near_misses",
+        "omissions",
+        "comments_included",
+        "comment_evidence_status",
+        "budget",
+        "staleness",
+        "safety",
+        "synthesis_review_packet_digest",
+    }
+    GITHUB_REQUEST_KEYS: ClassVar[set[str]] = {
+        "github_request",
+        "github_requests",
+        "github_request_payload",
+        "github_request_payloads",
+        "request_payload",
+        "request_payloads",
+        "rest_request",
+        "rest_requests",
+        "graphql_request",
+        "graphql_requests",
+        "mutation_request",
+        "mutation_requests",
+    }
+
+    def validate(self) -> list[str]:
+        context = ValidationContext()
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        self._validate_forbidden_shape(context, self.value, "")
+        if self.value.get("schema_version") != SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION:
+            context.errors.append("unsupported schema_version")
+        context.require_repository(self.value.get("repository"))
+        context.require_string(self.value.get("generated_at"), name="generated_at")
+        context.require_string(
+            self.value.get("source_generated_at"), name="source_generated_at"
+        )
+        context.require_digest(
+            self.value.get("synthesis_review_packet_digest"),
+            name="synthesis_review_packet_digest",
+        )
+        self._validate_source_artifacts(context)
+        self._validate_packet_scope(context)
+        for key in ("candidate_sets", "evidence_items"):
+            self._validate_array(context, key, allow_string=False)
+        for key in ("near_misses", "omissions"):
+            self._validate_array(context, key, allow_string=True)
+        self._validate_evidence_items(context)
+        self._validate_comments(context)
+        self._validate_budget(context)
+        self._validate_staleness(context)
+        self._validate_safety(context)
+        actual_digest = sha256_json(_synthesis_review_packet_without_digest(self.value))
+        if self.value.get("synthesis_review_packet_digest") != actual_digest:
+            context.errors.append("synthesis_review_packet_digest mismatch")
+        return context.errors
+
+    def _validate_source_artifacts(self, context: ValidationContext) -> None:
+        source_artifacts = self.value.get("source_artifacts")
+        if not isinstance(source_artifacts, Mapping):
+            context.errors.append("source_artifacts must be an object")
+            return
+        SynthesisReviewPacketSourceArtifactsShape(source_artifacts).validate(context)
+
+    def _validate_packet_scope(self, context: ValidationContext) -> None:
+        packet_scope = self.value.get("packet_scope")
+        if not isinstance(packet_scope, Mapping):
+            context.errors.append("packet_scope must be an object")
+
+    def _validate_array(
+        self, context: ValidationContext, key: str, *, allow_string: bool
+    ) -> None:
+        values = self.value.get(key)
+        if not isinstance(values, list):
+            context.errors.append(f"{key} must be an array")
+            return
+        for index, item in enumerate(values):
+            if isinstance(item, Mapping):
+                continue
+            if allow_string and isinstance(item, str):
+                continue
+            expected = "object or string" if allow_string else "object"
+            context.errors.append(f"{key}[{index}] must be an {expected}")
+
+    def _validate_evidence_items(self, context: ValidationContext) -> None:
+        evidence_items = self.value.get("evidence_items")
+        if not isinstance(evidence_items, list):
+            return
+        for index, item in enumerate(evidence_items):
+            if not isinstance(item, Mapping):
+                continue
+            context.require_non_empty_string(
+                item.get("evidence_id"), name=f"evidence_items[{index}].evidence_id"
+            )
+            if "excerpt" in item:
+                context.require_non_empty_string(
+                    item.get("excerpt"), name=f"evidence_items[{index}].excerpt"
+                )
+
+    def _validate_comments(self, context: ValidationContext) -> None:
+        if self.value.get("comments_included") is not False:
+            context.errors.append("comments_included must be false")
+        if self.value.get("comment_evidence_status") != "not_collected":
+            context.errors.append(
+                "comment_evidence_status must be not_collected"
+            )
+
+    def _validate_budget(self, context: ValidationContext) -> None:
+        budget = self.value.get("budget")
+        if not isinstance(budget, Mapping):
+            context.errors.append("budget must be an object")
+            return
+        SynthesisReviewPacketBudgetShape(budget).validate(context)
+
+    def _validate_staleness(self, context: ValidationContext) -> None:
+        staleness = self.value.get("staleness")
+        if not isinstance(staleness, Mapping):
+            context.errors.append("staleness must be an object")
+            return
+        SynthesisReviewPacketStalenessShape(staleness).validate(context)
+
+    def _validate_safety(self, context: ValidationContext) -> None:
+        safety = self.value.get("safety")
+        if not isinstance(safety, Mapping):
+            context.errors.append("safety must be an object")
+            return
+        SynthesisReviewPacketSafetyShape(safety).validate(context)
+        if self.value.get("comments_included") is not safety.get("comments_included"):
+            context.errors.append(
+                "safety.comments_included must match comments_included"
+            )
+
+    def _validate_forbidden_shape(
+        self, context: ValidationContext, value: Any, path: str
+    ) -> None:
+        if isinstance(value, Mapping):
+            if self._looks_like_github_request(value):
+                context.errors.append(
+                    f"{path} is a forbidden GitHub request payload"
+                    if path
+                    else "GitHub request payload is forbidden"
+                )
+            if path == "" and "issues" in value and "pulls" in value:
+                context.errors.append("full tracker snapshot shape is forbidden")
+            for key, item in value.items():
+                item_path = f"{path}.{key}" if path else str(key)
+                if key == "operations":
+                    context.errors.append(
+                        "operations key is forbidden"
+                        if not path
+                        else f"{item_path} is forbidden"
+                    )
+                if key in self.GITHUB_REQUEST_KEYS:
+                    context.errors.append(f"{item_path} is forbidden")
+                if key in {"body", "state"}:
+                    context.errors.append(f"{item_path} is forbidden")
+                self._validate_forbidden_shape(context, item, item_path)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                self._validate_forbidden_shape(context, item, f"{path}[{index}]")
+
+    def _looks_like_github_request(self, value: Mapping[str, Any]) -> bool:
+        keys = set(value)
+        return (
+            "method" in keys
+            and bool(keys & {"path", "url", "endpoint"})
+            and bool(keys & {"body", "payload", "json", "data"})
+        )
+
+
 def build_project_plan(
     snapshot: Mapping[str, Any],
     audit: Mapping[str, Any],
@@ -1357,6 +1664,12 @@ def validate_backlog_synthesis_report(value: Mapping[str, Any]) -> list[str]:
     """Validate the read-only backlog-synthesis signal envelope and digest."""
 
     return BacklogSynthesisReportValidator(value).validate()
+
+
+def validate_synthesis_review_packet(value: Mapping[str, Any]) -> list[str]:
+    """Validate the read-only synthesis-review-packet envelope and digest."""
+
+    return SynthesisReviewPacketValidator(value).validate()
 
 
 def _dependency_is_closed(

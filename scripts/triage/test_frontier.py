@@ -96,6 +96,68 @@ def signals_by_type(report: dict, signal_type: str) -> list[dict]:
     ]
 
 
+def packet_digest(packet: dict) -> str:
+    unsigned = json.loads(json.dumps(packet))
+    unsigned.pop("synthesis_review_packet_digest", None)
+    return frontier.sha256_json(unsigned)
+
+
+def sign_packet(packet: dict) -> dict:
+    packet["synthesis_review_packet_digest"] = packet_digest(packet)
+    return packet
+
+
+def synthesis_review_packet(**overrides: object) -> dict:
+    value: dict[str, object] = {
+        "schema_version": 1,
+        "repository": "dckallos/dbt-diagnostics",
+        "generated_at": "2026-06-24T01:00:00Z",
+        "source_generated_at": "2026-06-24T00:00:00Z",
+        "source_artifacts": {
+            "snapshot_digest": "a" * 64,
+            "audit_digest": "b" * 64,
+            "backlog_synthesis_digest": "c" * 64,
+        },
+        "packet_scope": {
+            "review_task": "backlog-synthesis",
+            "issue_numbers": [],
+            "candidate_set_ids": [],
+        },
+        "candidate_sets": [],
+        "evidence_items": [],
+        "near_misses": [],
+        "omissions": [],
+        "comments_included": False,
+        "comment_evidence_status": "not_collected",
+        "budget": {
+            "serialized_bytes": 1024,
+            "target_bytes": 204800,
+            "hard_bytes": 307200,
+            "estimated_tokens": 90000,
+            "target_estimated_tokens": 50000,
+            "hard_estimated_tokens": 75000,
+            "token_estimate_method": "bytes_div_4",
+        },
+        "staleness": {
+            "max_age_hours": 24,
+            "stale": False,
+            "llm_review_allowed": True,
+        },
+        "safety": {
+            "read_only": True,
+            "github_api_calls": False,
+            "github_mutations": False,
+            "contains_executable_operations": False,
+            "contains_full_tracker_snapshot": False,
+            "contains_issue_comments": False,
+            "comments_included": False,
+            "llm_verdicts_are_advisory": True,
+        },
+    }
+    value.update(overrides)
+    return sign_packet(value)
+
+
 def test_merged_pull_request_dependency_is_implementable() -> None:
     # A ready issue whose only direct dependency is a merged pull request must be
     # a candidate. The PR lives in the pulls map, not issues, so the closure
@@ -681,6 +743,166 @@ def test_backlog_synthesis_is_read_only_and_rejects_mutation_shape(monkeypatch) 
     assert "operations key is forbidden" in errors
     assert "safety.github_mutations must be false" in errors
     assert "signals[0].details.body is forbidden" in errors
+
+
+def test_synthesis_review_packet_validation_accepts_minimal_packet() -> None:
+    packet = synthesis_review_packet()
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+    assert packet["comments_included"] is False
+    assert packet["comment_evidence_status"] == "not_collected"
+
+
+def test_synthesis_review_packet_machine_schema_documents_required_surface() -> None:
+    schema = json.loads(
+        Path("docs/synthesis-review-packet-schema-v1.json").read_text()
+    )
+
+    assert "synthesis_review_packet_digest" in schema["required"]
+    assert schema["properties"]["comments_included"]["const"] is False
+    assert (
+        schema["properties"]["comment_evidence_status"]["const"] == "not_collected"
+    )
+    assert schema["properties"]["budget"]["properties"]["hard_bytes"]["const"] == 307200
+    assert (
+        schema["properties"]["safety"]["properties"]["github_mutations"]["const"]
+        is False
+    )
+
+
+def test_synthesis_review_packet_validation_rejects_required_and_type_errors() -> None:
+    missing = synthesis_review_packet()
+    missing.pop("repository")
+    missing = sign_packet(missing)
+
+    wrong_type = synthesis_review_packet()
+    wrong_type["budget"]["serialized_bytes"] = "1024"
+    wrong_type = sign_packet(wrong_type)
+
+    missing_errors = frontier.validate_synthesis_review_packet(missing)
+    wrong_type_errors = frontier.validate_synthesis_review_packet(wrong_type)
+
+    assert "missing keys: repository" in missing_errors
+    assert (
+        "budget.serialized_bytes must be a non-negative integer"
+        in wrong_type_errors
+    )
+
+
+def test_synthesis_review_packet_validation_recomputes_digest_canonically() -> None:
+    packet = synthesis_review_packet()
+    reordered = dict(reversed(list(packet.items())))
+
+    assert frontier.validate_synthesis_review_packet(reordered) == []
+
+    tampered = synthesis_review_packet()
+    tampered["packet_scope"]["review_task"] = "tampered"
+
+    assert (
+        "synthesis_review_packet_digest mismatch"
+        in frontier.validate_synthesis_review_packet(tampered)
+    )
+
+
+def test_synthesis_review_packet_validation_rejects_mutation_shape() -> None:
+    packet = synthesis_review_packet(
+        candidate_sets=[
+            {
+                "candidate_set_id": "set-1",
+                "issues": [{"issue_number": 94, "state": "closed"}],
+            }
+        ],
+        evidence_items=[
+            {
+                "evidence_id": "evidence-1",
+                "issue": {
+                    "issue_number": 94,
+                    "body": "unbounded issue body must not be embedded",
+                },
+            }
+        ],
+        github_request={
+            "method": "PATCH",
+            "path": "/repos/dckallos/dbt-diagnostics/issues/94",
+            "body": {"labels": ["documentation"]},
+        },
+        operations=[],
+    )
+
+    errors = frontier.validate_synthesis_review_packet(packet)
+
+    assert "operations key is forbidden" in errors
+    assert "github_request is forbidden" in errors
+    assert "candidate_sets[0].issues[0].state is forbidden" in errors
+    assert "evidence_items[0].issue.body is forbidden" in errors
+
+
+def test_synthesis_review_packet_validation_allows_empty_collections() -> None:
+    packet = synthesis_review_packet(
+        candidate_sets=[],
+        evidence_items=[],
+        near_misses=[],
+        omissions=[],
+    )
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+
+
+def test_synthesis_review_packet_validation_enforces_byte_not_token_limit() -> None:
+    advisory_tokens = synthesis_review_packet()
+    advisory_tokens["budget"]["estimated_tokens"] = 1000000
+    advisory_tokens = sign_packet(advisory_tokens)
+
+    too_large = synthesis_review_packet()
+    too_large["budget"]["serialized_bytes"] = 307201
+    too_large = sign_packet(too_large)
+
+    assert frontier.validate_synthesis_review_packet(advisory_tokens) == []
+    assert (
+        "budget.serialized_bytes must not exceed budget.hard_bytes"
+        in frontier.validate_synthesis_review_packet(too_large)
+    )
+
+
+def test_synthesis_review_packet_validation_rejects_reviewable_stale_packet() -> None:
+    packet = synthesis_review_packet(
+        staleness={
+            "max_age_hours": 24,
+            "stale": True,
+            "llm_review_allowed": True,
+        }
+    )
+
+    assert (
+        "staleness.llm_review_allowed must be false when staleness.stale is true"
+        in frontier.validate_synthesis_review_packet(packet)
+    )
+
+
+def test_read_only_artifact_validators_reject_operations_regression() -> None:
+    plan = frontier.build_project_plan(
+        snapshot(issue(10)),
+        audit(entry(10)),
+        policy={"project": {"enabled": False}},
+    )
+    report = frontier.build_backlog_synthesis_report(
+        snapshot(issue(10)),
+        audit(entry(10)),
+    )
+    packet = synthesis_review_packet()
+    plan["operations"] = []
+    report["operations"] = []
+    packet["operations"] = []
+
+    assert "operations key is forbidden" in frontier.validate_project_plan(plan)
+    assert (
+        "operations key is forbidden"
+        in frontier.validate_backlog_synthesis_report(report)
+    )
+    assert (
+        "operations key is forbidden"
+        in frontier.validate_synthesis_review_packet(packet)
+    )
 
 
 def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:
