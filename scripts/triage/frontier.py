@@ -16,6 +16,7 @@ from scripts.triage.common import (
     slugify,
     snapshot_digest,
 )
+from scripts.triage import repo_config
 from scripts.triage.contract import parse_sections
 
 COORDINATOR_SCHEMA_VERSION = 1
@@ -1304,6 +1305,7 @@ def build_project_plan(
     audit: Mapping[str, Any],
     *,
     policy: Mapping[str, Any] | None = None,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> dict[str, Any]:
     """Build a read-only desired GitHub Project layout from a readiness audit."""
 
@@ -2114,9 +2116,11 @@ def build_worker_packet(
     audit: Mapping[str, Any],
     *,
     root: Path,
+    repo_policy: repo_config.RepoPolicy | None = None,
     branch_state: Mapping[str, Any] | None = None,
     progress_context: str | None = None,
 ) -> dict[str, Any]:
+    active_policy = repo_policy or repo_config.load_repo_policy()
     issues = issue_map(snapshot)
     entries = _issue_entries(audit)
     if issue_number not in issues or issue_number not in entries:
@@ -2194,10 +2198,9 @@ def build_worker_packet(
             "required_external_evidence": entry.get("required_external_evidence") or [],
             "semantic_review_notes": entry.get("semantic_review_notes") or [],
         },
-        "required_verification_commands": [
-            "python -m compileall -q dbt_diagnostics scripts/triage",
-            "pytest -q",
-        ],
+        "required_verification_commands": list(
+            active_policy.worker_packet.required_verification_commands
+        ),
         "branch_worktree_state": dict(branch_state or {}),
         "historical_progress_context": (progress_context or "")[
             :MAX_PROGRESS_CONTEXT_CHARS

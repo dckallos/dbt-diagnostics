@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import re
 from typing import Any, Iterable, Mapping
 
 from scripts.triage import official_docs
+from scripts.triage import repo_config
 from scripts.triage.common import iter_markdown_lines, normalize_labels, slugify
-
-CONTRACT_VERSION = "1.0"
-CONTRACT_ID = "dbt-diagnostics.issue-contract.v1"
 
 # Placeholder written into a proposed body for any section that could not be
 # established from the current issue. A body still containing it is unresolved
@@ -39,6 +38,11 @@ GOVERNANCE_STATES = (
     "unsafe",
     "unknown",
 )
+
+
+@lru_cache(maxsize=1)
+def _default_repo_policy() -> repo_config.RepoPolicy:
+    return repo_config.load_repo_policy()
 
 
 @dataclass(frozen=True)
@@ -783,7 +787,13 @@ def _requires_terms(text: str, terms: Iterable[str]) -> bool:
 
 
 def conditional_requirements(
-    kind: str, labels: Iterable[str], body: str, milestone: Any, title: str = ""
+    kind: str,
+    labels: Iterable[str],
+    body: str,
+    milestone: Any,
+    title: str = "",
+    *,
+    repo_policy: repo_config.RepoPolicy | None = None,
 ) -> list[Requirement]:
     label_set = {label.lower() for label in labels}
     result: list[Requirement] = []
@@ -844,7 +854,13 @@ def conditional_requirements(
                 rationale="External evidence, credentials, permissions, or fixtures must be explicit.",
             )
         )
-    if official_docs.requirements(title, labels, body):
+    active_policy = repo_policy or _default_repo_policy()
+    if official_docs.requirements(
+        title,
+        labels,
+        body,
+        official_docs_policy=active_policy.official_docs,
+    ):
         result.append(
             Requirement.one_of(
                 "official_docs",
@@ -1000,7 +1016,12 @@ def acceptance_coverage(text: str) -> dict[str, bool]:
     }
 
 
-def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
+def audit_contract(
+    issue: Mapping[str, Any],
+    *,
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> dict[str, Any]:
+    active_policy = repo_policy or _default_repo_policy()
     title = issue.get("title") if isinstance(issue.get("title"), str) else ""
     body = issue.get("body") if isinstance(issue.get("body"), str) else ""
     labels = normalize_labels(issue.get("labels"))
@@ -1016,9 +1037,21 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
     elif kind == "governance":
         requirements = list(GOVERNANCE_REQUIREMENTS)
     requirements.extend(KIND_REQUIREMENTS[kind])
-    official_docs_required = official_docs.requirements(title, labels, body)
+    official_docs_required = official_docs.requirements(
+        title,
+        labels,
+        body,
+        official_docs_policy=active_policy.official_docs,
+    )
     requirements.extend(
-        conditional_requirements(kind, labels, body, milestone, title=title)
+        conditional_requirements(
+            kind,
+            labels,
+            body,
+            milestone,
+            title=title,
+            repo_policy=active_policy,
+        )
     )
     recommendations = list(RECOMMENDED[kind])
 
@@ -1074,6 +1107,7 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
                 official_docs_required,
                 unresolved_placeholder=UNRESOLVED_PLACEHOLDER,
                 has_decisions_blockers="decisions_blockers" in present,
+                official_docs_policy=active_policy.official_docs,
             )
         )
 
@@ -1150,8 +1184,8 @@ def audit_contract(issue: Mapping[str, Any]) -> dict[str, Any]:
         state = "conformant"
 
     return {
-        "contract_id": CONTRACT_ID,
-        "contract_version": CONTRACT_VERSION,
+        "contract_id": active_policy.contract.id,
+        "contract_version": active_policy.contract.version,
         "issue_kind": kind,
         "governance_state": state,
         "contract_accepted": state == "conformant",
@@ -1250,14 +1284,19 @@ def preferred_section_order(kind: str) -> list[str]:
     return common
 
 
-def propose_normalized_body(issue: Mapping[str, Any]) -> str:
+def propose_normalized_body(
+    issue: Mapping[str, Any],
+    *,
+    repo_policy: repo_config.RepoPolicy | None = None,
+) -> str:
+    active_policy = repo_policy or _default_repo_policy()
     body = issue.get("body") if isinstance(issue.get("body"), str) else ""
     title = issue.get("title") if isinstance(issue.get("title"), str) else ""
     labels = normalize_labels(issue.get("labels"))
     kind = infer_issue_kind(title, labels)
     sections, _findings = parse_sections(body)
     mapped = section_map(sections)
-    contract = audit_contract(issue)
+    contract = audit_contract(issue, repo_policy=active_policy)
 
     required_keys: set[str] = set()
     requirements = list(
@@ -1268,7 +1307,12 @@ def propose_normalized_body(issue: Mapping[str, Any]) -> str:
     requirements.extend(KIND_REQUIREMENTS[kind])
     requirements.extend(
         conditional_requirements(
-            kind, labels, body, issue.get("milestone"), title=title
+            kind,
+            labels,
+            body,
+            issue.get("milestone"),
+            title=title,
+            repo_policy=active_policy,
         )
     )
     mapped_keys = set(mapped)

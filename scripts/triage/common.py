@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
@@ -11,28 +12,69 @@ import re
 from typing import Any, Iterable, Iterator, Mapping
 
 ISSUE_REF_RE = re.compile(r"(?<![A-Za-z0-9_])#(?P<number>[1-9][0-9]*)")
-PATH_REF_RE = re.compile(
-    r"(?P<path>(?:AGENTS\.md|CONTRIBUTING\.md|README\.md|CHANGELOG\.md|"
-    r"dbt_diagnostics|docs|scripts|\.github|\.codex|\.agents)/?"
-    r"[A-Za-z0-9_./@+\-]*)(?::(?P<line>[0-9]+))?"
+DEFAULT_REFERENCE_ROOTS = (
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE",
+    "pyproject.toml",
+    ".gitignore",
+    ".pre-commit-config.yaml",
+    "dbt_diagnostics",
+    "docs",
+    "scripts",
+    ".github",
+    ".codex",
+    ".agents",
 )
 URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/(?:issues|pull)/(\d+)")
 
-# Anchor-aware file-citation parser. The path alternation is a superset of the
-# legacy PATH_REF_RE matchers (directory prefixes that require a path tail, plus
-# the recognized root files), so a single parser can serve both audit surfaces.
-# After the path it captures, in order of precedence: a quoted snippet anchor, a
-# symbol anchor (an identifier after the colon), or a line / line-range. Only a
-# symbol or snippet is a verifiable content anchor; a bare line number is not.
-FILE_REF_RE = re.compile(
-    r"(?P<path>(?:(?:dbt_diagnostics|docs|scripts|\.github|\.codex|\.agents)/"
-    r"[A-Za-z0-9_./@+\-]+|AGENTS\.md|CONTRIBUTING\.md|README\.md|"
-    r"CHANGELOG\.md|SECURITY\.md|LICENSE|pyproject\.toml|\.gitignore|"
-    r"\.pre-commit-config\.yaml))"
-    r"(?::(?:(?P<line>[0-9]+)(?:-(?P<line_end>[0-9]+))?"
-    r"|(?P<symbol>[A-Za-z_][A-Za-z0-9_]*)))?"
-    r"(?:`?[ \t]+(?P<quote>[\"`])(?P<snippet>[^\"`\n]{1,200})(?P=quote))?"
-)
+
+def _is_file_reference_root(root: str) -> bool:
+    name = root.rsplit("/", 1)[-1]
+    return (
+        name in {"LICENSE", ".gitignore"}
+        or "." in name.lstrip(".")
+        or name.endswith(".md")
+    )
+
+
+@lru_cache(maxsize=16)
+def _path_ref_re(reference_roots: tuple[str, ...]) -> re.Pattern[str]:
+    roots = tuple(root.strip("/") for root in reference_roots if root.strip("/"))
+    alternatives = "|".join(re.escape(root) for root in roots)
+    return re.compile(
+        rf"(?P<path>(?:{alternatives})/?[A-Za-z0-9_./@+\-]*)"
+        r"(?::(?P<line>[0-9]+))?"
+    )
+
+
+@lru_cache(maxsize=16)
+def _file_ref_re(reference_roots: tuple[str, ...]) -> re.Pattern[str]:
+    roots = tuple(root.strip("/") for root in reference_roots if root.strip("/"))
+    file_roots = [root for root in roots if _is_file_reference_root(root)]
+    directory_roots = [root for root in roots if root not in file_roots]
+    alternatives: list[str] = []
+    if directory_roots:
+        alternatives.append(
+            r"(?:(?:"
+            + "|".join(re.escape(root) for root in directory_roots)
+            + r")/[A-Za-z0-9_./@+\-]+)"
+        )
+    alternatives.extend(re.escape(root) for root in file_roots)
+    joined = "|".join(alternatives)
+    return re.compile(
+        rf"(?P<path>(?:{joined}))"
+        r"(?::(?:(?P<line>[0-9]+)(?:-(?P<line_end>[0-9]+))?"
+        r"|(?P<symbol>[A-Za-z_][A-Za-z0-9_]*)))?"
+        r"(?:`?[ \t]+(?P<quote>[\"`])(?P<snippet>[^\"`\n]{1,200})(?P=quote))?"
+    )
+
+
+PATH_REF_RE = _path_ref_re(DEFAULT_REFERENCE_ROOTS)
+FILE_REF_RE = _file_ref_re(DEFAULT_REFERENCE_ROOTS)
 
 
 class TriageError(RuntimeError):
@@ -112,9 +154,16 @@ def refs_in_text(text: str) -> set[int]:
     return refs
 
 
-def referenced_paths(text: str) -> list[str]:
+def referenced_paths(
+    text: str, *, reference_roots: Iterable[str] | None = None
+) -> list[str]:
+    pattern = (
+        PATH_REF_RE
+        if reference_roots is None
+        else _path_ref_re(tuple(reference_roots))
+    )
     paths: set[str] = set()
-    for match in PATH_REF_RE.finditer(text or ""):
+    for match in pattern.finditer(text or ""):
         path = match.group("path").rstrip(".,;:)\"]}'")
         if not path or path.endswith("/"):
             continue
@@ -150,7 +199,9 @@ class FileReference:
         return self.path.endswith("/")
 
 
-def parse_file_references(text: str) -> list[FileReference]:
+def parse_file_references(
+    text: str, *, reference_roots: Iterable[str] | None = None
+) -> list[FileReference]:
     """Parse repository file citations, preserving any line or content anchor.
 
     Unlike ``referenced_paths`` this keeps line numbers, line ranges, symbol
@@ -160,7 +211,12 @@ def parse_file_references(text: str) -> list[FileReference]:
     """
 
     refs: list[FileReference] = []
-    for match in FILE_REF_RE.finditer(text or ""):
+    pattern = (
+        FILE_REF_RE
+        if reference_roots is None
+        else _file_ref_re(tuple(reference_roots))
+    )
+    for match in pattern.finditer(text or ""):
         path = match.group("path").rstrip(".,;:)\"]}'`")
         if not path:
             continue

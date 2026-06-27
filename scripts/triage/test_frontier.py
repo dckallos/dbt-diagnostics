@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 
 from scripts.triage import frontier
+from scripts.triage import repo_config
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
 
 
 def snapshot(*issues: dict, pulls: list[dict] | None = None) -> dict:
@@ -1087,6 +1092,26 @@ def test_worker_packet_enforces_body_and_progress_bounds(tmp_path: Path) -> None
     )
     assert packet["historical_progress_truncated"] is True
     assert frontier.validate_worker_packet(packet) == []
+
+
+def test_worker_packet_verification_commands_come_from_policy(tmp_path: Path) -> None:
+    widgets_policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    snap = snapshot(issue(1))
+    results = audit(entry(1))
+
+    packet = frontier.build_worker_packet(
+        1,
+        snap,
+        results,
+        root=tmp_path,
+        repo_policy=widgets_policy,
+    )
+
+    assert packet["required_verification_commands"] == [
+        "python -m compileall -q scripts .codex/scripts .codex/hooks .codex/tests",
+        "pytest -q scripts/triage",
+    ]
+    assert "dbt" not in repr(packet["required_verification_commands"])
 
 
 def test_suggested_branch_strips_conventional_commit_scope() -> None:

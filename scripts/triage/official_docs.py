@@ -138,6 +138,26 @@ PROVIDERS = (
     ),
 )
 
+
+def _providers_from_policy(policy: Any | None) -> tuple[OfficialDocsProvider, ...]:
+    if policy is None:
+        return PROVIDERS
+    official_docs_policy = getattr(policy, "official_docs", policy)
+    if getattr(official_docs_policy, "enabled", True) is False:
+        return ()
+    providers = getattr(official_docs_policy, "providers", None)
+    if providers is None:
+        return PROVIDERS
+    return tuple(
+        OfficialDocsProvider(
+            key=provider.key,
+            display_name=provider.display_name,
+            trigger_patterns=tuple(provider.trigger_patterns),
+            official_domains=tuple(provider.official_domains),
+        )
+        for provider in providers
+    )
+
 CONTEXT_PATTERNS = (
     r"\bofficial docs?\b",
     r"\bofficial documentation\b",
@@ -275,7 +295,9 @@ def _line_has_external_dependency_action(line: str) -> bool:
     return bool(_matches_any_pattern(line, EXTERNAL_DEPENDENCY_ACTION_PATTERNS))
 
 
-def _provider_example_only_line(line: str) -> bool:
+def _provider_example_only_line(
+    line: str, providers: Iterable[OfficialDocsProvider]
+) -> bool:
     if _line_has_external_dependency_action(line):
         return False
     return bool(
@@ -283,14 +305,16 @@ def _provider_example_only_line(line: str) -> bool:
             line,
             tuple(
                 pattern
-                for provider in PROVIDERS
+                for provider in providers
                 for pattern in provider.trigger_patterns
             ),
         )
     )
 
 
-def _non_meta_requirement_text(text: str) -> str:
+def _non_meta_requirement_text(
+    text: str, providers: Iterable[OfficialDocsProvider]
+) -> str:
     kept: list[str] = []
     previous_was_meta_example = False
     for line in text.splitlines():
@@ -298,7 +322,7 @@ def _non_meta_requirement_text(text: str) -> str:
         if is_meta_example:
             previous_was_meta_example = True
             continue
-        if previous_was_meta_example and _provider_example_only_line(line):
+        if previous_was_meta_example and _provider_example_only_line(line, providers):
             continue
         kept.append(line)
         previous_was_meta_example = False
@@ -314,17 +338,24 @@ def _generic_external_matches(text: str) -> tuple[str, ...]:
 
 
 def requirements(
-    title: str, labels: Iterable[str], body: str
+    title: str,
+    labels: Iterable[str],
+    body: str,
+    *,
+    official_docs_policy: Any | None = None,
 ) -> tuple[OfficialDocsRequirement, ...]:
+    providers = _providers_from_policy(official_docs_policy)
+    if not providers:
+        return ()
     text = "\n".join([title, " ".join(labels), body])
-    requirement_text = _non_meta_requirement_text(text)
+    requirement_text = _non_meta_requirement_text(text, providers)
     if not requirement_text.strip() and _matches_any_pattern(text, META_PATTERNS):
         return ()
 
     context_matches = _matches_any_pattern(requirement_text, CONTEXT_PATTERNS)
     label_set = {label.lower() for label in labels}
     required: list[OfficialDocsRequirement] = []
-    for provider in PROVIDERS:
+    for provider in providers:
         provider_matches = list(
             _matches_any_pattern(requirement_text, provider.trigger_patterns)
         )
@@ -371,9 +402,11 @@ def _provider_matches_host(provider: OfficialDocsProvider, host: str) -> bool:
     return _host_matches(host, provider.official_domains)
 
 
-def _known_providers_for_host(host: str) -> tuple[OfficialDocsProvider, ...]:
+def _known_providers_for_host(
+    host: str, providers: Iterable[OfficialDocsProvider]
+) -> tuple[OfficialDocsProvider, ...]:
     return tuple(
-        provider for provider in PROVIDERS if _provider_matches_host(provider, host)
+        provider for provider in providers if _provider_matches_host(provider, host)
     )
 
 
@@ -387,9 +420,13 @@ def _residual_uncertainty_values(content: str) -> tuple[str, ...]:
     )
 
 
-def _provider_field_known_providers(value: str) -> tuple[OfficialDocsProvider, ...]:
+def _provider_field_known_providers(
+    value: str, providers: Iterable[OfficialDocsProvider]
+) -> tuple[OfficialDocsProvider, ...]:
     return tuple(
-        provider for provider in PROVIDERS if _content_mentions_provider(value, provider)
+        provider
+        for provider in providers
+        if _content_mentions_provider(value, provider)
     )
 
 
@@ -514,7 +551,9 @@ def section_findings(
     *,
     unresolved_placeholder: str,
     has_decisions_blockers: bool = False,
+    official_docs_policy: Any | None = None,
 ) -> list[dict[str, Any]]:
+    providers = _providers_from_policy(official_docs_policy)
     urls = _extract_urls(content)
     required = tuple(requirements)
     known_required_providers = tuple(
@@ -563,13 +602,14 @@ def section_findings(
     unknown_hosts = tuple(
         _url_host(url)
         for url in urls
-        if _url_host(url) and not _known_providers_for_host(_url_host(url))
+        if _url_host(url)
+        and not _known_providers_for_host(_url_host(url), providers)
     )
     provider_values = _provider_field_values(content)
     unknown_provider_values = tuple(
         value
         for value in provider_values
-        if value and not _provider_field_known_providers(value)
+        if value and not _provider_field_known_providers(value, providers)
     )
     unknown_source = bool(unknown_provider_values or unknown_hosts)
     if unknown_source and not _unknown_provider_requires_verification(

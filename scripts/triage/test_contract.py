@@ -5,6 +5,11 @@ from pathlib import Path
 import pytest
 
 from scripts.triage import contract
+from scripts.triage import repo_config
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
 
 
 def common_body(extra: str = "") -> str:
@@ -42,6 +47,41 @@ Run positive, negative, degradation, and regression tests.
 - Parent epic: #4
 - Depends on: none.
 """
+
+
+def test_contract_uses_non_dbt_policy_for_official_docs() -> None:
+    widgets_policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    issue = {
+        "number": 1,
+        "title": "feat: verify GitHub Actions CI service behavior",
+        "labels": ["enhancement"],
+        "milestone": None,
+        "body": common_body(
+            """## User-visible problem or current gap
+
+The widgets service relies on GitHub Actions workflow behavior.
+
+## Expected behavior or target outcome
+
+The contract records official docs evidence without product package checks.
+
+## Official documentation evidence
+
+- Provider: GitHub.
+  - Official URL: https://docs.github.com/en/actions
+  - Supported claim or decision: GitHub Actions CI-service behavior is external platform evidence for this issue.
+  - Docs version or product version: current GitHub Docs, no pinned version.
+  - Retrieval date: 2026-06-27.
+  - Residual uncertainty: docs do not prove this repository interpreted the workflow correctly.
+"""
+        ),
+    }
+
+    result = contract.audit_contract(issue, repo_policy=widgets_policy)
+
+    assert result["contract_id"] == "widgets.issue-contract.v1"
+    assert result["contract_accepted"] is True
+    assert "dbt-diagnostics" not in repr(result)
 
 
 @pytest.mark.parametrize(
