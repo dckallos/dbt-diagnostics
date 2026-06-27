@@ -90,6 +90,19 @@ The policy is not a mirror of the tracker. I do not copy issue titles or bodies
 into it. Live metadata is captured in a timestamped snapshot and bound to the
 plan with SHA-256 digests.
 
+`scripts/triage/repo_config.py` is the typed adapter boundary for the
+repository-local parts of that policy. It validates `policy.toml` and supplies
+repository identity, the default and protected branches, progress-log path,
+contract ID/version, path citation roots, protected Codex/governance surfaces,
+hook wiring, quality receipt path, product/package checks, compatibility schema
+sets, official-documentation provider policy, and worker-packet verification
+commands to the local tooling.
+
+Policy configuration is not an authorization model. It cannot add issue bodies,
+request payloads, operation plans, PR merge instructions, workflow dispatches,
+or tracker mutation targets to read-only artifacts. Mutation-shaped keys and
+forbidden operation IDs are rejected before wrappers or core code continue.
+
 `docs/PROGRESS_LOG.md` is historical context, not a substitute for the live
 tracker. The audit reports when tracker updates are newer than its latest dated
 entry or when a declared-open item is already closed.
