@@ -1045,3 +1045,32 @@ End of session -- 2026-06-26 issue 81 backlog synthesis implemented
 - Keep Project mutation out of scope. The wrapper is advisory and read-only.
 
 End of session -- 2026-06-26 issue 91 project-plan wrapper implemented
+
+---
+
+## 2026-06-26 -- issue 91 architecture handoff prompt added
+
+**What changed**
+- Added `docs/CONCLUSIONS_ON_HOW_TO_MOVE_FORWARD.md` as a paste-ready
+  ChatGPT Pro prompt and as my written conclusions about the next governance
+  architecture work.
+- The document asks the next model to inspect PR #92 through GitHub MCP, use web
+  research, challenge my conclusions, and propose the next issue/epic backlog
+  for bounded LLM governance review.
+
+**Validation**
+- `PYTHONPYCACHEPREFIX=.venv/pycache bash .codex/bin/action.sh check` passed:
+  621 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema gate
+  skipped as expected.
+
+**Current state**
+- Work remains on branch `feat/91-project-plan-action` for PR #92.
+
+**Next steps**
+- Commit, push, and leave PR #92 ready for review.
+
+**Be careful**
+- The handoff prompt is advisory documentation. It does not add a GitHub write
+  path or change runtime behavior.
+
+End of session -- 2026-06-26 issue 91 architecture handoff prompt added
