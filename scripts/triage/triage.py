@@ -1677,7 +1677,9 @@ def audit_snapshot(
             missing_files: set[str] = set()
             missing_directories: set[str] = set()
             body = str(issue.get("body") or "")
-            for ref in governance_common.parse_file_references(body):
+            for ref in governance_common.parse_file_references(
+                body, reference_roots=active_policy.paths.reference_roots
+            ):
                 path_text = ref.path
                 if not path_text or (root / path_text).exists():
                     continue

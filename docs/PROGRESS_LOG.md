@@ -1421,6 +1421,11 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
 - Updated docs, skill descriptions, and `CHANGELOG.md` to describe the
   behavior-preserving repo policy adapter boundary only; no physical extraction
   or reusable package/plugin distribution has landed.
+- Revised PR #122 locally for the follow-up review: `triage.audit_snapshot()`
+  now passes configured reference roots into the missing-path parser, a widgets
+  regression covers non-dbt roots, and shell-facing policy values reject unsafe
+  live-install env names or CLI smoke tokens before wrappers consume them.
+  Setup/package CLI smoke loops now parse validated tokens without `eval`.
 
 **Validation**
 - `python -m pytest -q scripts/triage/test_repo_config.py` passed: 41 passed.
@@ -1448,16 +1453,28 @@ End of session -- 2026-06-27 issue 115 official documentation evidence contract
 - `bash .codex/bin/action.sh check` passed: Codex tests 76 passed; offline
   tests 704 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
+- Follow-up PR #122 revision: `python -m pytest -q
+  scripts/triage/test_repo_config.py scripts/triage/test_triage.py` passed: 116
+  passed.
+- Follow-up PR #122 revision: `python -m pytest -q
+  .codex/tests/test_codex_hooks.py .codex/tests/test_codex_quality.py
+  .codex/tests/test_doctor.py .codex/tests/test_task_context.py
+  .codex/tests/test_check_dist.py` passed: 70 passed.
+- Follow-up PR #122 revision: `python -m compileall -q scripts .codex/scripts
+  .codex/hooks .codex/tests` passed.
+- Follow-up PR #122 revision: `bash .codex/bin/action.sh check` passed: Codex
+  tests 76 passed; offline tests 712 passed, 2 skipped, 20 deselected, 1
+  warning; compatibility schema gate skipped as expected.
 
 **Current state**
 - Work is on local branch `feat/119-repo-policy-adapter`.
-- The change set is local and not pushed. Incremental commits are being made
-  for the loader/policy, governance wiring, Codex wiring, and docs.
+- Draft PR #122 is open against `donkey-kong-sandbox`.
+- The follow-up review revision is local and not pushed. Keep it as a separate
+  incremental commit before pushing.
 
 **Next steps**
-- Review the policy field names and the intentional PR 2 boundaries before
-  opening a PR.
-- Push or open a PR only after explicit GitHub-write approval.
+- Review the focused follow-up diff, then push the local revision only after
+  explicit GitHub-write approval.
 
 **Be careful**
 - Do not add config that authorizes GitHub writes or weakens hook denial

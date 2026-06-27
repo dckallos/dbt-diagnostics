@@ -213,6 +213,36 @@ def test_forbidden_operation_ids_fail_in_values(operation_id: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "env_name",
+    ["CODEX-INSTALL-LIVE", "1CODEX_INSTALL_LIVE", "CODEX_INSTALL_LIVE;touch"],
+)
+def test_live_install_env_var_names_must_be_shell_identifiers(env_name: str) -> None:
+    data = _policy_data()
+    product = data["product"]
+    assert isinstance(product, dict)
+    product["live_install_env_vars"] = [env_name]
+
+    with pytest.raises(repo_config.RepoConfigError, match="safe shell identifier"):
+        repo_config.policy_from_mapping(data)
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["--help;touch", "$(touch)", "with space", "`touch`"],
+)
+def test_cli_smoke_command_tokens_reject_shell_metacharacters(token: str) -> None:
+    data = _policy_data()
+    product = data["product"]
+    assert isinstance(product, dict)
+    cli = product["cli"]
+    assert isinstance(cli, dict)
+    cli["commands"] = [["dbt-diagnostics", token]]
+
+    with pytest.raises(repo_config.RepoConfigError, match="shell metacharacters"):
+        repo_config.policy_from_mapping(data)
+
+
+@pytest.mark.parametrize(
     "flag",
     ["network_retrieval", "url_fetching", "browser_automation", "freshness_checks"],
 )

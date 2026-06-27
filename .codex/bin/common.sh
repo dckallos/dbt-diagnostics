@@ -149,7 +149,7 @@ codex_require_venv() {
 codex_policy_live_install_value() {
   local name value
   for name in $CODEX_POLICY_LIVE_INSTALL_ENV_VARS; do
-    eval "value=\${${name}:-}"
+    value="${!name:-}"
     if [ -n "$value" ]; then
       printf '%s\n' "$value"
       return 0

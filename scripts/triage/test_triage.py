@@ -10,7 +10,11 @@ from typing import Any
 
 import pytest
 
-from scripts.triage import triage
+from scripts.triage import repo_config, triage
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
 
 
 @dataclass
@@ -515,6 +519,39 @@ def test_missing_root_file_reference_is_reported(tmp_path: Path) -> None:
 
     missing = [item for item in findings if item["code"] == "missing-repo-path"]
     assert [(item["issue"], item["data"]) for item in missing] == [(1, ["SECURITY.md"])]
+
+
+def test_missing_paths_use_configured_non_dbt_reference_roots(
+    tmp_path: Path,
+) -> None:
+    widgets_policy = repo_config.load_repo_policy(WIDGETS_POLICY)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "widget_check.py").write_text("ok", encoding="ascii")
+    snap = snapshot(
+        [
+            issue(
+                1,
+                body=(
+                    "See scripts/widget_check.py, scripts/missing_widget.py, and "
+                    "dbt_diagnostics/fixtures/schemas/manifest/v12.json."
+                ),
+                labels=["bug"],
+            )
+        ],
+        labels=["bug"],
+    )
+
+    findings = triage.audit_snapshot(
+        snap,
+        policy(),
+        root=tmp_path,
+        repo_policy=widgets_policy,
+    )
+
+    missing = [item for item in findings if item["code"] == "missing-repo-path"]
+    assert [(item["issue"], item["data"]) for item in missing] == [
+        (1, ["scripts/missing_widget.py"])
+    ]
 
 
 def test_dependency_cycle_detection_is_canonical() -> None:

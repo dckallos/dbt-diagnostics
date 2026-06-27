@@ -69,14 +69,16 @@ if sys.argv[1] == "1":
 missing = [name for name in required if importlib.util.find_spec(name) is None]
 raise SystemExit(1 if missing else 0)
 PY
+  local command_line command_name
+  local -a command_args
   while IFS= read -r command_line; do
     [ -n "$command_line" ] || continue
-    eval "set -- $command_line"
-    [ "$#" -ge 1 ] || return 1
-    local command_name="$1"
-    shift
+    IFS=' ' read -r -a command_args <<< "$command_line"
+    [ "${#command_args[@]}" -ge 1 ] || return 1
+    command_name="${command_args[0]}"
+    command_args=("${command_args[@]:1}")
     [ -x "${CODEX_VENV_DIR}/bin/${command_name}" ] || return 1
-    "${CODEX_VENV_DIR}/bin/${command_name}" "$@" >/dev/null 2>&1 || return 1
+    "${CODEX_VENV_DIR}/bin/${command_name}" "${command_args[@]}" >/dev/null 2>&1 || return 1
   done < <("$python_path" scripts/triage/repo_config.py cli-commands)
   "$python_path" -m pip check >/dev/null 2>&1 || return 1
 }

@@ -229,6 +229,8 @@ class RepoPolicy:
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 DOMAIN_RE = re.compile(r"^[a-z0-9.-]+$")
+SHELL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+CLI_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:@%+=,-]+$")
 SUPPORTED_HOOK_EVENTS = frozenset({"PreToolUse", "PermissionRequest", "Stop"})
 SUPPORTED_OPTIONAL_CHECKS = frozenset({"package", "compat_schema"})
 UNKNOWN_PROVIDER_POLICY = "preserve_verification_or_uncertainty"
@@ -544,6 +546,11 @@ def _product(value: Any, errors: list[str], label: str) -> ProductChecks:
         f"{label}.product.live_install_env_vars",
         required=False,
     )
+    _validate_shell_identifiers(
+        live_install_env_vars,
+        errors,
+        f"{label}.product.live_install_env_vars",
+    )
     cli_table = _table(table.get("cli", {}), errors, f"{label}.product.cli")
     distribution_name = cli_table.get("distribution_name")
     if distribution_name is not None and not isinstance(distribution_name, str):
@@ -562,6 +569,11 @@ def _product(value: Any, errors: list[str], label: str) -> ProductChecks:
                 required=True,
             )
             if command:
+                _validate_cli_command_tokens(
+                    command,
+                    errors,
+                    f"{label}.product.cli.commands[{index}]",
+                )
                 commands.append(command)
     dist_table = _table(table.get("dist", {}), errors, f"{label}.product.dist")
     dist = ProductDist(
@@ -817,6 +829,24 @@ def _validate_relative_path(
         errors.append(f"{label} must be a repository path, not {value!r}")
         return ""
     return normalized
+
+
+def _validate_shell_identifiers(
+    values: Iterable[str], errors: list[str], label: str
+) -> None:
+    for index, value in enumerate(values):
+        if not SHELL_IDENTIFIER_RE.fullmatch(value):
+            errors.append(f"{label}[{index}] must be a safe shell identifier: {value!r}")
+
+
+def _validate_cli_command_tokens(
+    command: Sequence[str], errors: list[str], label: str
+) -> None:
+    for index, token in enumerate(command):
+        if not CLI_TOKEN_RE.fullmatch(token):
+            errors.append(
+                f"{label}[{index}] must not contain shell metacharacters: {token!r}"
+            )
 
 
 def shell_exports(policy: RepoPolicy) -> dict[str, str]:

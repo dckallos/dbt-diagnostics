@@ -43,11 +43,11 @@ if [ -z "$commands" ]; then
 else
   while IFS= read -r command_line; do
     [ -n "$command_line" ] || continue
-    eval "set -- $command_line"
-    [ "$#" -ge 1 ] || codex_die "empty CLI smoke command"
-    command_name="$1"
-    shift
-    codex_run "$smoke_venv/bin/$command_name" "$@" >/dev/null
+    IFS=' ' read -r -a command_args <<< "$command_line"
+    [ "${#command_args[@]}" -ge 1 ] || codex_die "empty CLI smoke command"
+    command_name="${command_args[0]}"
+    command_args=("${command_args[@]:1}")
+    codex_run "$smoke_venv/bin/$command_name" "${command_args[@]}" >/dev/null
   done <<EOF
 $commands
 EOF
