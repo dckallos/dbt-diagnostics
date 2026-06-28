@@ -2660,6 +2660,8 @@ def test_synthesis_review_packet_cli_emits_json_without_github_calls(
             str(backlog_path),
             "--issues",
             "101",
+            "--evaluated-at",
+            "2026-06-25T01:00:00Z",
             "--json",
         ],
         runner=runner,
@@ -2674,6 +2676,9 @@ def test_synthesis_review_packet_cli_emits_json_without_github_calls(
         == triage.issue_frontier.SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION
     )
     assert packet["packet_scope"]["issue_numbers"] == [101]
+    assert packet["staleness"]["freshness_status"] == "warning"
+    assert packet["staleness"]["stale"] is False
+    assert packet["staleness"]["llm_review_allowed"] is True
     assert packet["source_artifacts"]["snapshot_digest"] == _rest[0]["snapshot_sha256"]
     assert packet["safety"]["github_api_calls"] is False
     assert packet["safety"]["github_mutations"] is False
@@ -2734,6 +2739,8 @@ def test_synthesis_review_packet_cli_writes_output_and_status_to_stderr(
             str(backlog_path),
             "--project-plan",
             str(project_path),
+            "--evaluated-at",
+            "2026-06-24T01:00:00Z",
             "--output",
             str(output_path),
             "--json",
@@ -2773,6 +2780,8 @@ def test_synthesis_review_packet_cli_missing_required_file_is_controlled(
             str(audit_path),
             "--backlog-synthesis",
             str(backlog_path),
+            "--evaluated-at",
+            "2026-06-24T01:00:00Z",
             "--json",
         ],
         runner=QueueRunner([]),
@@ -2818,6 +2827,8 @@ def test_synthesis_review_packet_cli_rejects_invalid_backlog_before_build(
             str(audit_path),
             "--backlog-synthesis",
             str(backlog_path),
+            "--evaluated-at",
+            "2026-06-24T01:00:00Z",
             "--output",
             str(tmp_path / "packet.json"),
         ],
@@ -2857,6 +2868,8 @@ def test_synthesis_review_packet_cli_rejects_source_digest_mismatch(
             str(audit_path),
             "--backlog-synthesis",
             str(backlog_path),
+            "--evaluated-at",
+            "2026-07-01T00:00:01Z",
             "--json",
         ],
         runner=QueueRunner([]),
@@ -2865,6 +2878,105 @@ def test_synthesis_review_packet_cli_rejects_source_digest_mismatch(
     captured = capsys.readouterr()
     assert code == 2
     assert "backlog-synthesis snapshot digest does not match snapshot" in captured.err
+    assert captured.out == ""
+
+
+def test_synthesis_review_packet_cli_hard_stale_fails_by_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--evaluated-at",
+            "2026-07-01T00:00:01Z",
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "hard-stale packet requires --allow-stale-offline-packet" in captured.err
+    assert captured.out == ""
+
+
+def test_synthesis_review_packet_cli_allows_explicit_stale_offline_packet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--evaluated-at",
+            "2026-07-01T00:00:01Z",
+            "--allow-stale-offline-packet",
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.err == ""
+    packet = json.loads(captured.out)
+    assert packet["staleness"]["freshness_status"] == "stale"
+    assert packet["staleness"]["stale"] is True
+    assert packet["staleness"]["llm_review_allowed"] is False
+
+
+def test_synthesis_review_packet_cli_stricter_max_age_can_hard_stale(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, snapshot_path, audit_path, backlog_path, *_rest = (
+        write_synthesis_review_packet_inputs(tmp_path)
+    )
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "synthesis-review-packet",
+            "--snapshot",
+            str(snapshot_path),
+            "--audit-file",
+            str(audit_path),
+            "--backlog-synthesis",
+            str(backlog_path),
+            "--max-age-hours",
+            "48",
+            "--evaluated-at",
+            "2026-06-27T00:00:01Z",
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "hard-stale packet requires --allow-stale-offline-packet" in captured.err
     assert captured.out == ""
 
 
@@ -2884,6 +2996,8 @@ def test_synthesis_review_packet_cli_output_is_deterministic(
         str(audit_path),
         "--backlog-synthesis",
         str(backlog_path),
+        "--evaluated-at",
+        "2026-06-24T01:00:00Z",
         "--json",
     ]
 

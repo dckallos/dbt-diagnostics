@@ -198,7 +198,17 @@
         "estimated_tokens": {"type": "integer", "minimum": 0},
         "target_estimated_tokens": {"const": 50000},
         "hard_estimated_tokens": {"const": 75000},
-        "token_estimate_method": {"type": "string", "minLength": 1}
+        "token_estimate_method": {"type": "string", "minLength": 1},
+        "budget_warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "serialized_bytes_exceeds_target_bytes",
+              "estimated_tokens_exceeds_target"
+            ]
+          }
+        }
       }
     },
     "staleness": {
@@ -210,7 +220,19 @@
         "llm_review_allowed"
       ],
       "properties": {
+        "source_generated_at": {"type": "string", "minLength": 1},
+        "evaluated_at": {"type": "string", "minLength": 1},
+        "source_age_hours": {"type": "number", "minimum": 0},
+        "warning_age_hours": {"const": 24},
         "max_age_hours": {"type": "integer", "minimum": 1},
+        "freshness_status": {
+          "type": "string",
+          "enum": ["fresh", "warning", "stale"]
+        },
+        "freshness_warnings": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
         "stale": {"type": "boolean"},
         "llm_review_allowed": {"type": "boolean"}
       },

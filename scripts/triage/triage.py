@@ -3559,6 +3559,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="hard review-age threshold in hours; lower values are stricter",
     )
     synthesis_review_packet.add_argument(
+        "--allow-stale-offline-packet",
+        action="store_true",
+        help=(
+            "emit a hard-stale non-reviewable packet for offline inspection "
+            "instead of failing"
+        ),
+    )
+    synthesis_review_packet.add_argument(
+        "--evaluated-at",
+        help=argparse.SUPPRESS,
+    )
+    synthesis_review_packet.add_argument(
         "--issues",
         help="comma-separated issue numbers to include from the source report",
     )
@@ -3969,8 +3981,22 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                 project_plan=project_plan_data,
                 issue_filter=issue_filter,
                 max_age_hours=args.max_age_hours,
+                evaluated_at=args.evaluated_at or governance_common.utc_now(),
             )
-            packet_errors = issue_frontier.validate_synthesis_review_packet(packet)
+            staleness = packet.get("staleness")
+            hard_stale = (
+                isinstance(staleness, Mapping)
+                and staleness.get("stale") is True
+            )
+            if hard_stale and not args.allow_stale_offline_packet:
+                raise TriageError(
+                    "hard-stale packet requires --allow-stale-offline-packet; "
+                    "regenerate the source artifacts for LLM review"
+                )
+            packet_errors = issue_frontier.validate_synthesis_review_packet(
+                packet,
+                allow_stale_offline=args.allow_stale_offline_packet,
+            )
             if packet_errors:
                 raise TriageError(
                     "synthesis-review-packet validation failed: "
