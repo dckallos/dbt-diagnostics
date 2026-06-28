@@ -1816,3 +1816,49 @@ End of session -- 2026-06-27 issue 96 packet freshness gates
   issue bodies or mutation-shaped payloads.
 
 End of session -- 2026-06-27 issue 97 backlog near-miss diagnostics
+
+---
+
+## 2026-06-27 -- issue 98 backlog review verdict schema
+
+**What changed**
+- Updated issue #98 with the accepted contract-compliant body after maintainer
+  authorization, then started `feat/98-backlog-review-verdict-schema` from
+  updated `donkey-kong-sandbox`.
+- Added the v1 advisory `backlog-review-verdict` human schema, machine schema,
+  validator entry points, focused tests, and `CHANGELOG.md` entry.
+- The verdict validator checks canonical digest integrity, packet evidence refs,
+  #97 near-miss refs, #97 omission refs, #96 freshness reviewability, advisory
+  future apply recommendations, safety constants, and recursive forbidden
+  mutation shapes.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 98 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 98` passed with only the
+  existing missing-type-label warning.
+- `python -m pytest -q scripts/triage/test_frontier.py` passed: 79 passed.
+- `python -m py_compile scripts/triage/frontier.py
+  scripts/triage/test_frontier.py` passed.
+- `python -m json.tool docs/backlog-review-verdict-schema-v1.json
+  >/dev/null` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
+  tests 793 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on branch `feat/98-backlog-review-verdict-schema`.
+- No PR has been opened yet.
+
+**Next steps**
+- Review the branch diff, refresh the Codex quality receipt, then commit, push,
+  and open a PR when requested.
+
+**Be careful**
+- Do not add #100 validation CLI/gate, #101 backlog-review skill, or #118
+  extraction/distribution work to this PR.
+- Keep verdicts advisory and read-only; future apply recommendations cannot
+  carry executable operation or GitHub request payloads.
+
+End of session -- 2026-06-27 issue 98 backlog review verdict schema

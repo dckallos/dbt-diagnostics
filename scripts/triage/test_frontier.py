@@ -150,9 +150,20 @@ def packet_digest(packet: dict) -> str:
     return frontier.sha256_json(unsigned)
 
 
+def verdict_digest(verdict: dict) -> str:
+    unsigned = json.loads(json.dumps(verdict))
+    unsigned.pop("backlog_review_verdict_digest", None)
+    return frontier.sha256_json(unsigned)
+
+
 def sign_packet(packet: dict) -> dict:
     packet["synthesis_review_packet_digest"] = packet_digest(packet)
     return packet
+
+
+def sign_verdict(verdict: dict) -> dict:
+    verdict["backlog_review_verdict_digest"] = verdict_digest(verdict)
+    return verdict
 
 
 def synthesis_review_packet(**overrides: object) -> dict:
@@ -211,6 +222,136 @@ def synthesis_review_packet(**overrides: object) -> dict:
     }
     value.update(overrides)
     return sign_packet(value)
+
+
+def synthesis_review_packet_with_refs(**overrides: object) -> dict:
+    value = synthesis_review_packet(
+        evidence_items=[
+            {
+                "evidence_id": "evidence-001",
+                "source": "candidate_sets[0]",
+                "excerpt": "bounded evidence excerpt",
+            }
+        ],
+        near_misses=[
+            {
+                "near_miss_id": (
+                    "near-miss-possible-duplicate-001-002-"
+                    "title-similarity-below-threshold"
+                ),
+                "near_miss_type": "possible-duplicate",
+                "issue_numbers": [1, 2],
+                "score": 0.667,
+                "reason_not_signaled": "title similarity below threshold",
+                "shared_evidence": ["shared parent epic: #93"],
+                "details": {
+                    "reason_category": "title_similarity_below_threshold",
+                },
+            }
+        ],
+        omissions=[
+            {
+                "omission_id": "omission-no-issue-body-in-signals",
+                "omission_type": "no_issue_body_in_signals",
+                "reason": "read-only signal report excludes full issue body",
+                "details": {"reason_category": "bounded_signal_report"},
+            }
+        ],
+    )
+    value.update(overrides)
+    return sign_packet(value)
+
+
+def backlog_review_verdict(
+    *,
+    packet: dict | None = None,
+    verdicts: list[dict] | None = None,
+    future_apply_recommendations: list[dict] | None = None,
+    uncertainty: list[dict] | None = None,
+    required_maintainer_checks: list[str] | None = None,
+    **overrides: object,
+) -> dict:
+    source_packet = packet or synthesis_review_packet_with_refs()
+    source_artifacts = source_packet["source_artifacts"]
+    default_verdicts = [
+        {
+            "verdict_id": "verdict-likely-duplicate-001-002",
+            "verdict_type": "likely-duplicate",
+            "issue_numbers": [1, 2],
+            "recommendation": "Maintainer should review #1 and #2 as duplicates.",
+            "confidence": "medium",
+            "evidence_refs": ["evidence-001"],
+            "near_miss_refs": [
+                "near-miss-possible-duplicate-001-002-"
+                "title-similarity-below-threshold"
+            ],
+            "omission_refs": ["omission-no-issue-body-in-signals"],
+            "rationale": "The bounded packet evidence cites shared context.",
+            "risks": ["The issues may describe separable implementation work."],
+            "required_maintainer_checks": [
+                "Confirm duplicate disposition before any tracker mutation."
+            ],
+            "future_apply_recommendation_ref": "future-apply-001",
+        }
+    ]
+    value: dict[str, object] = {
+        "schema_version": 1,
+        "repository": "dckallos/dbt-diagnostics",
+        "generated_at": "2026-06-24T01:30:00Z",
+        "source_packet_digest": source_packet["synthesis_review_packet_digest"],
+        "source_snapshot_digest": source_artifacts["snapshot_digest"],
+        "source_audit_digest": source_artifacts["audit_digest"],
+        "source_backlog_synthesis_digest": source_artifacts[
+            "backlog_synthesis_digest"
+        ],
+        "packet_reviewability": {
+            "source_packet_digest": source_packet["synthesis_review_packet_digest"],
+            "source_snapshot_digest": source_artifacts["snapshot_digest"],
+            "source_audit_digest": source_artifacts["audit_digest"],
+            "source_backlog_synthesis_digest": source_artifacts[
+                "backlog_synthesis_digest"
+            ],
+            "freshness_status": source_packet["staleness"]["freshness_status"],
+            "freshness_warnings": list(
+                source_packet["staleness"]["freshness_warnings"]
+            ),
+            "packet_stale": source_packet["staleness"]["stale"],
+            "llm_review_allowed": source_packet["staleness"][
+                "llm_review_allowed"
+            ],
+            "invalid_lineage": False,
+        },
+        "verdicts": default_verdicts if verdicts is None else verdicts,
+        "future_apply_recommendations": (
+            [
+                {
+                    "recommendation_id": "future-apply-001",
+                    "summary": "Maintainer may close the duplicate after review.",
+                    "rationale": "The verdict is advisory and not executable.",
+                    "advisory_only": True,
+                }
+            ]
+            if future_apply_recommendations is None
+            else future_apply_recommendations
+        ),
+        "uncertainty": [] if uncertainty is None else uncertainty,
+        "required_maintainer_checks": (
+            [] if required_maintainer_checks is None else required_maintainer_checks
+        ),
+        "safety": {
+            "read_only": True,
+            "github_api_calls": False,
+            "github_mutations": False,
+            "contains_executable_operations": False,
+            "contains_github_request_payloads": False,
+            "contains_issue_write_payloads": False,
+            "future_apply_recommendations_are_advisory": True,
+            "maintainer_decides": True,
+            "llm_verdicts_are_advisory": True,
+        },
+    }
+    value.update(overrides)
+    return sign_verdict(value)
 
 
 def test_merged_pull_request_dependency_is_implementable() -> None:
@@ -1756,6 +1897,326 @@ def test_read_only_artifact_validators_reject_operations_regression() -> None:
         "operations key is forbidden"
         in frontier.validate_synthesis_review_packet(packet)
     )
+
+
+def test_backlog_review_verdict_machine_schema_documents_required_surface() -> None:
+    schema = json.loads(
+        (ROOT / "docs" / "backlog-review-verdict-schema-v1.json").read_text()
+    )
+
+    required = set(schema["required"])
+    assert "backlog_review_verdict_digest" in required
+    assert "packet_reviewability" in required
+    assert (
+        schema["properties"]["safety"]["properties"]["github_mutations"]["const"]
+        is False
+    )
+    assert (
+        schema["properties"]["safety"]["properties"][
+            "future_apply_recommendations_are_advisory"
+        ]["const"]
+        is True
+    )
+    forbidden = {
+        tuple(item["required"])
+        for item in schema["$defs"]["forbiddenReadOnlyShape"]["not"]["anyOf"]
+    }
+    for key in {"operations", "operation_id", "github_request", "body", "state"}:
+        assert (key,) in forbidden
+    assert ("method", "path") in forbidden
+    assert schema["allOf"] == [{"$ref": "#/$defs/safeObject"}]
+
+
+def test_backlog_review_verdict_valid_minimal_and_packet_refs_validate() -> None:
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(packet=packet)
+
+    assert frontier.validate_backlog_review_verdict(verdict) == []
+    assert frontier.validate_backlog_review_verdict_against_packet(
+        verdict, packet
+    ) == []
+
+
+def test_backlog_review_verdict_recomputes_digest_canonically() -> None:
+    verdict = backlog_review_verdict()
+    reordered = dict(reversed(list(verdict.items())))
+    tampered = backlog_review_verdict()
+    tampered["verdicts"][0]["recommendation"] = "Changed recommendation."
+
+    assert frontier.validate_backlog_review_verdict(reordered) == []
+    assert (
+        "backlog_review_verdict_digest mismatch"
+        in frontier.validate_backlog_review_verdict(tampered)
+    )
+
+
+def test_backlog_review_verdict_rejects_forbidden_mutation_shapes() -> None:
+    verdict = backlog_review_verdict(
+        operations=[],
+        future_apply_recommendations=[
+            {
+                "recommendation_id": "future-apply-001",
+                "summary": "unsafe executable recommendation",
+                "rationale": "must not pass",
+                "advisory_only": True,
+                "operation_id": "issue.body.update:abc",
+                "method": "PATCH",
+                "path": "/repos/dckallos/dbt-diagnostics/issues/1",
+            }
+        ],
+        verdicts=[
+            {
+                "verdict_id": "verdict-unsafe",
+                "verdict_type": "likely-duplicate",
+                "issue_numbers": [1, 2],
+                "recommendation": "unsafe",
+                "confidence": "medium",
+                "evidence_refs": ["evidence-001"],
+                "near_miss_refs": [],
+                "omission_refs": [],
+                "rationale": "unsafe",
+                "risks": [],
+                "required_maintainer_checks": [],
+                "github_request": {
+                    "method": "POST",
+                    "path": "/repos/dckallos/dbt-diagnostics/issues/1/labels",
+                    "body": {"labels": ["duplicate"]},
+                },
+            }
+        ],
+    )
+
+    errors = frontier.validate_backlog_review_verdict(verdict)
+
+    assert "operations key is forbidden" in errors
+    assert "future_apply_recommendations[0].operation_id is forbidden" in errors
+    assert (
+        "future_apply_recommendations[0] is a forbidden request target"
+        in errors
+    )
+    assert "verdicts[0].github_request is forbidden" in errors
+
+
+def test_backlog_review_verdict_allows_advisory_future_apply_recommendation() -> None:
+    verdict = backlog_review_verdict(
+        future_apply_recommendations=[
+            {
+                "recommendation_id": "future-apply-001",
+                "summary": "Maintainer may close #2 after manual review.",
+                "rationale": "This is advisory text and carries no operation.",
+                "advisory_only": True,
+            }
+        ]
+    )
+
+    assert frontier.validate_backlog_review_verdict(verdict) == []
+
+
+def test_backlog_review_verdict_requires_evidence_unless_insufficient() -> None:
+    missing_evidence = backlog_review_verdict()
+    missing_evidence["verdicts"][0]["evidence_refs"] = []
+    missing_evidence = sign_verdict(missing_evidence)
+    insufficient = backlog_review_verdict(
+        verdicts=[
+            {
+                "verdict_id": "verdict-insufficient-evidence",
+                "verdict_type": "insufficient-evidence",
+                "issue_numbers": [1, 2],
+                "recommendation": "No advisory action.",
+                "confidence": "low",
+                "evidence_refs": [],
+                "near_miss_refs": [],
+                "omission_refs": ["omission-no-issue-body-in-signals"],
+                "rationale": "The packet does not contain enough evidence.",
+                "risks": [],
+                "required_maintainer_checks": [
+                    "Collect additional maintainer evidence before acting."
+                ],
+            }
+        ],
+        future_apply_recommendations=[],
+    )
+
+    assert (
+        "verdicts[0].evidence_refs is required unless verdict_type is "
+        "insufficient-evidence"
+        in frontier.validate_backlog_review_verdict(missing_evidence)
+    )
+    assert frontier.validate_backlog_review_verdict(insufficient) == []
+
+
+def test_backlog_review_verdict_empty_verdicts_require_no_actionable_rationale() -> None:
+    missing_rationale = backlog_review_verdict(
+        verdicts=[],
+        future_apply_recommendations=[],
+        uncertainty=[],
+    )
+    with_rationale = backlog_review_verdict(
+        verdicts=[],
+        future_apply_recommendations=[],
+        uncertainty=[
+            {
+                "code": "no_actionable_candidates",
+                "rationale": "The packet had no bounded actionable candidates.",
+            }
+        ],
+    )
+
+    assert (
+        "empty verdicts require no_actionable_candidates uncertainty rationale"
+        in frontier.validate_backlog_review_verdict(missing_rationale)
+    )
+    assert frontier.validate_backlog_review_verdict(with_rationale) == []
+
+
+def test_backlog_review_verdict_packet_aware_unknown_refs_fail() -> None:
+    packet = synthesis_review_packet_with_refs()
+    unknown_evidence = backlog_review_verdict(packet=packet)
+    unknown_evidence["verdicts"][0]["evidence_refs"] = ["unknown-evidence"]
+    unknown_evidence = sign_verdict(unknown_evidence)
+    unknown_near_miss = backlog_review_verdict(packet=packet)
+    unknown_near_miss["verdicts"][0]["near_miss_refs"] = ["unknown-near-miss"]
+    unknown_near_miss = sign_verdict(unknown_near_miss)
+    unknown_omission = backlog_review_verdict(packet=packet)
+    unknown_omission["verdicts"][0]["omission_refs"] = ["unknown-omission"]
+    unknown_omission = sign_verdict(unknown_omission)
+
+    assert (
+        "verdicts[0].evidence_refs contains unknown packet evidence_id: "
+        "unknown-evidence"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            unknown_evidence, packet
+        )
+    )
+    assert (
+        "verdicts[0].near_miss_refs contains unknown packet near_miss_id: "
+        "unknown-near-miss"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            unknown_near_miss, packet
+        )
+    )
+    assert (
+        "verdicts[0].omission_refs contains unknown packet omission_id: "
+        "unknown-omission"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            unknown_omission, packet
+        )
+    )
+
+
+def test_backlog_review_verdict_packet_digest_and_source_mismatches_fail() -> None:
+    packet = synthesis_review_packet_with_refs()
+    packet_mismatch = backlog_review_verdict(packet=packet)
+    packet_mismatch["source_packet_digest"] = "9" * 64
+    packet_mismatch = sign_verdict(packet_mismatch)
+    source_mismatch = backlog_review_verdict(packet=packet)
+    source_mismatch["source_snapshot_digest"] = "8" * 64
+    source_mismatch = sign_verdict(source_mismatch)
+
+    assert (
+        "source_packet_digest does not match packet digest"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            packet_mismatch, packet
+        )
+    )
+    assert (
+        "source_snapshot_digest does not match packet source_artifacts.snapshot_digest"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            source_mismatch, packet
+        )
+    )
+
+
+def test_backlog_review_verdict_rejects_hard_stale_or_non_reviewable_packet() -> None:
+    stale_packet = synthesis_review_packet_with_refs(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-07-02T00:00:01Z",
+            "source_age_hours": 192.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "stale",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": True,
+            "llm_review_allowed": False,
+        }
+    )
+    stale_verdict = backlog_review_verdict(packet=stale_packet)
+    invalid_lineage = backlog_review_verdict(
+        packet=synthesis_review_packet_with_refs(),
+        packet_reviewability={
+            "source_packet_digest": "d" * 64,
+            "source_snapshot_digest": "a" * 64,
+            "source_audit_digest": "b" * 64,
+            "source_backlog_synthesis_digest": "c" * 64,
+            "freshness_status": "fresh",
+            "freshness_warnings": [],
+            "packet_stale": False,
+            "llm_review_allowed": True,
+            "invalid_lineage": True,
+        },
+    )
+
+    stale_errors = frontier.validate_backlog_review_verdict_against_packet(
+        stale_verdict, stale_packet
+    )
+    invalid_lineage_errors = frontier.validate_backlog_review_verdict(
+        invalid_lineage
+    )
+
+    assert "source packet invalid: staleness.stale packets are not valid for LLM review" in stale_errors
+    assert "packet_reviewability.invalid_lineage must be false" in invalid_lineage_errors
+
+
+def test_backlog_review_verdict_warning_packet_must_preserve_warning() -> None:
+    warning_packet = synthesis_review_packet_with_refs(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-25T01:00:00Z",
+            "source_age_hours": 25.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "warning",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": False,
+            "llm_review_allowed": True,
+        }
+    )
+    missing_warning = backlog_review_verdict(
+        packet=warning_packet,
+        packet_reviewability={
+            "source_packet_digest": warning_packet["synthesis_review_packet_digest"],
+            "source_snapshot_digest": "a" * 64,
+            "source_audit_digest": "b" * 64,
+            "source_backlog_synthesis_digest": "c" * 64,
+            "freshness_status": "warning",
+            "freshness_warnings": [],
+            "packet_stale": False,
+            "llm_review_allowed": True,
+            "invalid_lineage": False,
+        },
+        uncertainty=[],
+        required_maintainer_checks=[],
+    )
+    preserved_warning = backlog_review_verdict(
+        packet=warning_packet,
+        uncertainty=[
+            {
+                "code": "packet_freshness_warning",
+                "message": "source_age_exceeds_warning_age",
+            }
+        ],
+    )
+
+    assert (
+        "warning-only packet freshness warning is not preserved in verdict"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            missing_warning, warning_packet
+        )
+    )
+    assert frontier.validate_backlog_review_verdict_against_packet(
+        preserved_warning, warning_packet
+    ) == []
 
 
 def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:

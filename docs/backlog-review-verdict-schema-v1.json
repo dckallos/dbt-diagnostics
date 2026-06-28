@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/backlog-review-verdict-schema-v1.json",
+  "title": "dbt-diagnostics backlog review verdict",
+  "type": "object",
+  "additionalProperties": true,
+  "allOf": [{"$ref": "#/$defs/safeObject"}],
+  "$defs": {
+    "safeValue": {
+      "anyOf": [
+        {"$ref": "#/$defs/safeObject"},
+        {
+          "type": "array",
+          "items": {"$ref": "#/$defs/safeValue"}
+        },
+        {"type": ["string", "number", "integer", "boolean", "null"]}
+      ]
+    },
+    "safeObject": {
+      "type": "object",
+      "allOf": [{"$ref": "#/$defs/forbiddenReadOnlyShape"}],
+      "additionalProperties": {"$ref": "#/$defs/safeValue"}
+    },
+    "forbiddenReadOnlyShape": {
+      "not": {
+        "anyOf": [
+          {"required": ["operations"]},
+          {"required": ["body"]},
+          {"required": ["state"]},
+          {"required": ["operation_id"]},
+          {"required": ["operation_ids"]},
+          {"required": ["apply_operation"]},
+          {"required": ["apply_operations"]},
+          {"required": ["approval_batch"]},
+          {"required": ["approval_batches"]},
+          {"required": ["approved_batch"]},
+          {"required": ["approved_batches"]},
+          {"required": ["approved_operation_ids"]},
+          {"required": ["request_method"]},
+          {"required": ["request_path"]},
+          {"required": ["request_body"]},
+          {"required": ["method", "path"]},
+          {"required": ["method", "url"]},
+          {"required": ["method", "endpoint"]},
+          {"required": ["github_request"]},
+          {"required": ["github_requests"]},
+          {"required": ["github_request_payload"]},
+          {"required": ["github_request_payloads"]},
+          {"required": ["request_payload"]},
+          {"required": ["request_payloads"]},
+          {"required": ["rest_request"]},
+          {"required": ["rest_requests"]},
+          {"required": ["graphql_request"]},
+          {"required": ["graphql_requests"]},
+          {"required": ["mutation_request"]},
+          {"required": ["mutation_requests"]},
+          {"required": ["comment"]},
+          {"required": ["comments"]},
+          {"required": ["issue_comment"]},
+          {"required": ["issue_comments"]},
+          {"required": ["review_comment"]},
+          {"required": ["review_comments"]},
+          {"required": ["review_thread"]},
+          {"required": ["review_threads"]},
+          {"required": ["body_update"]},
+          {"required": ["body_updates"]},
+          {"required": ["close_request"]},
+          {"required": ["close_requests"]},
+          {"required": ["label_update"]},
+          {"required": ["label_updates"]},
+          {"required": ["milestone_update"]},
+          {"required": ["milestone_updates"]},
+          {"required": ["project_update"]},
+          {"required": ["project_updates"]},
+          {"required": ["reopen_request"]},
+          {"required": ["reopen_requests"]},
+          {"required": ["state_update"]},
+          {"required": ["state_updates"]},
+          {"required": ["title_update"]},
+          {"required": ["title_updates"]},
+          {"required": ["issues", "pulls"]},
+          {"required": ["issues", "pull_requests"]}
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "repository",
+    "generated_at",
+    "source_packet_digest",
+    "source_snapshot_digest",
+    "source_audit_digest",
+    "source_backlog_synthesis_digest",
+    "packet_reviewability",
+    "verdicts",
+    "future_apply_recommendations",
+    "uncertainty",
+    "required_maintainer_checks",
+    "safety",
+    "backlog_review_verdict_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "generated_at": {"type": "string"},
+    "source_packet_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_audit_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_backlog_synthesis_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_reviewability": {
+      "type": "object",
+      "additionalProperties": true,
+      "allOf": [{"$ref": "#/$defs/safeObject"}],
+      "required": [
+        "source_packet_digest",
+        "source_snapshot_digest",
+        "source_audit_digest",
+        "source_backlog_synthesis_digest",
+        "freshness_status",
+        "freshness_warnings",
+        "packet_stale",
+        "llm_review_allowed",
+        "invalid_lineage"
+      ],
+      "properties": {
+        "source_packet_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_snapshot_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_audit_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_backlog_synthesis_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freshness_status": {"enum": ["fresh", "warning", "stale"]},
+        "freshness_warnings": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "packet_stale": {"const": false},
+        "llm_review_allowed": {"const": true},
+        "invalid_lineage": {"const": false}
+      }
+    },
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
+        "required": [
+          "verdict_id",
+          "verdict_type",
+          "issue_numbers",
+          "recommendation",
+          "confidence",
+          "evidence_refs",
+          "near_miss_refs",
+          "omission_refs",
+          "rationale",
+          "risks",
+          "required_maintainer_checks"
+        ],
+        "properties": {
+          "verdict_id": {"type": "string", "minLength": 1},
+          "verdict_type": {"type": "string", "minLength": 1},
+          "issue_numbers": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "recommendation": {"type": "string", "minLength": 1},
+          "confidence": {"enum": ["low", "medium", "high"]},
+          "evidence_refs": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "near_miss_refs": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "omission_refs": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "rationale": {"type": "string", "minLength": 1},
+          "risks": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "required_maintainer_checks": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "future_apply_recommendation_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "future_apply_recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
+        "required": [
+          "recommendation_id",
+          "summary",
+          "rationale",
+          "advisory_only"
+        ],
+        "properties": {
+          "recommendation_id": {"type": "string", "minLength": 1},
+          "summary": {"type": "string", "minLength": 1},
+          "rationale": {"type": "string", "minLength": 1},
+          "advisory_only": {"const": true}
+        }
+      }
+    },
+    "uncertainty": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
+        "required": ["code"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "rationale": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "required_maintainer_checks": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "read_only",
+        "github_api_calls",
+        "github_mutations",
+        "contains_executable_operations",
+        "contains_github_request_payloads",
+        "contains_issue_write_payloads",
+        "future_apply_recommendations_are_advisory",
+        "maintainer_decides",
+        "llm_verdicts_are_advisory"
+      ],
+      "properties": {
+        "read_only": {"const": true},
+        "github_api_calls": {"const": false},
+        "github_mutations": {"const": false},
+        "contains_executable_operations": {"const": false},
+        "contains_github_request_payloads": {"const": false},
+        "contains_issue_write_payloads": {"const": false},
+        "future_apply_recommendations_are_advisory": {"const": true},
+        "maintainer_decides": {"const": true},
+        "llm_verdicts_are_advisory": {"const": true}
+      }
+    },
+    "backlog_review_verdict_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
