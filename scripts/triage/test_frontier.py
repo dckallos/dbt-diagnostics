@@ -115,6 +115,35 @@ def near_misses_by_type(report: dict, near_miss_type: str) -> list[dict]:
     ]
 
 
+def test_backlog_synthesis_schema_matches_read_only_forbidden_boundary() -> None:
+    schema = json.loads(
+        (ROOT / "docs" / "backlog-synthesis-signals-schema-v1.json").read_text()
+    )
+
+    forbidden = {
+        tuple(item["required"])
+        for item in schema["$defs"]["forbiddenReadOnlyShape"]["not"]["anyOf"]
+    }
+    expected_single_keys = (
+        {"operations", "body", "state"}
+        | frontier.READ_ONLY_GITHUB_REQUEST_KEYS
+        | frontier.READ_ONLY_COMMENT_KEYS
+        | frontier.READ_ONLY_METADATA_MUTATION_KEYS
+    )
+
+    assert schema["allOf"] == [{"$ref": "#/$defs/safeObject"}]
+    for key in expected_single_keys:
+        assert (key,) in forbidden
+    assert ("issues", "pulls") in forbidden
+    assert ("issues", "pull_requests") in forbidden
+    assert schema["properties"]["near_misses"]["items"]["allOf"] == [
+        {"$ref": "#/$defs/safeObject"}
+    ]
+    assert schema["properties"]["omissions"]["items"]["allOf"] == [
+        {"$ref": "#/$defs/safeObject"}
+    ]
+
+
 def packet_digest(packet: dict) -> str:
     unsigned = json.loads(json.dumps(packet))
     unsigned.pop("synthesis_review_packet_digest", None)

@@ -4,7 +4,71 @@
   "title": "dbt-diagnostics backlog synthesis signals",
   "type": "object",
   "additionalProperties": true,
-  "not": {"required": ["operations"]},
+  "allOf": [{"$ref": "#/$defs/safeObject"}],
+  "$defs": {
+    "safeValue": {
+      "anyOf": [
+        {"$ref": "#/$defs/safeObject"},
+        {
+          "type": "array",
+          "items": {"$ref": "#/$defs/safeValue"}
+        },
+        {"type": ["string", "number", "integer", "boolean", "null"]}
+      ]
+    },
+    "safeObject": {
+      "type": "object",
+      "allOf": [{"$ref": "#/$defs/forbiddenReadOnlyShape"}],
+      "additionalProperties": {"$ref": "#/$defs/safeValue"}
+    },
+    "forbiddenReadOnlyShape": {
+      "not": {
+        "anyOf": [
+          {"required": ["operations"]},
+          {"required": ["body"]},
+          {"required": ["state"]},
+          {"required": ["github_request"]},
+          {"required": ["github_requests"]},
+          {"required": ["github_request_payload"]},
+          {"required": ["github_request_payloads"]},
+          {"required": ["request_payload"]},
+          {"required": ["request_payloads"]},
+          {"required": ["rest_request"]},
+          {"required": ["rest_requests"]},
+          {"required": ["graphql_request"]},
+          {"required": ["graphql_requests"]},
+          {"required": ["mutation_request"]},
+          {"required": ["mutation_requests"]},
+          {"required": ["comment"]},
+          {"required": ["comments"]},
+          {"required": ["issue_comment"]},
+          {"required": ["issue_comments"]},
+          {"required": ["review_comment"]},
+          {"required": ["review_comments"]},
+          {"required": ["review_thread"]},
+          {"required": ["review_threads"]},
+          {"required": ["body_update"]},
+          {"required": ["body_updates"]},
+          {"required": ["close_request"]},
+          {"required": ["close_requests"]},
+          {"required": ["label_update"]},
+          {"required": ["label_updates"]},
+          {"required": ["milestone_update"]},
+          {"required": ["milestone_updates"]},
+          {"required": ["project_update"]},
+          {"required": ["project_updates"]},
+          {"required": ["reopen_request"]},
+          {"required": ["reopen_requests"]},
+          {"required": ["state_update"]},
+          {"required": ["state_updates"]},
+          {"required": ["title_update"]},
+          {"required": ["title_updates"]},
+          {"required": ["issues", "pulls"]},
+          {"required": ["issues", "pull_requests"]}
+        ]
+      }
+    }
+  },
   "required": [
     "schema_version",
     "repository",
@@ -29,12 +93,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "not": {
-          "anyOf": [
-            {"required": ["body"]},
-            {"required": ["state"]}
-          ]
-        },
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
         "required": [
           "issue_number",
           "mechanical_disposition",
@@ -63,12 +122,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "not": {
-          "anyOf": [
-            {"required": ["body"]},
-            {"required": ["state"]}
-          ]
-        },
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
         "required": [
           "signal_type",
           "issue_numbers",
@@ -92,12 +146,7 @@
           "details": {
             "type": "object",
             "additionalProperties": true,
-            "not": {
-              "anyOf": [
-                {"required": ["body"]},
-                {"required": ["state"]}
-              ]
-            }
+            "allOf": [{"$ref": "#/$defs/safeObject"}]
           }
         }
       }
@@ -107,23 +156,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "not": {
-          "anyOf": [
-            {"required": ["body"]},
-            {"required": ["state"]},
-            {"required": ["operations"]},
-            {"required": ["github_request"]},
-            {"required": ["github_requests"]},
-            {"required": ["github_request_payload"]},
-            {"required": ["request_payload"]},
-            {"required": ["graphql_request"]},
-            {"required": ["mutation_request"]},
-            {"required": ["body_update"]},
-            {"required": ["state_update"]},
-            {"required": ["comment"]},
-            {"required": ["comments"]}
-          ]
-        },
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
         "required": [
           "near_miss_id",
           "near_miss_type",
@@ -153,19 +186,7 @@
           "details": {
             "type": "object",
             "additionalProperties": true,
-            "not": {
-              "anyOf": [
-                {"required": ["body"]},
-                {"required": ["state"]},
-                {"required": ["operations"]},
-                {"required": ["github_request"]},
-                {"required": ["request_payload"]},
-                {"required": ["body_update"]},
-                {"required": ["state_update"]},
-                {"required": ["comment"]},
-                {"required": ["comments"]}
-              ]
-            },
+            "allOf": [{"$ref": "#/$defs/safeObject"}],
             "required": ["reason_category"],
             "properties": {
               "reason_category": {"type": "string", "minLength": 1}
@@ -179,23 +200,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "not": {
-          "anyOf": [
-            {"required": ["body"]},
-            {"required": ["state"]},
-            {"required": ["operations"]},
-            {"required": ["github_request"]},
-            {"required": ["github_requests"]},
-            {"required": ["github_request_payload"]},
-            {"required": ["request_payload"]},
-            {"required": ["graphql_request"]},
-            {"required": ["mutation_request"]},
-            {"required": ["body_update"]},
-            {"required": ["state_update"]},
-            {"required": ["comment"]},
-            {"required": ["comments"]}
-          ]
-        },
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
         "required": [
           "omission_id",
           "omission_type",
@@ -213,19 +218,7 @@
           "details": {
             "type": "object",
             "additionalProperties": true,
-            "not": {
-              "anyOf": [
-                {"required": ["body"]},
-                {"required": ["state"]},
-                {"required": ["operations"]},
-                {"required": ["github_request"]},
-                {"required": ["request_payload"]},
-                {"required": ["body_update"]},
-                {"required": ["state_update"]},
-                {"required": ["comment"]},
-                {"required": ["comments"]}
-              ]
-            },
+            "allOf": [{"$ref": "#/$defs/safeObject"}],
             "required": ["reason_category"],
             "properties": {
               "reason_category": {"type": "string", "minLength": 1}
