@@ -2120,6 +2120,8 @@ End of session -- 2026-06-28 issue 102 bounded LLM governance workflow docs
 - Started `spike/103-retrieval-governance` from updated
   `donkey-kong-sandbox` after the maintainer applied the standardized #103
   issue body.
+- Opened draft PR #132 from `spike/103-retrieval-governance` into
+  `donkey-kong-sandbox` with `Closes #103`.
 - Added an offline experimental retrieval-governance harness under
   `scripts/triage/experiments/` that builds bounded local artifacts through
   existing frontier functions and scores deterministic token-overlap retrieval
@@ -2156,16 +2158,18 @@ End of session -- 2026-06-28 issue 102 bounded LLM governance workflow docs
 - `bash .codex/bin/action.sh codex-quality --json` passed.
 
 **Current state**
-- Work is local on branch `spike/103-retrieval-governance`.
+- Work is on branch `spike/103-retrieval-governance`, tracking
+  `origin/spike/103-retrieval-governance`.
+- Draft PR #132 is open against `donkey-kong-sandbox`.
 - The spike recommends `add more fixture/evaluation work first`.
 - No production retrieval command, stable schema, validator, CLI behavior,
   skill behavior, GitHub/comment retrieval, LLM call, apply integration, or
   #118/#120/#121 extraction/distribution work changed.
 
 **Next steps**
-- Review the spike report and harness, then commit, push, and open a PR to
-  `donkey-kong-sandbox` with `Closes #103` if the measured recommendation is
-  acceptable.
+- Review PR #132, especially the measured recommendation, false-negative/noise
+  accounting, and whether the follow-up issue candidates are the right next
+  governance work.
 
 **Be careful**
 - Keep this PR research/evaluation only. Do not expand it into production
