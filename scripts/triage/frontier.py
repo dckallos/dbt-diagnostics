@@ -2072,13 +2072,6 @@ class BacklogReviewPacketReviewabilityShape:
             context.errors.append(
                 "packet_reviewability.llm_review_allowed must be true"
             )
-        warnings = self.value.get("freshness_warnings")
-        warning_values = warnings if isinstance(warnings, list) else []
-        if status == "warning" and SOURCE_AGE_EXCEEDS_WARNING_AGE not in warning_values:
-            context.errors.append(
-                "packet_reviewability.warning freshness must preserve "
-                "source_age_exceeds_warning_age"
-            )
         if status == "stale":
             context.errors.append("packet_reviewability.stale packets are invalid")
 
@@ -2246,6 +2239,7 @@ class BacklogReviewVerdictValidator:
             self.value.get("required_maintainer_checks"),
             name="required_maintainer_checks",
         )
+        self._validate_warning_visibility(context)
         self._validate_safety(context)
         self._validate_digest(context)
         self._validate_internal_refs(context)
@@ -2268,6 +2262,19 @@ class BacklogReviewVerdictValidator:
                 context.errors.append(
                     f"packet_reviewability.{inner_key} must match {outer_key}"
                 )
+
+    def _validate_warning_visibility(self, context: ValidationContext) -> None:
+        packet_reviewability = self.value.get("packet_reviewability")
+        if not isinstance(packet_reviewability, Mapping):
+            return
+        if packet_reviewability.get("freshness_status") != "warning":
+            return
+        if not _verdict_preserves_warnings(
+            self.value, [SOURCE_AGE_EXCEEDS_WARNING_AGE]
+        ):
+            context.errors.append(
+                "warning-only packet freshness warning is not preserved in verdict"
+            )
 
     def _validate_verdicts(self, context: ValidationContext) -> None:
         verdicts = self.value.get("verdicts")

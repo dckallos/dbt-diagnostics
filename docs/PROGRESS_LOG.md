@@ -1831,6 +1831,10 @@ End of session -- 2026-06-27 issue 97 backlog near-miss diagnostics
   #97 near-miss refs, #97 omission refs, #96 freshness reviewability, advisory
   future apply recommendations, safety constants, and recursive forbidden
   mutation shapes.
+- Addressed self-review follow-up on PR #127: warning-only packet freshness can
+  now be preserved through `packet_reviewability`, `uncertainty`, or
+  `required_maintainer_checks`, and the machine-schema forbidden-shape test now
+  checks the full Python/schema boundary instead of only sample keys.
 
 **Validation**
 - `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
@@ -1846,6 +1850,16 @@ End of session -- 2026-06-27 issue 97 backlog near-miss diagnostics
 - `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
   tests 793 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
+- After the self-review fix, `python -m pytest -q scripts/triage/test_frontier.py`
+  passed: 79 passed.
+- After the self-review fix, `python -m py_compile scripts/triage/frontier.py
+  scripts/triage/test_frontier.py` passed.
+- After the self-review fix, `bash .codex/bin/action.sh codex-quality --json`
+  passed and freshness-bound `scripts/triage/frontier.py` and
+  `scripts/triage/test_frontier.py`.
+- After the self-review fix, `bash .codex/bin/action.sh check` passed: Codex
+  tests 93 passed; offline tests 793 passed, 2 skipped, 20 deselected, 1
+  warning; compatibility schema gate skipped as expected.
 
 **Current state**
 - Work is on branch `feat/98-backlog-review-verdict-schema`.

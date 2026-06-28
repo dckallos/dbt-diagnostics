@@ -1921,9 +1921,25 @@ def test_backlog_review_verdict_machine_schema_documents_required_surface() -> N
         tuple(item["required"])
         for item in schema["$defs"]["forbiddenReadOnlyShape"]["not"]["anyOf"]
     }
-    for key in {"operations", "operation_id", "github_request", "body", "state"}:
-        assert (key,) in forbidden
-    assert ("method", "path") in forbidden
+    expected_single_key_forbidden = (
+        {"operations", "body", "state"}
+        | frontier.READ_ONLY_GITHUB_REQUEST_KEYS
+        | frontier.READ_ONLY_COMMENT_KEYS
+        | frontier.READ_ONLY_METADATA_MUTATION_KEYS
+        | frontier.VERDICT_APPLY_LIKE_KEYS
+    )
+    assert {
+        required[0] for required in forbidden if len(required) == 1
+    } == expected_single_key_forbidden
+    assert {
+        required for required in forbidden if len(required) > 1
+    } == {
+        ("method", "path"),
+        ("method", "url"),
+        ("method", "endpoint"),
+        ("issues", "pulls"),
+        ("issues", "pull_requests"),
+    }
     assert schema["allOf"] == [{"$ref": "#/$defs/safeObject"}]
 
 
@@ -2182,29 +2198,44 @@ def test_backlog_review_verdict_warning_packet_must_preserve_warning() -> None:
             "llm_review_allowed": True,
         }
     )
+    source_artifacts = warning_packet["source_artifacts"]
+    warning_reviewability_without_warning = {
+        "source_packet_digest": warning_packet["synthesis_review_packet_digest"],
+        "source_snapshot_digest": source_artifacts["snapshot_digest"],
+        "source_audit_digest": source_artifacts["audit_digest"],
+        "source_backlog_synthesis_digest": source_artifacts[
+            "backlog_synthesis_digest"
+        ],
+        "freshness_status": "warning",
+        "freshness_warnings": [],
+        "packet_stale": False,
+        "llm_review_allowed": True,
+        "invalid_lineage": False,
+    }
     missing_warning = backlog_review_verdict(
         packet=warning_packet,
-        packet_reviewability={
-            "source_packet_digest": warning_packet["synthesis_review_packet_digest"],
-            "source_snapshot_digest": "a" * 64,
-            "source_audit_digest": "b" * 64,
-            "source_backlog_synthesis_digest": "c" * 64,
-            "freshness_status": "warning",
-            "freshness_warnings": [],
-            "packet_stale": False,
-            "llm_review_allowed": True,
-            "invalid_lineage": False,
-        },
+        packet_reviewability=warning_reviewability_without_warning,
         uncertainty=[],
         required_maintainer_checks=[],
     )
-    preserved_warning = backlog_review_verdict(
+    preserved_in_packet_reviewability = backlog_review_verdict(
         packet=warning_packet,
+    )
+    preserved_in_uncertainty = backlog_review_verdict(
+        packet=warning_packet,
+        packet_reviewability=warning_reviewability_without_warning,
         uncertainty=[
             {
                 "code": "packet_freshness_warning",
                 "message": "source_age_exceeds_warning_age",
             }
+        ],
+    )
+    preserved_in_maintainer_checks = backlog_review_verdict(
+        packet=warning_packet,
+        packet_reviewability=warning_reviewability_without_warning,
+        required_maintainer_checks=[
+            "Review packet freshness warning: source_age_exceeds_warning_age."
         ],
     )
 
@@ -2215,7 +2246,13 @@ def test_backlog_review_verdict_warning_packet_must_preserve_warning() -> None:
         )
     )
     assert frontier.validate_backlog_review_verdict_against_packet(
-        preserved_warning, warning_packet
+        preserved_in_packet_reviewability, warning_packet
+    ) == []
+    assert frontier.validate_backlog_review_verdict_against_packet(
+        preserved_in_uncertainty, warning_packet
+    ) == []
+    assert frontier.validate_backlog_review_verdict_against_packet(
+        preserved_in_maintainer_checks, warning_packet
     ) == []
 
 
