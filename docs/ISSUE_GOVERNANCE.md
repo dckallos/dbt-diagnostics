@@ -431,6 +431,14 @@ The command does not call GitHub, refresh old packets, collect comments, run
 tracker retrieval subprocesses, call browsers or LLMs, dispatch workflows,
 generate an apply plan, or integrate with `apply`.
 
+### Backlog Review Skill
+
+Use `$backlog-review` after generating a local `synthesis-review-packet` when a
+bounded LLM review is useful. The skill reads the packet and schema docs only,
+keeps warning-only freshness visible to the maintainer, validates verdict JSON
+with `backlog-review-validate`, and emits advisory output without GitHub
+mutation or executable apply payloads.
+
 ### Offline forms
 
 Every tracker-reading command except `snapshot` accepts an explicit snapshot.

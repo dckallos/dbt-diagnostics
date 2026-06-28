@@ -78,6 +78,16 @@ def test_issue_work_skill_requires_pr_auto_close_keyword() -> None:
     assert "closingIssuesReferences" in skill
 
 
+def test_issue_governance_skill_routes_issue_updates_through_connector() -> None:
+    skill = (
+        ROOT / ".agents" / "skills" / "issue-governance" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert "cannot use direct `gh` mutation commands" in skill
+    assert "use the GitHub Connector" in skill
+    assert "if the connector is unavailable" in skill
+
+
 def test_governance_boundary_checker_rejects_authorized_issue_body_write() -> None:
     checker = _load_codex_script("check_governance_boundary")
     bad = (

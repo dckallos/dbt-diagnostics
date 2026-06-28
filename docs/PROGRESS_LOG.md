@@ -1997,3 +1997,57 @@ End of session -- 2026-06-27 issue 99 bounded review recall fixtures
   supplied packet and verdict JSON files.
 
 End of session -- 2026-06-27 issue 100 packet and verdict validation gate
+
+---
+
+## 2026-06-28 -- issue 101 backlog-review skill
+
+**What changed**
+- Started `feat/101-backlog-review` from updated `origin/donkey-kong-sandbox`
+  after the maintainer applied the accepted #101 issue body.
+- Added the instruction-only `backlog-review` skill for bounded review of
+  validated `synthesis-review-packet` artifacts into advisory maintainer
+  handoff or `backlog-review-verdict` JSON.
+- Added static Codex tests for the skill's packet boundary, freshness
+  semantics, packet-bound refs, integrated validation, and no-mutation/apply
+  constraints.
+- Added a short `docs/ISSUE_GOVERNANCE.md` pointer, a `CHANGELOG.md` entry,
+  and an `issue-governance` note that future exact issue updates delegated to
+  Codex must use the GitHub Connector rather than direct `gh` mutation
+  commands.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 2 expected
+  warnings: changed worktree and absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 101 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 101` passed.
+- `python -m pytest -q .codex/tests/test_environment.py` passed: 5 passed.
+- `python -m pytest -q .codex/tests/test_backlog_review_skill.py` passed: 7
+  passed.
+- `python -m pytest -q .codex/tests/test_codex_quality.py` passed: 25 passed.
+- `python -m py_compile .codex/tests/test_environment.py
+  .codex/tests/test_backlog_review_skill.py .codex/tests/test_codex_quality.py`
+  passed.
+- `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py`
+  passed.
+- `python /Users/daniel/.codex/skills/.system/skill-creator/scripts/quick_validate.py
+  .agents/skills/backlog-review` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 101 passed; offline
+  tests 811 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on branch `feat/101-backlog-review`, tracking
+  `origin/donkey-kong-sandbox`.
+- No PR has been opened yet.
+
+**Next steps**
+- Review the skill wording and static tests, then commit, push, and open a PR
+  to `donkey-kong-sandbox` with `Closes #101`.
+
+**Be careful**
+- Do not add #102 workflow docs, #118 extraction/distribution work, LLM calls,
+  retrieval/indexing, GitHub write paths, apply integration, new schemas, or
+  new validators to this PR.
+
+End of session -- 2026-06-28 issue 101 backlog-review skill

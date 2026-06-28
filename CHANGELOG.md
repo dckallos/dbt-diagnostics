@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Add backlog-review skill
+
+- I added the `backlog-review` skill for bounded review of validated
+  `synthesis-review-packet` artifacts into advisory maintainer handoff or
+  `backlog-review-verdict` JSON.
+- The skill keeps review inside packet evidence, preserves warning-only
+  freshness caveats, requires packet-bound evidence, near-miss, and omission
+  refs, and validates verdict JSON before treating it as valid.
+- I kept the workflow read-only: no GitHub mutation, comments collection,
+  retrieval, executable apply payloads, new schema, new validator, or
+  distribution/extraction work.
+
 ### Add packet and verdict validation gate
 
 - I added `python scripts/triage/triage.py backlog-review-validate` to validate
