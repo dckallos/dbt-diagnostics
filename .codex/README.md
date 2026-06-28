@@ -181,6 +181,13 @@ python scripts/triage/triage.py project-plan \
 python scripts/triage/triage.py backlog-synthesis \
   --snapshot output/triage/snapshot.json \
   --audit-file output/triage/audit.json --json
+python scripts/triage/triage.py synthesis-review-packet \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --backlog-synthesis output/triage/backlog-synthesis.json --json
+python scripts/triage/triage.py backlog-review-validate \
+  --packet output/triage/synthesis-review-packet.json \
+  --verdict output/triage/backlog-review-verdict.json --json
 python scripts/triage/triage.py frontier --mode audit --json
 python scripts/triage/triage.py frontier --mode implement --json
 ```
@@ -195,6 +202,10 @@ partial; use it only with a matching scoped frontier, not with full
 `plan` writes a normalized snapshot, a full readiness audit, a digest-bound
 metadata plan, a human-readable summary, and an approval template that approves
 nothing. `contract`, `review-packet`, and `standardize` write local files only.
+For bounded cross-issue LLM review, generate a `synthesis-review-packet`, use
+`$backlog-review` on that one local packet, and validate any
+`backlog-review-verdict` JSON with `backlog-review-validate`. The full workflow
+and safety boundary are documented in `docs/ISSUE_GOVERNANCE.md`.
 
 The stable read-only governance wrappers are:
 

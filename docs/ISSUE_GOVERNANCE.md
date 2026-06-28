@@ -439,6 +439,178 @@ keeps warning-only freshness visible to the maintainer, validates verdict JSON
 with `backlog-review-validate`, and emits advisory output without GitHub
 mutation or executable apply payloads.
 
+## Bounded LLM backlog review workflow
+
+This is the full operator flow for the bounded LLM review layer. GitHub remains
+the source of truth. The local artifacts are bounded evidence snapshots, not
+live tracker state, and LLM verdicts are advisory. The maintainer decides what
+to do with any candidate verdict.
+
+```text
+snapshot.json
+  -> audit.json
+  -> project-plan.json
+  -> backlog-synthesis.json
+  -> synthesis-review-packet.json
+  -> backlog-review skill / backlog-review-verdict.json
+  -> backlog-review-validate
+  -> maintainer decision
+  -> optional future explicitly approved write path or manual maintainer action
+```
+
+The diagram shows the complete review flow when the operator also emits an
+advisory Project layout. `project-plan` is optional for packet generation:
+`synthesis-review-packet` requires `snapshot`, `audit-file`, and
+`backlog-synthesis`, and can additionally consume `--project-plan` when that
+context is useful.
+
+### Generate the local artifacts
+
+Capture the live tracker once:
+
+```bash
+python scripts/triage/triage.py snapshot \
+  --output output/triage/snapshot.json
+```
+
+Generate the readiness audit from that snapshot:
+
+```bash
+python scripts/triage/triage.py audit \
+  --snapshot output/triage/snapshot.json \
+  --output output/triage/audit.json
+```
+
+Generate deterministic backlog synthesis signals:
+
+```bash
+python scripts/triage/triage.py backlog-synthesis \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --output output/triage/backlog-synthesis.json
+```
+
+Generate the advisory Project layout when useful:
+
+```bash
+python scripts/triage/triage.py project-plan \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --output output/triage/project-plan.json
+```
+
+Generate the bounded review packet:
+
+```bash
+python scripts/triage/triage.py synthesis-review-packet \
+  --snapshot output/triage/snapshot.json \
+  --audit-file output/triage/audit.json \
+  --backlog-synthesis output/triage/backlog-synthesis.json \
+  --output output/triage/synthesis-review-packet.json
+```
+
+When the Project layout should be part of the packet evidence, add:
+
+```bash
+  --project-plan output/triage/project-plan.json
+```
+
+Use `--issues` to bound the packet to selected issue numbers. Use
+`--max-age-hours` only to make the hard review-age threshold stricter. Use
+`--allow-stale-offline-packet` only when a hard-stale, non-reviewable artifact
+is needed for offline inspection.
+
+### Use backlog-review
+
+Invoke `$backlog-review` with one local packet, for example:
+
+```text
+$backlog-review output/triage/synthesis-review-packet.json
+```
+
+The skill reads `AGENTS.md`, the packet, and the packet/verdict schema docs. It
+does not read the full tracker, all open issue bodies, GitHub comments,
+arbitrary GitHub state, retrieval indexes, or semantic search output by
+default. It can produce either an advisory Markdown maintainer handoff or a
+`backlog-review-verdict` JSON artifact.
+
+Validate any verdict JSON before treating it as ready for maintainer review:
+
+```bash
+python scripts/triage/triage.py backlog-review-validate \
+  --packet output/triage/synthesis-review-packet.json \
+  --verdict output/triage/backlog-review-verdict.json \
+  --json
+```
+
+The maintainer reviews candidate verdicts, evidence refs, diagnostic refs,
+uncertainty, freshness warnings, and required maintainer checks. The maintainer
+decides; verdict JSON never decides.
+
+### Freshness and reviewability
+
+24 hours is the default freshness-warning threshold, not the default stale
+cliff. 168 hours / 7 days is the default hard LLM-review threshold unless the
+caller intentionally makes it stricter with `--max-age-hours`.
+
+Warning-only packets have `stale: false`. They have
+`llm_review_allowed: true`. They may be reviewed only when warnings are visible
+to the maintainer, and the warning must remain present in the handoff or
+verdict `packet_reviewability`, `uncertainty`, or
+`required_maintainer_checks`.
+
+Hard-stale packets have `stale: true`. They are not LLM-reviewable, stop the
+`backlog-review` skill, and fail integrated verdict validation. Packets with
+`llm_review_allowed: false` are not valid LLM inputs. Invalid source lineage or
+digest mismatch is a hard failure regardless of age.
+
+The safe response to old source artifacts is to regenerate the local source
+artifacts. Packet and verdict tooling must not refresh old packets by fetching
+GitHub implicitly.
+
+### Budget, omissions, and refs
+
+The serialized byte budget is the hard deterministic packet gate. Token
+estimates are advisory telemetry. Issue comments are omitted in v1, and full
+issue bodies are not embedded in the default bounded review flow. Omissions are
+explicit local artifact evidence, not permission to fetch unbounded context
+automatically.
+
+Diagnostic IDs flow through the artifacts unchanged:
+
+```text
+backlog-synthesis.near_misses[].near_miss_id
+  -> synthesis-review-packet.near_misses[].near_miss_id
+  -> backlog-review-verdict.verdicts[].near_miss_refs[]
+
+backlog-synthesis.omissions[].omission_id
+  -> synthesis-review-packet.omissions[].omission_id
+  -> backlog-review-verdict.verdicts[].omission_refs[]
+```
+
+The refs are exact packet-provided strings, not model-generated guesses. The
+model must not invent or recompute diagnostic IDs. Diagnostic refs do not
+authorize writes, do not embed full issue bodies, and do not replace
+freshness/staleness or integrated validation gates.
+
+Schema details live in:
+
+- `docs/SYNTHESIS_REVIEW_PACKET_SCHEMA_V1.md`
+- `docs/BACKLOG_REVIEW_VERDICT_SCHEMA_V1.md`
+- `docs/BACKLOG_SYNTHESIS_SIGNALS_SCHEMA_V1.md`
+- `docs/PROJECT_PLAN_SCHEMA_V1.md`
+
+### What not to do
+
+- Do not prompt with the full raw snapshot by default.
+- Do not fetch issue comments in v1.
+- Retrieval is not authoritative.
+- Do not let LLM output carry executable operations.
+- `future_apply_recommendations` are not executable operations.
+- Do not feed verdict JSON into `triage.py apply`.
+- Do not refresh old packets implicitly from packet or verdict tooling.
+- Packets or verdicts must not create tracker writes.
+
 ### Offline forms
 
 Every tracker-reading command except `snapshot` accepts an explicit snapshot.

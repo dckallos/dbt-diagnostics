@@ -2051,3 +2051,55 @@ End of session -- 2026-06-27 issue 100 packet and verdict validation gate
   new validators to this PR.
 
 End of session -- 2026-06-28 issue 101 backlog-review skill
+
+---
+
+## 2026-06-28 -- issue 102 bounded LLM governance workflow docs
+
+**What changed**
+- Updated #102 with the maintainer-approved contract body, then started
+  `feat/102-bounded-llm-governance-docs` from updated
+  `donkey-kong-sandbox`.
+- Expanded `docs/ISSUE_GOVERNANCE.md` with the bounded LLM backlog-review
+  operator workflow from snapshot and audit through backlog synthesis,
+  optional project plan, synthesis review packet, `$backlog-review`, verdict
+  validation, maintainer decision, and optional future approved/manual action.
+- Added short onboarding pointers in `.codex/README.md` and
+  `docs/CODEX_GETTING_STARTED.md`, a concise `CHANGELOG.md` entry, and a
+  static Codex docs test for workflow, freshness, diagnostic refs, and
+  no-mutation boundary wording.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 102 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 102` passed with only the
+  existing missing-type-label warning.
+- Verified dependencies #94 through #101 are closed and found merged PR
+  evidence into `donkey-kong-sandbox` for the completed prerequisite work.
+- `python -m pytest -q .codex/tests/test_issue_governance_docs.py` passed: 5
+  passed.
+- `python -m pytest -q .codex/tests/test_environment.py` passed: 5 passed.
+- `python -m py_compile .codex/tests/test_issue_governance_docs.py` passed.
+- `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py`
+  passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 106 passed; offline
+  tests 811 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on branch `feat/102-bounded-llm-governance-docs`.
+- No production code, CLI behavior, schemas, validators, skill semantics,
+  retrieval, LLM invocation, GitHub mutation, apply integration, or #118
+  extraction/distribution work changed.
+
+**Next steps**
+- Review the docs wording and static test, then commit, push, and open a PR to
+  `donkey-kong-sandbox` with `Closes #102`.
+
+**Be careful**
+- Keep this PR docs/static-test only. Do not expand it into reusable extraction,
+  package/plugin publication, retrieval/indexing, comments collection, or any
+  GitHub write path.
+
+End of session -- 2026-06-28 issue 102 bounded LLM governance workflow docs
