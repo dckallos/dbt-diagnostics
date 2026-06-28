@@ -1945,6 +1945,9 @@ End of session -- 2026-06-27 issue 99 bounded review recall fixtures
 - Documented the operator command, result envelope, warning semantics, and
   read-only boundary, and updated the shared machine-schema forbidden-shape
   keys for workflow dispatch and PR merge payloads.
+- Addressed self-review before PR creation: `backlog-review-validate` now runs
+  before repository policy loading so the command depends only on the supplied
+  local packet and verdict JSON files.
 - Preserved the pre-existing local instruction edits in `AGENTS.md` and
   `.agents/skills/issue-work/SKILL.md`.
 
@@ -1957,8 +1960,11 @@ End of session -- 2026-06-27 issue 99 bounded review recall fixtures
   backlog_review_validation_result` passed: 6 passed, 86 deselected.
 - `python -m pytest -q scripts/triage/test_triage.py -k
   backlog_review_validate_cli` passed: 4 passed, 79 deselected.
+- After the self-review fix, `python -m pytest -q
+  scripts/triage/test_triage.py -k backlog_review_validate_cli` passed: 5
+  passed, 79 deselected.
 - `python -m pytest -q scripts/triage/test_frontier.py` passed: 92 passed.
-- `python -m pytest -q scripts/triage/test_triage.py` passed: 83 passed.
+- `python -m pytest -q scripts/triage/test_triage.py` passed: 84 passed.
 - `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py
   scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed.
 - `python -m json.tool docs/backlog-review-verdict-schema-v1.json
@@ -1968,16 +1974,20 @@ End of session -- 2026-06-27 issue 99 bounded review recall fixtures
 - `python -m json.tool docs/backlog-synthesis-signals-schema-v1.json
   >/dev/null` passed.
 - `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
-  tests 810 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  tests 811 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
   gate skipped as expected.
 
 **Current state**
 - Work is on branch `feat/100-packet-verdict-validation`.
-- No PR has been opened yet.
+- Draft PR #129 is open against `donkey-kong-sandbox`.
+- The original feature commit was already present on the protected remote
+  `donkey-kong-sandbox` ref before the PR was opened. The approved
+  non-fast-forward restore to `7ac5669` was attempted, but GitHub branch
+  protection rejected it because changes must be made through a pull request.
 
 **Next steps**
-- Review the diff, then commit and open the implementation PR against
-  `donkey-kong-sandbox` with exactly one `Closes #100` line.
+- Review PR #129, including the base-state note in the PR body, and decide
+  whether the protected base ref needs maintainer-side repair.
 
 **Be careful**
 - Do not add #101 backlog-review skill work, LLM calls, retrieval/indexing,

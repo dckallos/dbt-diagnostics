@@ -3064,6 +3064,37 @@ def test_backlog_review_validate_cli_emits_clean_json_without_live_paths(
     assert "backlog-review-validate: valid" in captured.err
 
 
+def test_backlog_review_validate_cli_does_not_require_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(packet=packet)
+    packet_path = tmp_path / "packet.json"
+    verdict_path = tmp_path / "verdict.json"
+    write_json(packet_path, packet)
+    write_json(verdict_path, verdict)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(tmp_path / "missing-policy.toml"),
+            "backlog-review-validate",
+            "--packet",
+            str(packet_path),
+            "--verdict",
+            str(verdict_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert code == 0
+    assert result["valid"] is True
+    assert "backlog-review-validate: valid" in captured.err
+
+
 def test_backlog_review_validate_cli_warning_pair_returns_zero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
