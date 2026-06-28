@@ -102,5 +102,11 @@ The deterministic gate is the oracle. Iterate your draft against it; never edit
 the gate, loosen the contract, or fabricate content to force a pass. Stop before
 any GitHub mutation and present the exact proposed body and the reasons.
 
+Codex cannot use direct `gh` mutation commands for issue updates at this time
+in this environment. If a future maintainer delegates an exact issue update to
+Codex, use the GitHub Connector for that approved update outside
+issue-governance output; if the connector is unavailable, stop and ask the
+maintainer to apply the change.
+
 Never create, edit, close, label, milestone, or move a GitHub item. Never add an
 issue-body write operation to a plan or allowlist.
