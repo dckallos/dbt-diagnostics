@@ -68,6 +68,11 @@ body text is allowed only as a bounded excerpt field on an evidence item, not as
 an unbounded `issue.body` object. The packet must not embed the full tracker
 snapshot.
 
+When a backlog-synthesis source report includes diagnostic IDs, the packet
+preserves bounded near-miss objects with `near_miss_id` and backlog omission
+objects with `omission_id`. These IDs are advisory evidence anchors for later
+review layers; they are not verdicts and do not authorize tracker changes.
+
 ## Comments
 
 Issue comments are not collected in v1. A valid v1 packet has:

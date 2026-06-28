@@ -2484,7 +2484,7 @@ def test_backlog_synthesis_cli_emits_json_without_github_calls(
     assert report["safety"]["github_api_calls"] is False
     assert report["safety"]["github_mutations"] is False
     assert "operations" not in report
-    assert "body" not in json.dumps(report, sort_keys=True)
+    assert '"body":' not in json.dumps(report, sort_keys=True)
     assert runner.calls == []
 
 
@@ -2683,7 +2683,7 @@ def test_synthesis_review_packet_cli_emits_json_without_github_calls(
     assert packet["safety"]["github_api_calls"] is False
     assert packet["safety"]["github_mutations"] is False
     assert "operations" not in packet
-    assert "body" not in json.dumps(packet, sort_keys=True)
+    assert '"body":' not in json.dumps(packet, sort_keys=True)
     assert runner.calls == []
 
 

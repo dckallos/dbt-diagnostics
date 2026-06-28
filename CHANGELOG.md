@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Add backlog synthesis near-miss diagnostics
+
+- I added deterministic `near_misses` and `omissions` arrays to
+  backlog-synthesis reports, including stable advisory IDs and digest coverage.
+- I preserved backlog diagnostic IDs in synthesis-review packets so later review
+  layers can cite what was considered but not selected without embedding full
+  issue bodies or mutation-shaped payloads.
+
 ### Add synthesis review packet freshness gates
 
 - I added source freshness metadata to `synthesis-review-packet`, separating the

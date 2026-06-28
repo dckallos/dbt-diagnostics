@@ -13,6 +13,8 @@
     "audit_digest",
     "issue_dispositions",
     "signals",
+    "near_misses",
+    "omissions",
     "safety",
     "backlog_synthesis_digest"
   ],
@@ -95,6 +97,138 @@
                 {"required": ["body"]},
                 {"required": ["state"]}
               ]
+            }
+          }
+        }
+      }
+    },
+    "near_misses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["body"]},
+            {"required": ["state"]},
+            {"required": ["operations"]},
+            {"required": ["github_request"]},
+            {"required": ["github_requests"]},
+            {"required": ["github_request_payload"]},
+            {"required": ["request_payload"]},
+            {"required": ["graphql_request"]},
+            {"required": ["mutation_request"]},
+            {"required": ["body_update"]},
+            {"required": ["state_update"]},
+            {"required": ["comment"]},
+            {"required": ["comments"]}
+          ]
+        },
+        "required": [
+          "near_miss_id",
+          "near_miss_type",
+          "issue_numbers",
+          "score",
+          "reason_not_signaled",
+          "shared_evidence",
+          "details"
+        ],
+        "properties": {
+          "near_miss_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^near-miss-[a-z0-9-]+-[0-9]+(?:-[0-9]+)*-[a-z0-9-]+$"
+          },
+          "near_miss_type": {"type": "string", "minLength": 1},
+          "issue_numbers": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "score": {"type": "number", "minimum": 0},
+          "reason_not_signaled": {"type": "string", "minLength": 1},
+          "shared_evidence": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {"required": ["body"]},
+                {"required": ["state"]},
+                {"required": ["operations"]},
+                {"required": ["github_request"]},
+                {"required": ["request_payload"]},
+                {"required": ["body_update"]},
+                {"required": ["state_update"]},
+                {"required": ["comment"]},
+                {"required": ["comments"]}
+              ]
+            },
+            "required": ["reason_category"],
+            "properties": {
+              "reason_category": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "not": {
+          "anyOf": [
+            {"required": ["body"]},
+            {"required": ["state"]},
+            {"required": ["operations"]},
+            {"required": ["github_request"]},
+            {"required": ["github_requests"]},
+            {"required": ["github_request_payload"]},
+            {"required": ["request_payload"]},
+            {"required": ["graphql_request"]},
+            {"required": ["mutation_request"]},
+            {"required": ["body_update"]},
+            {"required": ["state_update"]},
+            {"required": ["comment"]},
+            {"required": ["comments"]}
+          ]
+        },
+        "required": [
+          "omission_id",
+          "omission_type",
+          "reason",
+          "details"
+        ],
+        "properties": {
+          "omission_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^omission-[a-z0-9-]+$"
+          },
+          "omission_type": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {"required": ["body"]},
+                {"required": ["state"]},
+                {"required": ["operations"]},
+                {"required": ["github_request"]},
+                {"required": ["request_payload"]},
+                {"required": ["body_update"]},
+                {"required": ["state_update"]},
+                {"required": ["comment"]},
+                {"required": ["comments"]}
+              ]
+            },
+            "required": ["reason_category"],
+            "properties": {
+              "reason_category": {"type": "string", "minLength": 1}
             }
           }
         }

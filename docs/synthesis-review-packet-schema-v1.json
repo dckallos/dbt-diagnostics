@@ -155,7 +155,26 @@
           {
             "type": "object",
             "allOf": [{"$ref": "#/$defs/safeObject"}],
-            "additionalProperties": true
+            "additionalProperties": true,
+            "properties": {
+              "near_miss_id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^near-miss-[a-z0-9-]+-[0-9]+(?:-[0-9]+)*-[a-z0-9-]+$"
+              },
+              "near_miss_type": {"type": "string", "minLength": 1},
+              "issue_numbers": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1}
+              },
+              "score": {"type": "number", "minimum": 0},
+              "reason_not_signaled": {"type": "string", "minLength": 1},
+              "shared_evidence": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "details": {"type": "object"}
+            }
           }
         ]
       }
@@ -168,7 +187,13 @@
           {
             "type": "object",
             "allOf": [{"$ref": "#/$defs/safeObject"}],
-            "additionalProperties": true
+            "additionalProperties": true,
+            "properties": {
+              "omission_id": {"type": "string", "minLength": 1},
+              "omission_type": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1},
+              "details": {"type": "object"}
+            }
           }
         ]
       }
