@@ -3636,6 +3636,38 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
     active_runner = runner or Runner()
 
     try:
+        if args.command == "backlog-review-validate":
+            packet = load_json_file(
+                args.packet, "synthesis-review-packet JSON"
+            )
+            verdict = load_json_file(
+                args.verdict, "backlog-review-verdict JSON"
+            )
+            result = issue_frontier.build_backlog_review_validation_result(
+                packet, verdict
+            )
+            valid = bool(result.get("valid"))
+            errors = (
+                result.get("errors") if isinstance(result.get("errors"), list) else []
+            )
+            warnings = (
+                result.get("warnings")
+                if isinstance(result.get("warnings"), list)
+                else []
+            )
+            status_stream = sys.stderr if args.json else sys.stdout
+            status = "valid" if valid else f"invalid ({len(errors)} error(s))"
+            print(f"backlog-review-validate: {status}", file=status_stream)
+            for item in errors:
+                if isinstance(item, Mapping):
+                    print(f"ERROR: {item.get('message')}", file=status_stream)
+            for item in warnings:
+                if isinstance(item, Mapping):
+                    print(f"WARNING: {item.get('message')}", file=status_stream)
+            if args.json:
+                print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=True))
+            return 0 if valid else 1
+
         policy = load_policy(args.policy)
         repo_policy = repo_config.policy_from_mapping(policy, source=args.policy)
         repo = validate_repo_name(args.repo or repo_policy.repository.full_name)
@@ -3673,36 +3705,6 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             if args.json or not args.output:
                 print(json.dumps(plan, indent=2, sort_keys=True, ensure_ascii=True))
             return 0
-
-        if args.command == "backlog-review-validate":
-            packet = load_json_file(
-                args.packet, "synthesis-review-packet JSON"
-            )
-            verdict = load_json_file(
-                args.verdict, "backlog-review-verdict JSON"
-            )
-            result = issue_frontier.build_backlog_review_validation_result(
-                packet, verdict
-            )
-            valid = bool(result.get("valid"))
-            errors = result.get("errors") if isinstance(result.get("errors"), list) else []
-            warnings = (
-                result.get("warnings")
-                if isinstance(result.get("warnings"), list)
-                else []
-            )
-            status_stream = sys.stderr if args.json else sys.stdout
-            status = "valid" if valid else f"invalid ({len(errors)} error(s))"
-            print(f"backlog-review-validate: {status}", file=status_stream)
-            for item in errors:
-                if isinstance(item, Mapping):
-                    print(f"ERROR: {item.get('message')}", file=status_stream)
-            for item in warnings:
-                if isinstance(item, Mapping):
-                    print(f"WARNING: {item.get('message')}", file=status_stream)
-            if args.json:
-                print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=True))
-            return 0 if valid else 1
 
         snapshot = resolve_snapshot(
             args, runner=active_runner, repo=repo, policy=policy
