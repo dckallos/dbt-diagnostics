@@ -1875,3 +1875,51 @@ End of session -- 2026-06-27 issue 97 backlog near-miss diagnostics
   carry executable operation or GitHub request payloads.
 
 End of session -- 2026-06-27 issue 98 backlog review verdict schema
+
+---
+
+## 2026-06-27 -- issue 99 bounded review recall fixtures
+
+**What changed**
+- Updated issue #99 with the accepted contract-compliant body after maintainer
+  authorization, then started `feat/99-bounded-review-recall-fixtures` from
+  updated `donkey-kong-sandbox`.
+- Added an in-test, hand-labeled bounded review recall fixture harness in
+  `scripts/triage/test_frontier.py`.
+- The fixture matrix covers likely-duplicate recall and controls, near-miss and
+  omission ID preservation, split and dependency-order candidates and controls,
+  semantic-disposition evidence, insufficient-evidence verdicts, freshness
+  degradation, invalid lineage, unknown diagnostic refs, and digest stability.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 99 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 99` passed.
+- `python -m pytest -q scripts/triage/test_frontier.py` passed: 86 passed.
+- `python -m py_compile scripts/triage/frontier.py
+  scripts/triage/test_frontier.py` passed.
+- `python -m json.tool docs/synthesis-review-packet-schema-v1.json
+  >/dev/null` passed.
+- `python -m json.tool docs/backlog-synthesis-signals-schema-v1.json
+  >/dev/null` passed.
+- `python -m json.tool docs/backlog-review-verdict-schema-v1.json
+  >/dev/null` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
+  tests 800 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on branch `feat/99-bounded-review-recall-fixtures`.
+- Draft PR #128 is open against `donkey-kong-sandbox`.
+
+**Next steps**
+- Review PR #128 and address CI or review feedback.
+
+**Be careful**
+- Do not add #100 validation CLI/gate, #101 backlog-review skill, or #118
+  extraction/distribution work to this PR.
+- Keep the recall fixtures synthetic, local, read-only, and free of full issue
+  bodies, retrieval, LLM calls, or mutation-shaped payloads.
+
+End of session -- 2026-06-27 issue 99 bounded review recall fixtures

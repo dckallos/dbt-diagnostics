@@ -9,6 +9,24 @@ from scripts.triage import repo_config
 
 ROOT = Path(__file__).resolve().parents[2]
 WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
+RECALL_FIXTURE_LABELS = (
+    "likely-duplicate-true-positive",
+    "likely-duplicate-false-positive-control",
+    "close-duplicate-near-miss",
+    "backlog-omission-id-preservation",
+    "split-candidate",
+    "no-split-control",
+    "dependency-order-inversion",
+    "no-dependency-order-inversion-control",
+    "semantic-disposition-evidence",
+    "insufficient-evidence-verdict",
+    "fresh-packet-under-warning",
+    "warning-only-packet",
+    "hard-stale-packet",
+    "stricter-max-age-packet",
+    "invalid-lineage-packet",
+    "unknown-diagnostic-ref",
+)
 
 
 def snapshot(*issues: dict, pulls: list[dict] | None = None) -> dict:
@@ -352,6 +370,93 @@ def backlog_review_verdict(
     }
     value.update(overrides)
     return sign_verdict(value)
+
+
+def review_artifacts(
+    snap: dict,
+    results: dict,
+    *,
+    evaluated_at: str | None = None,
+    max_age_hours: int = frontier.DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS,
+) -> tuple[dict, dict]:
+    report = frontier.build_backlog_synthesis_report(snap, results)
+    assert frontier.validate_backlog_synthesis_report(report) == []
+    assert frontier.validate_synthesis_review_packet_sources(snap, results, report) == []
+    packet = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at=evaluated_at,
+        max_age_hours=max_age_hours,
+    )
+    return report, packet
+
+
+def review_verdict_item(
+    *,
+    verdict_type: str,
+    issue_numbers: tuple[int, ...],
+    evidence_refs: tuple[str, ...] = (),
+    near_miss_refs: tuple[str, ...] = (),
+    omission_refs: tuple[str, ...] = (),
+    confidence: str = "medium",
+) -> dict:
+    return {
+        "verdict_id": "verdict-" + verdict_type + "-" + "-".join(
+            f"{number:03d}" for number in issue_numbers
+        ),
+        "verdict_type": verdict_type,
+        "issue_numbers": list(issue_numbers),
+        "recommendation": f"Maintainer should review {verdict_type}.",
+        "confidence": confidence,
+        "evidence_refs": list(evidence_refs),
+        "near_miss_refs": list(near_miss_refs),
+        "omission_refs": list(omission_refs),
+        "rationale": "Hand-labeled bounded review recall fixture.",
+        "risks": ["Synthetic fixture coverage is not a maintainer decision."],
+        "required_maintainer_checks": [
+            "Confirm the advisory verdict before tracker action."
+        ],
+    }
+
+
+def review_verdict(
+    packet: dict,
+    *,
+    verdict_type: str,
+    issue_numbers: tuple[int, ...],
+    evidence_refs: tuple[str, ...] = (),
+    near_miss_refs: tuple[str, ...] = (),
+    omission_refs: tuple[str, ...] = (),
+    uncertainty: list[dict] | None = None,
+    required_maintainer_checks: list[str] | None = None,
+    **overrides: object,
+) -> dict:
+    return backlog_review_verdict(
+        packet=packet,
+        verdicts=[
+            review_verdict_item(
+                verdict_type=verdict_type,
+                issue_numbers=issue_numbers,
+                evidence_refs=evidence_refs,
+                near_miss_refs=near_miss_refs,
+                omission_refs=omission_refs,
+            )
+        ],
+        future_apply_recommendations=[],
+        uncertainty=[] if uncertainty is None else uncertainty,
+        required_maintainer_checks=(
+            [] if required_maintainer_checks is None else required_maintainer_checks
+        ),
+        **overrides,
+    )
+
+
+def assert_verdict_validates_against_packet(verdict: dict, packet: dict) -> None:
+    assert frontier.validate_backlog_review_verdict(verdict) == []
+    assert frontier.validate_backlog_review_verdict_against_packet(
+        verdict, packet
+    ) == []
 
 
 def test_merged_pull_request_dependency_is_implementable() -> None:
@@ -2254,6 +2359,442 @@ def test_backlog_review_verdict_warning_packet_must_preserve_warning() -> None:
     assert frontier.validate_backlog_review_verdict_against_packet(
         preserved_in_maintainer_checks, warning_packet
     ) == []
+
+
+def test_bounded_review_recall_fixture_labels_cover_expected_matrix() -> None:
+    assert RECALL_FIXTURE_LABELS == (
+        "likely-duplicate-true-positive",
+        "likely-duplicate-false-positive-control",
+        "close-duplicate-near-miss",
+        "backlog-omission-id-preservation",
+        "split-candidate",
+        "no-split-control",
+        "dependency-order-inversion",
+        "no-dependency-order-inversion-control",
+        "semantic-disposition-evidence",
+        "insufficient-evidence-verdict",
+        "fresh-packet-under-warning",
+        "warning-only-packet",
+        "hard-stale-packet",
+        "stricter-max-age-packet",
+        "invalid-lineage-packet",
+        "unknown-diagnostic-ref",
+    )
+
+
+def test_bounded_review_recall_positive_candidate_fixtures_validate() -> None:
+    cases = [
+        {
+            "label": "likely-duplicate-true-positive",
+            "snapshot": snapshot(
+                issue(1, title="feat: deterministic backlog synthesis"),
+                issue(2, title="feat: deterministic backlog synthesis"),
+            ),
+            "audit": audit(
+                entry(
+                    1,
+                    issue_kind="feature_enhancement",
+                    referenced_paths=["scripts/triage/frontier.py"],
+                ),
+                entry(
+                    2,
+                    issue_kind="feature_enhancement",
+                    referenced_paths=["scripts/triage/frontier.py"],
+                ),
+            ),
+            "signal_type": "likely-duplicate",
+            "issue_numbers": (1, 2),
+            "verdict_type": "likely-duplicate",
+        },
+        {
+            "label": "split-candidate",
+            "snapshot": snapshot(
+                issue(
+                    3,
+                    title="feat: oversized governance workflow",
+                    body=(
+                        "This issue describes multiple coherent PRs and "
+                        "separable workstreams."
+                    ),
+                ),
+            ),
+            "audit": audit(entry(3)),
+            "signal_type": "split-candidate",
+            "issue_numbers": (3,),
+            "verdict_type": "split-candidate",
+        },
+        {
+            "label": "dependency-order-inversion",
+            "snapshot": snapshot(
+                issue(10, title="feat: dependent"),
+                issue(20, title="feat: blocker"),
+            ),
+            "audit": audit(entry(10, dependencies=[20]), entry(20)),
+            "signal_type": "dependency-inversion",
+            "issue_numbers": (10, 20),
+            "verdict_type": "dependency-order",
+        },
+        {
+            "label": "semantic-disposition-evidence",
+            "snapshot": snapshot(
+                issue(30, title="feat: duplicate"),
+                issue(31, title="feat: owner"),
+            ),
+            "audit": audit(
+                entry(
+                    30,
+                    recommended_disposition="implement",
+                    semantic_disposition_hypothesis="likely-duplicate-of #31",
+                    semantic_disposition_evidence=[
+                        "semantic review points at #31 as the owner"
+                    ],
+                ),
+                entry(31),
+            ),
+            "signal_type": "semantic-disposition",
+            "issue_numbers": (30, 31),
+            "verdict_type": "likely-duplicate",
+        },
+    ]
+
+    for case in cases:
+        report, packet = review_artifacts(case["snapshot"], case["audit"])
+        signals = signals_by_type(report, str(case["signal_type"]))
+
+        assert signals, case["label"]
+        assert signals[0]["issue_numbers"] == list(case["issue_numbers"])
+        assert frontier.validate_synthesis_review_packet(packet) == []
+        assert packet["candidate_sets"][0]["signal_type"] == case["signal_type"]
+        assert packet["evidence_items"][0]["evidence_id"] == "evidence-001"
+        assert '"body":' not in json.dumps(packet, sort_keys=True)
+
+        verdict = review_verdict(
+            packet,
+            verdict_type=str(case["verdict_type"]),
+            issue_numbers=case["issue_numbers"],
+            evidence_refs=("evidence-001",),
+        )
+
+        assert_verdict_validates_against_packet(verdict, packet)
+
+
+def test_bounded_review_recall_precision_controls_validate_no_action_paths() -> None:
+    controls = [
+        {
+            "label": "likely-duplicate-false-positive-control",
+            "snapshot": snapshot(
+                issue(1, title="feat: deterministic backlog synthesis"),
+                issue(2, title="fix: pull request dependency resolution"),
+            ),
+            "audit": audit(
+                entry(1, referenced_paths=["scripts/triage/frontier.py"]),
+                entry(2, referenced_paths=["scripts/triage/readiness.py"]),
+            ),
+            "absent_signal": "likely-duplicate",
+        },
+        {
+            "label": "no-split-control",
+            "snapshot": snapshot(
+                issue(3, title="feat: compact governance workflow", body="one task")
+            ),
+            "audit": audit(entry(3)),
+            "absent_signal": "split-candidate",
+        },
+        {
+            "label": "no-dependency-order-inversion-control",
+            "snapshot": snapshot(
+                issue(10, title="feat: blocker"),
+                issue(20, title="feat: dependent"),
+            ),
+            "audit": audit(entry(10), entry(20, dependencies=[10])),
+            "absent_signal": "dependency-inversion",
+        },
+    ]
+
+    for case in controls:
+        report, packet = review_artifacts(case["snapshot"], case["audit"])
+
+        assert signals_by_type(report, str(case["absent_signal"])) == [], case[
+            "label"
+        ]
+        assert frontier.validate_synthesis_review_packet(packet) == []
+
+        no_action_verdict = backlog_review_verdict(
+            packet=packet,
+            verdicts=[],
+            future_apply_recommendations=[],
+            uncertainty=[
+                {
+                    "code": "no_actionable_candidates",
+                    "rationale": (
+                        "The hand-labeled control fixture has no bounded "
+                        "actionable candidate."
+                    ),
+                }
+            ],
+        )
+
+        assert_verdict_validates_against_packet(no_action_verdict, packet)
+
+
+def test_bounded_review_recall_preserves_diagnostic_ids_and_rejects_unknown_refs() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="feat: deterministic backlog review"),
+    )
+    results = audit(
+        entry(
+            1,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+            parent_epics=[93],
+        ),
+        entry(
+            2,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+            parent_epics=[93],
+        ),
+    )
+
+    report, packet = review_artifacts(snap, results)
+    expected_near_miss = (
+        "near-miss-possible-duplicate-001-002-"
+        "title-similarity-below-threshold"
+    )
+    expected_omission = "omission-no-issue-body-in-signals"
+
+    assert signals_by_type(report, "likely-duplicate") == []
+    assert [item["near_miss_id"] for item in report["near_misses"]] == [
+        expected_near_miss
+    ]
+    assert [item["omission_id"] for item in report["omissions"]] == [
+        expected_omission
+    ]
+    assert expected_near_miss in {
+        item["near_miss_id"] for item in packet["near_misses"]
+    }
+    assert expected_omission in {item["omission_id"] for item in packet["omissions"]}
+
+    verdict = review_verdict(
+        packet,
+        verdict_type="insufficient-evidence",
+        issue_numbers=(1, 2),
+        near_miss_refs=(expected_near_miss,),
+        omission_refs=(expected_omission,),
+    )
+    unknown_near_miss = json.loads(json.dumps(verdict))
+    unknown_near_miss["verdicts"][0]["near_miss_refs"] = ["unknown-near-miss"]
+    unknown_near_miss = sign_verdict(unknown_near_miss)
+    unknown_omission = json.loads(json.dumps(verdict))
+    unknown_omission["verdicts"][0]["omission_refs"] = ["unknown-omission"]
+    unknown_omission = sign_verdict(unknown_omission)
+
+    assert_verdict_validates_against_packet(verdict, packet)
+    assert (
+        "verdicts[0].near_miss_refs contains unknown packet near_miss_id: "
+        "unknown-near-miss"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            unknown_near_miss, packet
+        )
+    )
+    assert (
+        "verdicts[0].omission_refs contains unknown packet omission_id: "
+        "unknown-omission"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            unknown_omission, packet
+        )
+    )
+
+
+def test_bounded_review_recall_freshness_degradation_fixtures() -> None:
+    snap = snapshot(issue(96))
+    results = audit(entry(96))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    fresh = frontier.build_synthesis_review_packet(
+        snap, results, report, evaluated_at="2026-06-24T01:00:00Z"
+    )
+    exact_warning_boundary = frontier.build_synthesis_review_packet(
+        snap, results, report, evaluated_at="2026-06-25T00:00:00Z"
+    )
+    warning = frontier.build_synthesis_review_packet(
+        snap, results, report, evaluated_at="2026-06-25T01:00:00Z"
+    )
+    exact_hard_boundary = frontier.build_synthesis_review_packet(
+        snap, results, report, evaluated_at="2026-07-01T00:00:00Z"
+    )
+    hard_stale = frontier.build_synthesis_review_packet(
+        snap, results, report, evaluated_at="2026-07-01T00:00:01Z"
+    )
+    stricter_stale = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        max_age_hours=48,
+        evaluated_at="2026-06-27T00:00:01Z",
+    )
+
+    assert fresh["staleness"]["freshness_status"] == "fresh"
+    assert fresh["staleness"]["freshness_warnings"] == []
+    assert exact_warning_boundary["staleness"]["freshness_status"] == "fresh"
+    assert warning["staleness"]["freshness_status"] == "warning"
+    assert warning["staleness"]["stale"] is False
+    assert warning["staleness"]["llm_review_allowed"] is True
+    assert exact_hard_boundary["staleness"]["freshness_status"] == "warning"
+    assert exact_hard_boundary["staleness"]["llm_review_allowed"] is True
+    assert hard_stale["staleness"]["freshness_status"] == "stale"
+    assert hard_stale["staleness"]["llm_review_allowed"] is False
+    assert stricter_stale["staleness"]["freshness_status"] == "stale"
+    assert frontier.validate_synthesis_review_packet(fresh) == []
+    assert frontier.validate_synthesis_review_packet(warning) == []
+    assert (
+        "staleness.stale packets are not valid for LLM review"
+        in frontier.validate_synthesis_review_packet(hard_stale)
+    )
+
+    source_artifacts = warning["source_artifacts"]
+    warning_not_visible = {
+        "source_packet_digest": warning["synthesis_review_packet_digest"],
+        "source_snapshot_digest": source_artifacts["snapshot_digest"],
+        "source_audit_digest": source_artifacts["audit_digest"],
+        "source_backlog_synthesis_digest": source_artifacts[
+            "backlog_synthesis_digest"
+        ],
+        "freshness_status": "warning",
+        "freshness_warnings": [],
+        "packet_stale": False,
+        "llm_review_allowed": True,
+        "invalid_lineage": False,
+    }
+    missing_warning_verdict = review_verdict(
+        warning,
+        verdict_type="insufficient-evidence",
+        issue_numbers=(96,),
+        omission_refs=("omission-no-issue-body-in-signals",),
+        uncertainty=[],
+        required_maintainer_checks=[],
+        packet_reviewability=warning_not_visible,
+    )
+    preserved_warning_verdict = review_verdict(
+        warning,
+        verdict_type="insufficient-evidence",
+        issue_numbers=(96,),
+        omission_refs=("omission-no-issue-body-in-signals",),
+        uncertainty=[
+            {
+                "code": "packet_freshness_warning",
+                "message": "source_age_exceeds_warning_age",
+            }
+        ],
+        packet_reviewability=warning_not_visible,
+    )
+    hard_stale_verdict = review_verdict(
+        hard_stale,
+        verdict_type="insufficient-evidence",
+        issue_numbers=(96,),
+        omission_refs=("omission-no-issue-body-in-signals",),
+    )
+
+    assert (
+        "warning-only packet freshness warning is not preserved in verdict"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            missing_warning_verdict, warning
+        )
+    )
+    assert_verdict_validates_against_packet(preserved_warning_verdict, warning)
+    assert (
+        "source packet invalid: staleness.stale packets are not valid for LLM review"
+        in frontier.validate_backlog_review_verdict_against_packet(
+            hard_stale_verdict, hard_stale
+        )
+    )
+
+
+def test_bounded_review_recall_invalid_lineage_fails_regardless_of_age() -> None:
+    snap = snapshot(issue(99))
+    results = audit(entry(99))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+    tampered_report = json.loads(json.dumps(report))
+    tampered_report["audit_digest"] = "9" * 64
+    tampered_report["backlog_synthesis_digest"] = backlog_report_digest(
+        tampered_report
+    )
+    invalid_lineage_verdict = backlog_review_verdict(
+        packet=synthesis_review_packet_with_refs(),
+        packet_reviewability={
+            "source_packet_digest": "d" * 64,
+            "source_snapshot_digest": "a" * 64,
+            "source_audit_digest": "b" * 64,
+            "source_backlog_synthesis_digest": "c" * 64,
+            "freshness_status": "fresh",
+            "freshness_warnings": [],
+            "packet_stale": False,
+            "llm_review_allowed": True,
+            "invalid_lineage": True,
+        },
+    )
+
+    assert frontier.validate_synthesis_review_packet_sources(
+        snap, results, tampered_report
+    ) == ["backlog-synthesis audit digest does not match readiness audit"]
+    assert (
+        "packet_reviewability.invalid_lineage must be false"
+        in frontier.validate_backlog_review_verdict(invalid_lineage_verdict)
+    )
+
+
+def test_bounded_review_recall_artifact_digests_are_stable_and_tamper_visible() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="feat: deterministic backlog synthesis"),
+    )
+    results = audit(
+        entry(
+            1,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+        ),
+        entry(
+            2,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+        ),
+    )
+
+    left_report, left_packet = review_artifacts(snap, results)
+    right_report, right_packet = review_artifacts(snap, results)
+    left_verdict = review_verdict(
+        left_packet,
+        verdict_type="likely-duplicate",
+        issue_numbers=(1, 2),
+        evidence_refs=("evidence-001",),
+    )
+    right_verdict = review_verdict(
+        right_packet,
+        verdict_type="likely-duplicate",
+        issue_numbers=(1, 2),
+        evidence_refs=("evidence-001",),
+    )
+    tampered_verdict = json.loads(json.dumps(left_verdict))
+    tampered_verdict["verdicts"][0]["recommendation"] = "Tampered."
+
+    assert json.dumps(left_report, sort_keys=True) == json.dumps(
+        right_report, sort_keys=True
+    )
+    assert left_report["backlog_synthesis_digest"] == right_report[
+        "backlog_synthesis_digest"
+    ]
+    assert left_packet["synthesis_review_packet_digest"] == right_packet[
+        "synthesis_review_packet_digest"
+    ]
+    assert left_verdict["backlog_review_verdict_digest"] == right_verdict[
+        "backlog_review_verdict_digest"
+    ]
+    assert (
+        "backlog_review_verdict_digest mismatch"
+        in frontier.validate_backlog_review_verdict(tampered_verdict)
+    )
 
 
 def test_coordinator_uses_live_snapshot_repository_and_digest_shapes() -> None:
