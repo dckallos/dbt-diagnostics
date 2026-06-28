@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Document bounded LLM governance workflow
+
+- I documented the full bounded LLM backlog-review operator workflow from
+  snapshot and audit artifacts through synthesis review packets, `$backlog-review`,
+  verdict validation, and maintainer decision.
+- I clarified freshness warning versus hard-stale semantics, packet-bound
+  diagnostic refs, omitted comments and full issue bodies, and the no-mutation
+  boundary for review artifacts.
+
 ### Add backlog-review skill
 
 - I added the `backlog-review` skill for bounded review of validated

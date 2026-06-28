@@ -66,6 +66,12 @@ python scripts/triage/triage.py review-packet --issue <n> \
   --output-dir output/triage/issues/<n>
 ```
 
+For cross-issue bounded backlog review, follow the
+`docs/ISSUE_GOVERNANCE.md` workflow for `synthesis-review-packet`,
+`$backlog-review`, and `backlog-review-validate`. Do not prompt with full
+snapshots, do not treat retrieval as authoritative, and do not mutate GitHub
+from packet or verdict artifacts.
+
 ### AI-assisted drafting of missing sections
 
 `review-packet` writes `proposed-body.md` with a placeholder for any section it
