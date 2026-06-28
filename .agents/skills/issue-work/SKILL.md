@@ -46,7 +46,10 @@ Input: exactly one GitHub issue number.
    - non-goals;
    - blockers;
    - intended files;
-   - intended tests.
+   - intended tests;
+   - existing code paths/helpers/modules to reuse or replace;
+   - possible obsolete paths, fixtures, docs, or tests to delete if the
+     implementation supersedes them.
 
 7. Stop without editing if:
    - a dependency is open;
@@ -56,7 +59,10 @@ Input: exactly one GitHub issue number.
 
 8. Add or update a failing test first where practical.
 
-9. Implement only the issue scope.
+Implement only the issue scope. Prefer modifying or replacing the existing
+owner of behavior before adding a parallel owner. Before final tests, do one
+cleanup pass for obsolete internal branches, helpers, fixtures, docs, and
+redundant tests made unnecessary by the change.
 
 10. Run:
     - focused tests;
@@ -65,6 +71,12 @@ Input: exactly one GitHub issue number.
 
 11. Report:
     - changed files;
+    - diffstat: additions, deletions, and add/delete ratio;
+    - production-code vs tests/docs/schema/fixture split;
+    - existing functions/classes/modules modified vs new ones added;
+    - cleanup/deletion ledger, including paths removed or simplified;
+    - parallel paths intentionally retained and the compatibility reason;
+    - why no deletion was safe, when applicable;
     - tests and exact results;
     - acceptance criteria satisfied;
     - remaining uncertainty;

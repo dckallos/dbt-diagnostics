@@ -58,6 +58,22 @@ Before stopping, leave the repo resumable:
 - Update `CHANGELOG.md` (under `## [Unreleased]`) in any PR that changes
   behavior.
 - `--json` `schema_version` is additive-only (see CONTRIBUTING.md).
+- Distinguish public compatibility from internal cleanup. Additive-only applies to
+  stable public JSON/artifact contracts within a major version; it is not a
+  general instruction to keep obsolete internal code, duplicate helpers,
+  wrappers, fixtures, docs, or tests.
+- Prefer replacement or consolidation before adding a parallel implementation.
+  Before adding a new helper, class, module, command, validator, fixture, or
+  wrapper, identify the existing owner of that behavior and either modify it,
+  replace it, or explain why no existing owner is safe to change.
+- When a change supersedes an existing path, remove or simplify the obsolete
+  branch, helper, fixture, docs section, or test in the same PR unless a
+  documented compatibility, migration, rollback, or public-contract reason
+  requires coexistence.
+- Every implementation handoff must include a cleanup/deletion ledger:
+  paths deleted or simplified, existing paths modified instead of duplicated,
+  parallel paths intentionally retained, and why any low-deletion/high-addition
+  diff was still appropriate.
 - For nontrivial Python changes, especially validators, planners, JSON
   artifacts, command handlers, architecture boundaries, or
   compatibility-sensitive code, read `docs/CODE_STANDARDS.md` before editing.

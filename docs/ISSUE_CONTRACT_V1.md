@@ -442,3 +442,23 @@ or generic external contract claim, it includes or requires
 `Official documentation evidence` in the same local-only flow. A placeholder
 section still blocks acceptance until the exact body records real documentation
 evidence and residual uncertainty.
+
+## Cleanup and replacement implications
+
+Use this section when an issue adds a new helper, module, command, validator,
+schema, wrapper, fixture family, or architecture boundary, or when it changes
+existing behavior.
+
+Record:
+
+- existing paths inspected for reuse or replacement;
+- the current owner of the behavior, if one exists;
+- what becomes obsolete if the issue succeeds;
+- code, tests, fixtures, docs, or commands expected to be removed or simplified;
+- compatibility, migration, rollback, or public-contract reasons old and new
+  paths must coexist;
+- the future removal trigger when coexistence is temporary.
+
+This section is not a mandate to delete public contracts or regression tests.
+It is a prompt to make replacement and cleanup decisions explicit before
+implementation.
