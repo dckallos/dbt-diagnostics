@@ -85,10 +85,16 @@ redundant tests made unnecessary by the change.
 12. Do not push, merge, or mutate GitHub metadata unless the current task
     explicitly authorizes it.
 
-13. Do not use `Refs #<issue>` as the only issue link for an implementation PR.
-    When the current task explicitly authorizes pushing and creating a PR, make
-    the PR body close this implemented issue with a GitHub auto-close keyword,
-    preferably `Closes #<issue>`. Keep close keywords limited to the implemented
-    issue, not parent epics, dependencies, duplicates, or related issues. When
-    practical after PR creation, check the PR's `closingIssuesReferences`; if it
-    does not include the implemented issue, update the PR body before merge.
+13. Do not use `Refs #<issue>` or `Issue: #<issue>` as the only issue link for
+    an implementation PR. When the current task explicitly authorizes pushing
+    and creating a PR, compose the exact PR body with a standalone
+    `Closes #<issue>` line before validation or test details. Keep close
+    keywords limited to the implemented issue, not parent epics, dependencies,
+    duplicates, related issues, or follow-up issues.
+
+    Before calling a PR creation tool, inspect the exact PR body text and verify
+    it contains the implemented issue's auto-close line. After PR creation,
+    verify either the body still contains that line or the PR's
+    `closingIssuesReferences` includes the implemented issue. If it does not,
+    update the PR body before reporting the PR as ready; if updates are not
+    allowed, report the missing close line as a blocker.

@@ -78,6 +78,16 @@
           {"required": ["state_updates"]},
           {"required": ["title_update"]},
           {"required": ["title_updates"]},
+          {"required": ["workflow_dispatch"]},
+          {"required": ["workflow_dispatches"]},
+          {"required": ["pr_merge"]},
+          {"required": ["pr_merges"]},
+          {"required": ["pr_merge_instruction"]},
+          {"required": ["pr_merge_instructions"]},
+          {"required": ["pull_request_merge"]},
+          {"required": ["pull_request_merges"]},
+          {"required": ["pull_request_merge_instruction"]},
+          {"required": ["pull_request_merge_instructions"]},
           {"required": ["issues", "pulls"]},
           {"required": ["issues", "pull_requests"]}
         ]

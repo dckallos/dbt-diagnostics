@@ -155,5 +155,46 @@ first validates the verdict and the source packet, then checks exact source
 digests, evidence refs, near-miss refs, omission refs, and #96 freshness
 semantics against the supplied packet.
 
-The integrated operator-facing packet plus verdict validation gate is tracked
-separately by #100.
+The operator-facing integrated gate is:
+
+```bash
+python scripts/triage/triage.py backlog-review-validate \
+  --packet output/triage/synthesis-review-packet.json \
+  --verdict output/triage/backlog-review-verdict.json \
+  --json
+```
+
+The command reads only the two local JSON files supplied on the command line.
+It validates the packet with `validate_synthesis_review_packet`, validates the
+verdict with `validate_backlog_review_verdict`, and then validates the pair
+with `validate_backlog_review_verdict_against_packet`. It does not refresh old
+packets, call GitHub, run retrieval subprocesses, call browsers or LLMs,
+dispatch workflows, generate an apply plan, or integrate with `triage.py apply`.
+
+With `--json`, stdout is clean JSON and human-readable status goes to stderr.
+The result envelope is:
+
+```json
+{
+  "schema_version": 1,
+  "valid": true,
+  "packet_digest": "<synthesis_review_packet_digest>",
+  "verdict_digest": "<backlog_review_verdict_digest>",
+  "errors": [],
+  "warnings": []
+}
+```
+
+Hard errors make `valid` false and return a nonzero exit code. Warning findings
+do not make the pair invalid. Packet freshness with
+`freshness_status: "warning"` or non-empty `freshness_warnings` is emitted as a
+machine-readable `packet_freshness_warning` finding and remains valid only when
+the verdict preserves the warning in `packet_reviewability`, `uncertainty`, or
+`required_maintainer_checks`.
+
+Hard-stale packets, packets with `llm_review_allowed: false`, invalid-lineage
+packets, invalid verdict lineage, unknown evidence refs, unknown near-miss refs,
+unknown omission refs, executable operation shapes, GitHub request payloads,
+issue write payloads, label/milestone/Project mutations, close/reopen payloads,
+workflow dispatches, PR merge instructions, approval batches, and anything
+directly consumable by `triage.py apply` are hard validation errors.

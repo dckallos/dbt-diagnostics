@@ -53,6 +53,10 @@ Before stopping, leave the repo resumable:
 
 - ASCII-only everywhere (no smart quotes, em dashes, arrows).
 - One PR per issue; branch from `donkey-kong-sandbox`; PR back into it.
+- Every implementation PR body must include exactly one GitHub auto-close line
+  for the implemented issue, preferably `Closes #<issue>`. A bare `Issue: #N`,
+  `Refs #N`, parent-epic reference, dependency reference, or related-issue
+  reference is not enough. Keep close keywords limited to the implemented issue.
 - Conventional commit subjects (`feat:`, `fix:`, `docs:`, `chore:`,
   `test:`), imperative mood; the body explains WHY.
 - Update `CHANGELOG.md` (under `## [Unreleased]`) in any PR that changes

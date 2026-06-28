@@ -3581,6 +3581,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, help="write packet JSON locally"
     )
 
+    backlog_review_validate = subparsers.add_parser(
+        "backlog-review-validate",
+        help="validate a local synthesis-review-packet and backlog-review-verdict",
+    )
+    backlog_review_validate.add_argument(
+        "--packet",
+        type=Path,
+        required=True,
+        help="consume an existing synthesis-review-packet JSON artifact",
+    )
+    backlog_review_validate.add_argument(
+        "--verdict",
+        type=Path,
+        required=True,
+        help="consume an existing backlog-review-verdict JSON artifact",
+    )
+    backlog_review_validate.add_argument(
+        "--json", action="store_true", help="emit validation JSON"
+    )
+
     apply = subparsers.add_parser(
         "apply",
         help="preflight and optionally execute an explicitly approved plan batch",
@@ -3653,6 +3673,36 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
             if args.json or not args.output:
                 print(json.dumps(plan, indent=2, sort_keys=True, ensure_ascii=True))
             return 0
+
+        if args.command == "backlog-review-validate":
+            packet = load_json_file(
+                args.packet, "synthesis-review-packet JSON"
+            )
+            verdict = load_json_file(
+                args.verdict, "backlog-review-verdict JSON"
+            )
+            result = issue_frontier.build_backlog_review_validation_result(
+                packet, verdict
+            )
+            valid = bool(result.get("valid"))
+            errors = result.get("errors") if isinstance(result.get("errors"), list) else []
+            warnings = (
+                result.get("warnings")
+                if isinstance(result.get("warnings"), list)
+                else []
+            )
+            status_stream = sys.stderr if args.json else sys.stdout
+            status = "valid" if valid else f"invalid ({len(errors)} error(s))"
+            print(f"backlog-review-validate: {status}", file=status_stream)
+            for item in errors:
+                if isinstance(item, Mapping):
+                    print(f"ERROR: {item.get('message')}", file=status_stream)
+            for item in warnings:
+                if isinstance(item, Mapping):
+                    print(f"WARNING: {item.get('message')}", file=status_stream)
+            if args.json:
+                print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=True))
+            return 0 if valid else 1
 
         snapshot = resolve_snapshot(
             args, runner=active_runner, repo=repo, policy=policy

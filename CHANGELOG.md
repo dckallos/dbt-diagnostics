@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Add packet and verdict validation gate
+
+- I added `python scripts/triage/triage.py backlog-review-validate` to validate
+  a local `synthesis-review-packet` plus `backlog-review-verdict` pair before
+  maintainer review.
+- The gate reuses the existing packet, verdict, and packet-aware verdict
+  validators, emits a deterministic JSON result envelope with separate hard
+  errors and warning findings, and keeps warning-only packet freshness
+  reviewable when the verdict preserves the warning.
+- I kept the command local and read-only: it reads only the supplied JSON files,
+  does not call GitHub, subprocess retrieval paths, browsers, LLMs, workflow
+  dispatch, or `triage.py apply`, and rejects mutation-shaped verdict payloads.
+
 ### Define the backlog review verdict contract
 
 - I added the v1 `backlog-review-verdict` human and machine schemas for

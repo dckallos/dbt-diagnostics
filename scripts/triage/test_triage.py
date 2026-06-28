@@ -11,6 +11,11 @@ from typing import Any
 import pytest
 
 from scripts.triage import repo_config, triage
+from scripts.triage.test_frontier import (
+    backlog_review_verdict,
+    sign_verdict,
+    synthesis_review_packet_with_refs,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -3009,6 +3014,170 @@ def test_synthesis_review_packet_cli_output_is_deterministic(
     assert left_code == 0
     assert right_code == 0
     assert left == right
+
+
+def test_backlog_review_validate_cli_emits_clean_json_without_live_paths(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path, *_unused = write_synthesis_review_packet_inputs(tmp_path)
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(packet=packet)
+    packet_path = tmp_path / "packet.json"
+    verdict_path = tmp_path / "verdict.json"
+    write_json(packet_path, packet)
+    write_json(verdict_path, verdict)
+
+    def fail_resolve_snapshot(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise AssertionError("backlog-review-validate must not resolve snapshots")
+
+    def fail_collect(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise AssertionError("backlog-review-validate must not collect live state")
+
+    def fail_subprocess(*_args: object, **_kwargs: object) -> triage.CommandResult:
+        raise AssertionError("backlog-review-validate must not run subprocesses")
+
+    monkeypatch.setattr(triage, "resolve_snapshot", fail_resolve_snapshot)
+    monkeypatch.setattr(triage, "collect_snapshot", fail_collect)
+    monkeypatch.setattr(triage.subprocess, "run", fail_subprocess)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-review-validate",
+            "--packet",
+            str(packet_path),
+            "--verdict",
+            str(verdict_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert code == 0
+    assert result["valid"] is True
+    assert result["errors"] == []
+    assert "backlog-review-validate: valid" in captured.err
+
+
+def test_backlog_review_validate_cli_warning_pair_returns_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, *_unused = write_synthesis_review_packet_inputs(tmp_path)
+    packet = synthesis_review_packet_with_refs(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-25T01:00:00Z",
+            "source_age_hours": 25.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "warning",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": False,
+            "llm_review_allowed": True,
+        }
+    )
+    verdict = backlog_review_verdict(packet=packet)
+    packet_path = tmp_path / "packet.json"
+    verdict_path = tmp_path / "verdict.json"
+    write_json(packet_path, packet)
+    write_json(verdict_path, verdict)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-review-validate",
+            "--packet",
+            str(packet_path),
+            "--verdict",
+            str(verdict_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert code == 0
+    assert result["valid"] is True
+    assert result["warnings"] == [
+        {
+            "code": "packet_freshness_warning",
+            "message": "source_age_exceeds_warning_age",
+            "source": "packet.staleness.freshness_warnings",
+        }
+    ]
+    assert "WARNING: source_age_exceeds_warning_age" in captured.err
+
+
+def test_backlog_review_validate_cli_invalid_pair_returns_json_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, *_unused = write_synthesis_review_packet_inputs(tmp_path)
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(packet=packet)
+    verdict["source_packet_digest"] = "9" * 64
+    verdict = sign_verdict(verdict)
+    packet_path = tmp_path / "packet.json"
+    verdict_path = tmp_path / "verdict.json"
+    write_json(packet_path, packet)
+    write_json(verdict_path, verdict)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-review-validate",
+            "--packet",
+            str(packet_path),
+            "--verdict",
+            str(verdict_path),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert code == 1
+    assert result["valid"] is False
+    assert {
+        item["code"] for item in result["errors"]
+    } >= {"source_packet_digest_mismatch"}
+    assert "ERROR: source_packet_digest does not match packet digest" in captured.err
+
+
+def test_backlog_review_validate_cli_missing_file_is_controlled(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_path, *_unused = write_synthesis_review_packet_inputs(tmp_path)
+    packet = synthesis_review_packet_with_refs()
+    packet_path = tmp_path / "packet.json"
+    write_json(packet_path, packet)
+
+    code = triage.main(
+        [
+            "--policy",
+            str(policy_path),
+            "backlog-review-validate",
+            "--packet",
+            str(packet_path),
+            "--verdict",
+            str(tmp_path / "missing-verdict.json"),
+            "--json",
+        ],
+        runner=QueueRunner([]),
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "backlog-review-verdict JSON not found" in captured.err
+    assert captured.out == ""
 
 
 def test_backlog_synthesis_requires_snapshot_argument() -> None:

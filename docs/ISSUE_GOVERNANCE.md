@@ -23,6 +23,10 @@ python scripts/triage/triage.py synthesis-review-packet \
   --audit-file output/triage/audit.json \
   --backlog-synthesis output/triage/backlog-synthesis.json \
   --output output/triage/synthesis-review-packet.json
+python scripts/triage/triage.py backlog-review-validate \
+  --packet output/triage/synthesis-review-packet.json \
+  --verdict output/triage/backlog-review-verdict.json \
+  --json
 python scripts/triage/triage.py plan --output-dir output/triage
 python scripts/triage/triage.py project-plan \
   --snapshot output/triage/snapshot.json \
@@ -395,6 +399,37 @@ The command is offline when local artifacts are supplied. It does not fetch
 GitHub, collect comments, run subprocesses for tracker state, emit executable
 operations, or add an apply path. `--json` stdout is reserved for packet JSON;
 status output goes to stderr when `--json` is used.
+
+### Backlog Review Validate
+
+```bash
+python scripts/triage/triage.py backlog-review-validate \
+  --packet output/triage/synthesis-review-packet.json \
+  --verdict output/triage/backlog-review-verdict.json \
+  --json
+```
+
+`backlog-review-validate` validates a local packet plus verdict pair before
+maintainer review. It loads only the supplied JSON files, validates the packet,
+validates the verdict, and then validates packet-bound lineage and references:
+packet digest, source snapshot digest, readiness-audit digest,
+backlog-synthesis digest, evidence IDs, near-miss IDs, and omission IDs.
+
+The command exits nonzero for hard errors and zero for valid pairs, including
+warning-only packet freshness. Warning-only freshness is surfaced as a
+machine-readable warning finding, and the pair remains valid only when the
+verdict preserves the warning in `packet_reviewability`, `uncertainty`, or
+`required_maintainer_checks`.
+
+Hard-stale packets, non-reviewable packets, invalid-lineage packets, unknown
+packet-bound refs, executable operation shapes, GitHub request payloads, issue
+write payloads, metadata mutations, workflow dispatches, PR merge instructions,
+approval batches, and anything directly consumable by `triage.py apply` are
+hard validation errors.
+
+The command does not call GitHub, refresh old packets, collect comments, run
+tracker retrieval subprocesses, call browsers or LLMs, dispatch workflows,
+generate an apply plan, or integrate with `apply`.
 
 ### Offline forms
 

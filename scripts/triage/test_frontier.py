@@ -2361,6 +2361,161 @@ def test_backlog_review_verdict_warning_packet_must_preserve_warning() -> None:
     ) == []
 
 
+def test_backlog_review_validation_result_accepts_fresh_pair() -> None:
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(packet=packet)
+
+    result = frontier.build_backlog_review_validation_result(packet, verdict)
+
+    assert result == {
+        "schema_version": 1,
+        "valid": True,
+        "packet_digest": packet["synthesis_review_packet_digest"],
+        "verdict_digest": verdict["backlog_review_verdict_digest"],
+        "errors": [],
+        "warnings": [],
+    }
+
+
+def test_backlog_review_validation_result_allows_warning_packet_with_finding() -> None:
+    warning_packet = synthesis_review_packet_with_refs(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-25T01:00:00Z",
+            "source_age_hours": 25.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "warning",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": False,
+            "llm_review_allowed": True,
+        }
+    )
+    verdict = backlog_review_verdict(packet=warning_packet)
+
+    result = frontier.build_backlog_review_validation_result(
+        warning_packet, verdict
+    )
+
+    assert result["valid"] is True
+    assert result["errors"] == []
+    assert result["warnings"] == [
+        {
+            "code": "packet_freshness_warning",
+            "message": "source_age_exceeds_warning_age",
+            "source": "packet.staleness.freshness_warnings",
+        }
+    ]
+
+
+def test_backlog_review_validation_result_classifies_integrated_errors() -> None:
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(packet=packet)
+    verdict["source_packet_digest"] = "9" * 64
+    verdict["source_snapshot_digest"] = "8" * 64
+    verdict["verdicts"][0]["evidence_refs"] = ["unknown-evidence"]
+    verdict["verdicts"][0]["near_miss_refs"] = ["unknown-near-miss"]
+    verdict["verdicts"][0]["omission_refs"] = ["unknown-omission"]
+    verdict = sign_verdict(verdict)
+
+    result = frontier.build_backlog_review_validation_result(packet, verdict)
+    errors = {item["code"]: item["message"] for item in result["errors"]}
+
+    assert result["valid"] is False
+    assert (
+        errors["source_packet_digest_mismatch"]
+        == "source_packet_digest does not match packet digest"
+    )
+    assert (
+        errors["source_artifact_digest_mismatch"]
+        == "source_snapshot_digest does not match "
+        "packet source_artifacts.snapshot_digest"
+    )
+    assert (
+        errors["unknown_packet_reference"]
+        == "verdicts[0].omission_refs contains unknown packet omission_id: "
+        "unknown-omission"
+    )
+
+
+def test_backlog_review_validation_result_rejects_hard_stale_packet() -> None:
+    stale_packet = synthesis_review_packet_with_refs(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-07-02T00:00:01Z",
+            "source_age_hours": 192.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "stale",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": True,
+            "llm_review_allowed": False,
+        }
+    )
+    verdict = backlog_review_verdict(packet=stale_packet)
+
+    result = frontier.build_backlog_review_validation_result(stale_packet, verdict)
+    codes = {item["code"] for item in result["errors"]}
+
+    assert result["valid"] is False
+    assert "packet_hard_stale" in codes
+    assert "packet_not_reviewable" in codes
+
+
+def test_backlog_review_validation_result_rejects_executable_payloads() -> None:
+    packet = synthesis_review_packet_with_refs()
+    verdict = backlog_review_verdict(
+        packet=packet,
+        future_apply_recommendations=[
+            {
+                "recommendation_id": "future-apply-001",
+                "summary": "unsafe executable recommendation",
+                "rationale": "must not pass",
+                "advisory_only": True,
+                "operation_id": "issue.body.update:abc",
+                "workflow_dispatch": {"workflow_id": "ci.yml"},
+            }
+        ],
+    )
+
+    result = frontier.build_backlog_review_validation_result(packet, verdict)
+    codes = {item["code"] for item in result["errors"]}
+
+    assert result["valid"] is False
+    assert "forbidden_mutation_shape" in codes
+
+
+def test_backlog_review_validation_result_reuses_recall_fixture_pair() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="feat: deterministic backlog synthesis"),
+    )
+    results = audit(
+        entry(
+            1,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+        ),
+        entry(
+            2,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+        ),
+    )
+    _report, packet = review_artifacts(snap, results)
+    verdict = review_verdict(
+        packet,
+        verdict_type="likely-duplicate",
+        issue_numbers=(1, 2),
+        evidence_refs=("evidence-001",),
+    )
+
+    result = frontier.build_backlog_review_validation_result(packet, verdict)
+
+    assert result["valid"] is True
+    assert result["errors"] == []
+
+
 def test_bounded_review_recall_fixture_labels_cover_expected_matrix() -> None:
     assert RECALL_FIXTURE_LABELS == (
         "likely-duplicate-true-positive",

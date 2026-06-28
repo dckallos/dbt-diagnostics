@@ -1923,3 +1923,67 @@ End of session -- 2026-06-27 issue 98 backlog review verdict schema
   bodies, retrieval, LLM calls, or mutation-shaped payloads.
 
 End of session -- 2026-06-27 issue 99 bounded review recall fixtures
+
+---
+
+## 2026-06-27 -- issue 100 packet and verdict validation gate
+
+**What changed**
+- Updated issue #100 with the accepted contract-compliant body after maintainer
+  authorization, verified #99 recall fixtures were present after PR #128
+  merged, and started `feat/100-packet-verdict-validation` from updated
+  `donkey-kong-sandbox`.
+- Added a pure backlog-review validation result builder around the existing
+  packet validator, verdict validator, and packet-aware verdict validator.
+- Added `python scripts/triage/triage.py backlog-review-validate --packet
+  <packet.json> --verdict <verdict.json> --json` as a local file-only
+  validation command with clean JSON stdout and stderr status.
+- Added focused frontier and CLI coverage for valid fresh pairs,
+  warning-only freshness, wrong lineage, unknown evidence/near-miss/omission
+  refs, hard-stale and non-reviewable packets, executable or GitHub-shaped
+  payloads, missing files, and #99 recall fixture compatibility.
+- Documented the operator command, result envelope, warning semantics, and
+  read-only boundary, and updated the shared machine-schema forbidden-shape
+  keys for workflow dispatch and PR merge payloads.
+- Preserved the pre-existing local instruction edits in `AGENTS.md` and
+  `.agents/skills/issue-work/SKILL.md`.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 2 expected
+  warnings: changed worktree and absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 100 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 100` passed.
+- `python -m pytest -q scripts/triage/test_frontier.py -k
+  backlog_review_validation_result` passed: 6 passed, 86 deselected.
+- `python -m pytest -q scripts/triage/test_triage.py -k
+  backlog_review_validate_cli` passed: 4 passed, 79 deselected.
+- `python -m pytest -q scripts/triage/test_frontier.py` passed: 92 passed.
+- `python -m pytest -q scripts/triage/test_triage.py` passed: 83 passed.
+- `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed.
+- `python -m json.tool docs/backlog-review-verdict-schema-v1.json
+  >/dev/null` passed.
+- `python -m json.tool docs/synthesis-review-packet-schema-v1.json
+  >/dev/null` passed.
+- `python -m json.tool docs/backlog-synthesis-signals-schema-v1.json
+  >/dev/null` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
+  tests 810 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on branch `feat/100-packet-verdict-validation`.
+- No PR has been opened yet.
+
+**Next steps**
+- Review the diff, then commit and open the implementation PR against
+  `donkey-kong-sandbox` with exactly one `Closes #100` line.
+
+**Be careful**
+- Do not add #101 backlog-review skill work, LLM calls, retrieval/indexing,
+  apply-plan generation, GitHub mutation, or #118 extraction/distribution work
+  to this PR.
+- Keep `backlog-review-validate` local and read-only; it reads only the
+  supplied packet and verdict JSON files.
+
+End of session -- 2026-06-27 issue 100 packet and verdict validation gate

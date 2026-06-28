@@ -27,6 +27,7 @@ PROJECT_PLAN_SCHEMA_VERSION = 1
 BACKLOG_SYNTHESIS_SCHEMA_VERSION = 1
 SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION = 1
 BACKLOG_REVIEW_VERDICT_SCHEMA_VERSION = 1
+BACKLOG_REVIEW_VALIDATION_SCHEMA_VERSION = 1
 MAX_WORKER_ISSUE_BODY_CHARS = 30000
 MAX_PROGRESS_CONTEXT_CHARS = 4000
 SYNTHESIS_REVIEW_TARGET_BYTES = 204800
@@ -148,6 +149,16 @@ READ_ONLY_METADATA_MUTATION_KEYS = {
     "state_updates",
     "title_update",
     "title_updates",
+    "workflow_dispatch",
+    "workflow_dispatches",
+    "pr_merge",
+    "pr_merges",
+    "pr_merge_instruction",
+    "pr_merge_instructions",
+    "pull_request_merge",
+    "pull_request_merges",
+    "pull_request_merge_instruction",
+    "pull_request_merge_instructions",
 }
 
 
@@ -2567,6 +2578,165 @@ class BacklogReviewVerdictPacketValidator:
                 errors.append(
                     "warning-only packet freshness warning is not preserved in verdict"
                 )
+
+
+@dataclass(frozen=True)
+class BacklogReviewValidationFinding:
+    code: str
+    message: str
+    source: str
+
+    def to_json(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "source": self.source,
+        }
+
+
+def _validation_source(message: str, default_source: str) -> str:
+    if message.startswith("source packet invalid: "):
+        return "packet"
+    if message.startswith("source packet "):
+        return "packet"
+    if message.startswith("staleness."):
+        return "packet.staleness"
+    if message.startswith("synthesis_review_packet"):
+        return "packet"
+    if message.startswith("budget."):
+        return "packet.budget"
+    if message.startswith("comments_") or message.startswith("comment_"):
+        return "packet.comments"
+    if message.startswith("safety."):
+        return f"{default_source}.safety"
+    if message.startswith("packet_reviewability."):
+        return "verdict.packet_reviewability"
+    if message.startswith("verdicts["):
+        return "verdict.verdicts"
+    if message.startswith("future_apply_recommendations"):
+        return "verdict.future_apply_recommendations"
+    if message.startswith("uncertainty["):
+        return "verdict.uncertainty"
+    if message.startswith("backlog_review_verdict"):
+        return "verdict"
+    if message.startswith("source_"):
+        return "packet_verdict.lineage"
+    return default_source
+
+
+def _validation_error_code(message: str, source: str) -> str:
+    if "warning-only packet freshness warning is not preserved" in message:
+        return "packet_freshness_warning_not_preserved"
+    if "invalid_lineage" in message:
+        return "invalid_lineage"
+    if "hard-stale" in message or "stale packets are not valid" in message:
+        return "packet_hard_stale"
+    if "not LLM-reviewable" in message or "llm_review_allowed" in message:
+        return "packet_not_reviewable"
+    if "source_packet_digest does not match" in message:
+        return "source_packet_digest_mismatch"
+    if (
+        "source_snapshot_digest does not match" in message
+        or "source_audit_digest does not match" in message
+        or "source_backlog_synthesis_digest does not match" in message
+    ):
+        return "source_artifact_digest_mismatch"
+    if "contains unknown packet" in message:
+        return "unknown_packet_reference"
+    if (
+        " is forbidden" in message
+        or " key is forbidden" in message
+        or "forbidden request target" in message
+    ):
+        return "forbidden_mutation_shape"
+    if "digest mismatch" in message:
+        return "digest_mismatch"
+    if source.startswith("packet"):
+        return "packet_schema_invalid"
+    if source.startswith("verdict"):
+        return "verdict_schema_invalid"
+    return "packet_verdict_validation_error"
+
+
+def _validation_error_finding(
+    message: str, *, default_source: str
+) -> BacklogReviewValidationFinding:
+    source = _validation_source(message, default_source)
+    return BacklogReviewValidationFinding(
+        code=_validation_error_code(message, source),
+        message=message,
+        source=source,
+    )
+
+
+def _packet_freshness_warning_findings(
+    packet: Mapping[str, Any],
+) -> list[BacklogReviewValidationFinding]:
+    staleness = packet.get("staleness")
+    if not isinstance(staleness, Mapping):
+        return []
+    raw_warnings = staleness.get("freshness_warnings")
+    warnings = [item for item in raw_warnings or [] if isinstance(item, str)]
+    if staleness.get("freshness_status") != "warning" and not warnings:
+        return []
+    if not warnings:
+        warnings = ["freshness_status_warning"]
+    seen: set[str] = set()
+    findings: list[BacklogReviewValidationFinding] = []
+    for warning in warnings:
+        if warning in seen:
+            continue
+        seen.add(warning)
+        findings.append(
+            BacklogReviewValidationFinding(
+                code="packet_freshness_warning",
+                message=warning,
+                source="packet.staleness.freshness_warnings",
+            )
+        )
+    return findings
+
+
+def build_backlog_review_validation_result(
+    packet: Mapping[str, Any],
+    verdict: Mapping[str, Any],
+) -> dict[str, Any]:
+    packet_errors = validate_synthesis_review_packet(packet)
+    verdict_errors = validate_backlog_review_verdict(verdict)
+    pair_errors = validate_backlog_review_verdict_against_packet(verdict, packet)
+
+    findings: list[BacklogReviewValidationFinding] = []
+    seen_messages: set[str] = set()
+
+    def add_error(message: str, *, default_source: str) -> None:
+        if message in seen_messages:
+            return
+        seen_messages.add(message)
+        findings.append(
+            _validation_error_finding(message, default_source=default_source)
+        )
+
+    for error in packet_errors:
+        add_error(error, default_source="packet")
+    for error in verdict_errors:
+        add_error(error, default_source="verdict")
+    for error in pair_errors:
+        packet_prefix = "source packet invalid: "
+        if error.startswith(packet_prefix) and error[len(packet_prefix) :] in packet_errors:
+            continue
+        if error in verdict_errors:
+            continue
+        add_error(error, default_source="packet_verdict")
+
+    warnings = _packet_freshness_warning_findings(packet)
+    return {
+        "schema_version": BACKLOG_REVIEW_VALIDATION_SCHEMA_VERSION,
+        "valid": not findings,
+        "packet_digest": packet.get("synthesis_review_packet_digest"),
+        "verdict_digest": verdict.get("backlog_review_verdict_digest"),
+        "errors": [finding.to_json() for finding in findings],
+        "warnings": [finding.to_json() for finding in warnings],
+    }
 
 
 def build_project_plan(
