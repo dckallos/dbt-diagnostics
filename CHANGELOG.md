@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Define the backlog review verdict contract
+
+- I added the v1 `backlog-review-verdict` human and machine schemas for
+  advisory backlog-review output from validated synthesis-review packets.
+- I added verdict validators that check canonical digests, packet evidence
+  refs, near-miss refs, omission refs, #96 freshness reviewability, and
+  recursive read-only forbidden shapes without adding a CLI, skill, apply path,
+  or GitHub write path.
+
 ### Add backlog synthesis near-miss diagnostics
 
 - I added deterministic `near_misses` and `omissions` arrays to

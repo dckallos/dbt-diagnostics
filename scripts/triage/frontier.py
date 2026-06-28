@@ -26,6 +26,7 @@ WORKER_PACKET_SCHEMA_VERSION = 1
 PROJECT_PLAN_SCHEMA_VERSION = 1
 BACKLOG_SYNTHESIS_SCHEMA_VERSION = 1
 SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION = 1
+BACKLOG_REVIEW_VERDICT_SCHEMA_VERSION = 1
 MAX_WORKER_ISSUE_BODY_CHARS = 30000
 MAX_PROGRESS_CONTEXT_CHARS = 4000
 SYNTHESIS_REVIEW_TARGET_BYTES = 204800
@@ -252,6 +253,16 @@ def _synthesis_review_packet_without_digest(packet: Mapping[str, Any]) -> dict[s
         key: value
         for key, value in packet.items()
         if key != "synthesis_review_packet_digest"
+    }
+
+
+def _backlog_review_verdict_without_digest(
+    verdict: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in verdict.items()
+        if key != "backlog_review_verdict_digest"
     }
 
 
@@ -1930,6 +1941,634 @@ class SynthesisReviewPacketValidator:
                 "safety.comments_included must match comments_included"
             )
 
+
+VERDICT_APPLY_LIKE_KEYS = {
+    "operation_id",
+    "operation_ids",
+    "apply_operation",
+    "apply_operations",
+    "approval_batch",
+    "approval_batches",
+    "approved_batch",
+    "approved_batches",
+    "approved_operation_ids",
+    "request_method",
+    "request_path",
+    "request_body",
+}
+
+
+def _looks_like_request_target(value: Mapping[str, Any]) -> bool:
+    keys = set(value)
+    return "method" in keys and bool(keys & {"path", "url", "endpoint"})
+
+
+def _validate_verdict_executable_shape(
+    context: ValidationContext, value: Any, path: str
+) -> None:
+    if isinstance(value, Mapping):
+        if _looks_like_request_target(value):
+            context.errors.append(
+                f"{path} is a forbidden request target"
+                if path
+                else "request target is forbidden"
+            )
+        for key, item in value.items():
+            item_path = f"{path}.{key}" if path else str(key)
+            if key in VERDICT_APPLY_LIKE_KEYS:
+                context.errors.append(f"{item_path} is forbidden")
+            _validate_verdict_executable_shape(context, item, item_path)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_verdict_executable_shape(context, item, f"{path}[{index}]")
+
+
+def _contains_text(value: Any, needle: str) -> bool:
+    if isinstance(value, str):
+        return needle in value
+    if isinstance(value, Mapping):
+        return any(_contains_text(item, needle) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_text(item, needle) for item in value)
+    return False
+
+
+@dataclass(frozen=True)
+class BacklogReviewVerdictSafetyShape:
+    value: Mapping[str, Any]
+
+    EXPECTED: ClassVar[dict[str, bool]] = {
+        "read_only": True,
+        "github_api_calls": False,
+        "github_mutations": False,
+        "contains_executable_operations": False,
+        "contains_github_request_payloads": False,
+        "contains_issue_write_payloads": False,
+        "future_apply_recommendations_are_advisory": True,
+        "maintainer_decides": True,
+        "llm_verdicts_are_advisory": True,
+    }
+
+    def validate(self, context: ValidationContext) -> None:
+        for key, expected in self.EXPECTED.items():
+            if self.value.get(key) is not expected:
+                context.errors.append(f"safety.{key} must be {str(expected).lower()}")
+
+
+@dataclass(frozen=True)
+class BacklogReviewPacketReviewabilityShape:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "source_packet_digest",
+        "source_snapshot_digest",
+        "source_audit_digest",
+        "source_backlog_synthesis_digest",
+        "freshness_status",
+        "freshness_warnings",
+        "packet_stale",
+        "llm_review_allowed",
+        "invalid_lineage",
+    }
+    FRESHNESS_STATUSES: ClassVar[set[str]] = {"fresh", "warning", "stale"}
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        for key in (
+            "source_packet_digest",
+            "source_snapshot_digest",
+            "source_audit_digest",
+            "source_backlog_synthesis_digest",
+        ):
+            context.require_digest(
+                self.value.get(key), name=f"packet_reviewability.{key}"
+            )
+        status = self.value.get("freshness_status")
+        if status not in self.FRESHNESS_STATUSES:
+            context.errors.append(
+                "packet_reviewability.freshness_status must be fresh, warning, or stale"
+            )
+        context.require_string_list(
+            self.value.get("freshness_warnings"),
+            name="packet_reviewability.freshness_warnings",
+        )
+        context.require_bool(
+            self.value.get("packet_stale"),
+            name="packet_reviewability.packet_stale",
+        )
+        context.require_bool(
+            self.value.get("llm_review_allowed"),
+            name="packet_reviewability.llm_review_allowed",
+        )
+        context.require_bool(
+            self.value.get("invalid_lineage"),
+            name="packet_reviewability.invalid_lineage",
+        )
+        if self.value.get("invalid_lineage") is not False:
+            context.errors.append("packet_reviewability.invalid_lineage must be false")
+        if self.value.get("packet_stale") is not False:
+            context.errors.append("packet_reviewability.packet_stale must be false")
+        if self.value.get("llm_review_allowed") is not True:
+            context.errors.append(
+                "packet_reviewability.llm_review_allowed must be true"
+            )
+        if status == "stale":
+            context.errors.append("packet_reviewability.stale packets are invalid")
+
+
+@dataclass(frozen=True)
+class BacklogReviewFutureApplyRecommendationShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"future_apply_recommendations[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_non_empty_string(
+            self.value.get("recommendation_id"),
+            name=f"{self.path}.recommendation_id",
+        )
+        context.require_non_empty_string(
+            self.value.get("summary"), name=f"{self.path}.summary"
+        )
+        context.require_non_empty_string(
+            self.value.get("rationale"), name=f"{self.path}.rationale"
+        )
+        if self.value.get("advisory_only") is not True:
+            context.errors.append(f"{self.path}.advisory_only must be true")
+
+
+@dataclass(frozen=True)
+class BacklogReviewUncertaintyShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"uncertainty[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_non_empty_string(
+            self.value.get("code"), name=f"{self.path}.code"
+        )
+        if not isinstance(self.value.get("rationale"), str) and not isinstance(
+            self.value.get("message"), str
+        ):
+            context.errors.append(f"{self.path} must include rationale or message")
+
+
+@dataclass(frozen=True)
+class BacklogReviewVerdictItemShape:
+    index: int
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "verdict_id",
+        "verdict_type",
+        "issue_numbers",
+        "recommendation",
+        "confidence",
+        "evidence_refs",
+        "near_miss_refs",
+        "omission_refs",
+        "rationale",
+        "risks",
+        "required_maintainer_checks",
+    }
+
+    @property
+    def path(self) -> str:
+        return f"verdicts[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        context.require_non_empty_string(
+            self.value.get("verdict_id"), name=f"{self.path}.verdict_id"
+        )
+        context.require_non_empty_string(
+            self.value.get("verdict_type"), name=f"{self.path}.verdict_type"
+        )
+        context.require_positive_int_list(
+            self.value.get("issue_numbers"), name=f"{self.path}.issue_numbers"
+        )
+        issue_numbers = self.value.get("issue_numbers")
+        if (
+            isinstance(issue_numbers, list)
+            and all(_is_positive_int(item) for item in issue_numbers)
+            and issue_numbers != sorted(set(issue_numbers))
+        ):
+            context.errors.append(f"{self.path}.issue_numbers must be sorted and unique")
+        context.require_non_empty_string(
+            self.value.get("recommendation"), name=f"{self.path}.recommendation"
+        )
+        if self.value.get("confidence") not in {"low", "medium", "high"}:
+            context.errors.append(f"{self.path}.confidence must be low, medium, or high")
+        for key in (
+            "evidence_refs",
+            "near_miss_refs",
+            "omission_refs",
+            "risks",
+            "required_maintainer_checks",
+        ):
+            context.require_string_list(self.value.get(key), name=f"{self.path}.{key}")
+        context.require_non_empty_string(
+            self.value.get("rationale"), name=f"{self.path}.rationale"
+        )
+        if "future_apply_recommendation_ref" in self.value:
+            context.require_non_empty_string(
+                self.value.get("future_apply_recommendation_ref"),
+                name=f"{self.path}.future_apply_recommendation_ref",
+            )
+        evidence_refs = self.value.get("evidence_refs")
+        if (
+            self.value.get("verdict_type") != "insufficient-evidence"
+            and isinstance(evidence_refs, list)
+            and not evidence_refs
+        ):
+            context.errors.append(
+                f"{self.path}.evidence_refs is required unless verdict_type is "
+                "insufficient-evidence"
+            )
+
+
+@dataclass(frozen=True)
+class BacklogReviewVerdictValidator:
+    value: Mapping[str, Any]
+
+    REQUIRED_KEYS: ClassVar[set[str]] = {
+        "schema_version",
+        "repository",
+        "generated_at",
+        "source_packet_digest",
+        "source_snapshot_digest",
+        "source_audit_digest",
+        "source_backlog_synthesis_digest",
+        "packet_reviewability",
+        "verdicts",
+        "future_apply_recommendations",
+        "uncertainty",
+        "required_maintainer_checks",
+        "safety",
+        "backlog_review_verdict_digest",
+    }
+
+    def validate(self) -> list[str]:
+        context = ValidationContext()
+        context.require_keys(self.value, self.REQUIRED_KEYS)
+        _validate_read_only_forbidden_shape(context, self.value, "")
+        _validate_verdict_executable_shape(context, self.value, "")
+        if self.value.get("schema_version") != BACKLOG_REVIEW_VERDICT_SCHEMA_VERSION:
+            context.errors.append("unsupported schema_version")
+        context.require_repository(self.value.get("repository"))
+        context.require_string(self.value.get("generated_at"), name="generated_at")
+        for key in (
+            "source_packet_digest",
+            "source_snapshot_digest",
+            "source_audit_digest",
+            "source_backlog_synthesis_digest",
+            "backlog_review_verdict_digest",
+        ):
+            context.require_digest(self.value.get(key), name=key)
+        self._validate_packet_reviewability(context)
+        self._validate_verdicts(context)
+        self._validate_future_apply_recommendations(context)
+        self._validate_uncertainty(context)
+        context.require_string_list(
+            self.value.get("required_maintainer_checks"),
+            name="required_maintainer_checks",
+        )
+        self._validate_warning_visibility(context)
+        self._validate_safety(context)
+        self._validate_digest(context)
+        self._validate_internal_refs(context)
+        return context.errors
+
+    def _validate_packet_reviewability(self, context: ValidationContext) -> None:
+        packet_reviewability = self.value.get("packet_reviewability")
+        if not isinstance(packet_reviewability, Mapping):
+            context.errors.append("packet_reviewability must be an object")
+            return
+        BacklogReviewPacketReviewabilityShape(packet_reviewability).validate(context)
+        pairs = (
+            ("source_packet_digest", "source_packet_digest"),
+            ("source_snapshot_digest", "source_snapshot_digest"),
+            ("source_audit_digest", "source_audit_digest"),
+            ("source_backlog_synthesis_digest", "source_backlog_synthesis_digest"),
+        )
+        for outer_key, inner_key in pairs:
+            if self.value.get(outer_key) != packet_reviewability.get(inner_key):
+                context.errors.append(
+                    f"packet_reviewability.{inner_key} must match {outer_key}"
+                )
+
+    def _validate_warning_visibility(self, context: ValidationContext) -> None:
+        packet_reviewability = self.value.get("packet_reviewability")
+        if not isinstance(packet_reviewability, Mapping):
+            return
+        if packet_reviewability.get("freshness_status") != "warning":
+            return
+        if not _verdict_preserves_warnings(
+            self.value, [SOURCE_AGE_EXCEEDS_WARNING_AGE]
+        ):
+            context.errors.append(
+                "warning-only packet freshness warning is not preserved in verdict"
+            )
+
+    def _validate_verdicts(self, context: ValidationContext) -> None:
+        verdicts = self.value.get("verdicts")
+        if not isinstance(verdicts, list):
+            context.errors.append("verdicts must be an array")
+            return
+        seen_ids: set[str] = set()
+        for index, verdict in enumerate(verdicts):
+            if not isinstance(verdict, Mapping):
+                context.errors.append(f"verdicts[{index}] must be an object")
+                continue
+            raw_id = verdict.get("verdict_id")
+            if isinstance(raw_id, str):
+                if raw_id in seen_ids:
+                    context.errors.append("verdicts contains duplicate verdict_id")
+                seen_ids.add(raw_id)
+            BacklogReviewVerdictItemShape(index, verdict).validate(context)
+        if not verdicts and not self._has_no_actionable_candidates_rationale():
+            context.errors.append(
+                "empty verdicts require no_actionable_candidates uncertainty rationale"
+            )
+
+    def _validate_future_apply_recommendations(
+        self, context: ValidationContext
+    ) -> None:
+        recommendations = self.value.get("future_apply_recommendations")
+        if not isinstance(recommendations, list):
+            context.errors.append("future_apply_recommendations must be an array")
+            return
+        seen_ids: set[str] = set()
+        for index, recommendation in enumerate(recommendations):
+            if not isinstance(recommendation, Mapping):
+                context.errors.append(
+                    f"future_apply_recommendations[{index}] must be an object"
+                )
+                continue
+            raw_id = recommendation.get("recommendation_id")
+            if isinstance(raw_id, str):
+                if raw_id in seen_ids:
+                    context.errors.append(
+                        "future_apply_recommendations contains duplicate "
+                        "recommendation_id"
+                    )
+                seen_ids.add(raw_id)
+            BacklogReviewFutureApplyRecommendationShape(
+                index, recommendation
+            ).validate(context)
+
+    def _validate_uncertainty(self, context: ValidationContext) -> None:
+        uncertainty = self.value.get("uncertainty")
+        if not isinstance(uncertainty, list):
+            context.errors.append("uncertainty must be an array")
+            return
+        for index, item in enumerate(uncertainty):
+            if not isinstance(item, Mapping):
+                context.errors.append(f"uncertainty[{index}] must be an object")
+                continue
+            BacklogReviewUncertaintyShape(index, item).validate(context)
+
+    def _validate_safety(self, context: ValidationContext) -> None:
+        safety = self.value.get("safety")
+        if not isinstance(safety, Mapping):
+            context.errors.append("safety must be an object")
+            return
+        BacklogReviewVerdictSafetyShape(safety).validate(context)
+
+    def _validate_digest(self, context: ValidationContext) -> None:
+        actual_digest = sha256_json(_backlog_review_verdict_without_digest(self.value))
+        if self.value.get("backlog_review_verdict_digest") != actual_digest:
+            context.errors.append("backlog_review_verdict_digest mismatch")
+
+    def _validate_internal_refs(self, context: ValidationContext) -> None:
+        recommendation_ids = {
+            item.get("recommendation_id")
+            for item in self.value.get("future_apply_recommendations") or []
+            if isinstance(item, Mapping) and isinstance(item.get("recommendation_id"), str)
+        }
+        verdicts = self.value.get("verdicts")
+        if not isinstance(verdicts, list):
+            return
+        for index, verdict in enumerate(verdicts):
+            if not isinstance(verdict, Mapping):
+                continue
+            ref = verdict.get("future_apply_recommendation_ref")
+            if isinstance(ref, str) and ref not in recommendation_ids:
+                context.errors.append(
+                    f"verdicts[{index}].future_apply_recommendation_ref is unknown"
+                )
+
+    def _has_no_actionable_candidates_rationale(self) -> bool:
+        uncertainty = self.value.get("uncertainty")
+        if not isinstance(uncertainty, list):
+            return False
+        for item in uncertainty:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("code") != "no_actionable_candidates":
+                continue
+            if isinstance(item.get("rationale"), str) and item.get("rationale"):
+                return True
+            if isinstance(item.get("message"), str) and item.get("message"):
+                return True
+        return False
+
+
+def _packet_string_ids(
+    packet: Mapping[str, Any], *, key: str, id_key: str
+) -> set[str]:
+    values = packet.get(key)
+    if not isinstance(values, list):
+        return set()
+    result: set[str] = set()
+    for item in values:
+        if isinstance(item, str):
+            result.add(item)
+        elif isinstance(item, Mapping) and isinstance(item.get(id_key), str):
+            result.add(str(item[id_key]))
+    return result
+
+
+def _packet_evidence_ids(packet: Mapping[str, Any]) -> set[str]:
+    values = packet.get("evidence_items")
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(item["evidence_id"])
+        for item in values
+        if isinstance(item, Mapping) and isinstance(item.get("evidence_id"), str)
+    }
+
+
+def _verdict_preserves_warnings(
+    verdict: Mapping[str, Any], warning_values: Sequence[str]
+) -> bool:
+    packet_reviewability = verdict.get("packet_reviewability")
+    if isinstance(packet_reviewability, Mapping):
+        preserved = packet_reviewability.get("freshness_warnings")
+        if isinstance(preserved, list) and all(
+            warning in preserved for warning in warning_values
+        ):
+            return True
+    for field in ("uncertainty", "required_maintainer_checks"):
+        if all(_contains_text(verdict.get(field), warning) for warning in warning_values):
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class BacklogReviewVerdictPacketValidator:
+    value: Mapping[str, Any]
+    packet: Mapping[str, Any]
+
+    def validate(self) -> list[str]:
+        errors = validate_backlog_review_verdict(self.value)
+        errors.extend(
+            f"source packet invalid: {error}"
+            for error in validate_synthesis_review_packet(self.packet)
+        )
+        self._validate_packet_identity(errors)
+        self._validate_packet_refs(errors)
+        self._validate_packet_reviewability(errors)
+        return errors
+
+    def _validate_packet_identity(self, errors: list[str]) -> None:
+        packet_digest = self.packet.get("synthesis_review_packet_digest")
+        if self.value.get("source_packet_digest") != packet_digest:
+            errors.append("source_packet_digest does not match packet digest")
+        packet_reviewability = self.value.get("packet_reviewability")
+        if isinstance(packet_reviewability, Mapping):
+            if packet_reviewability.get("source_packet_digest") != packet_digest:
+                errors.append(
+                    "packet_reviewability.source_packet_digest does not match "
+                    "packet digest"
+                )
+        source_artifacts = self.packet.get("source_artifacts")
+        if not isinstance(source_artifacts, Mapping):
+            errors.append("source packet source_artifacts must be an object")
+            return
+        pairs = (
+            ("source_snapshot_digest", "snapshot_digest"),
+            ("source_audit_digest", "audit_digest"),
+            ("source_backlog_synthesis_digest", "backlog_synthesis_digest"),
+        )
+        for verdict_key, packet_key in pairs:
+            if self.value.get(verdict_key) != source_artifacts.get(packet_key):
+                errors.append(
+                    f"{verdict_key} does not match "
+                    f"packet source_artifacts.{packet_key}"
+                )
+            if isinstance(packet_reviewability, Mapping) and (
+                packet_reviewability.get(verdict_key)
+                != source_artifacts.get(packet_key)
+            ):
+                errors.append(
+                    f"packet_reviewability.{verdict_key} does not match "
+                    f"packet source_artifacts.{packet_key}"
+                )
+
+    def _validate_packet_refs(self, errors: list[str]) -> None:
+        evidence_ids = _packet_evidence_ids(self.packet)
+        near_miss_ids = _packet_string_ids(
+            self.packet, key="near_misses", id_key="near_miss_id"
+        )
+        omission_ids = _packet_string_ids(
+            self.packet, key="omissions", id_key="omission_id"
+        )
+        verdicts = self.value.get("verdicts")
+        if not isinstance(verdicts, list):
+            return
+        for index, verdict in enumerate(verdicts):
+            if not isinstance(verdict, Mapping):
+                continue
+            self._validate_refs(
+                errors,
+                verdict,
+                index=index,
+                field="evidence_refs",
+                known=evidence_ids,
+                label="packet evidence_id",
+            )
+            self._validate_refs(
+                errors,
+                verdict,
+                index=index,
+                field="near_miss_refs",
+                known=near_miss_ids,
+                label="packet near_miss_id",
+            )
+            self._validate_refs(
+                errors,
+                verdict,
+                index=index,
+                field="omission_refs",
+                known=omission_ids,
+                label="packet omission_id",
+            )
+
+    def _validate_refs(
+        self,
+        errors: list[str],
+        verdict: Mapping[str, Any],
+        *,
+        index: int,
+        field: str,
+        known: set[str],
+        label: str,
+    ) -> None:
+        refs = verdict.get(field)
+        if not isinstance(refs, list):
+            return
+        for ref in refs:
+            if isinstance(ref, str) and ref not in known:
+                errors.append(
+                    f"verdicts[{index}].{field} contains unknown {label}: {ref}"
+                )
+
+    def _validate_packet_reviewability(self, errors: list[str]) -> None:
+        staleness = self.packet.get("staleness")
+        if not isinstance(staleness, Mapping):
+            errors.append("source packet staleness must be an object")
+            return
+        packet_reviewability = self.value.get("packet_reviewability")
+        if isinstance(packet_reviewability, Mapping):
+            if packet_reviewability.get("freshness_status") != staleness.get(
+                "freshness_status"
+            ):
+                errors.append(
+                    "packet_reviewability.freshness_status does not match "
+                    "packet staleness"
+                )
+            if packet_reviewability.get("packet_stale") != staleness.get("stale"):
+                errors.append(
+                    "packet_reviewability.packet_stale does not match packet staleness"
+                )
+            if packet_reviewability.get("llm_review_allowed") != staleness.get(
+                "llm_review_allowed"
+            ):
+                errors.append(
+                    "packet_reviewability.llm_review_allowed does not match packet "
+                    "staleness"
+                )
+        if staleness.get("stale") is True:
+            errors.append("source packet is hard-stale")
+        if staleness.get("llm_review_allowed") is not True:
+            errors.append("source packet is not LLM-reviewable")
+        warnings = staleness.get("freshness_warnings")
+        warning_values = [item for item in warnings or [] if isinstance(item, str)]
+        if staleness.get("freshness_status") == "warning" and warning_values:
+            if not _verdict_preserves_warnings(self.value, warning_values):
+                errors.append(
+                    "warning-only packet freshness warning is not preserved in verdict"
+                )
+
+
 def build_project_plan(
     snapshot: Mapping[str, Any],
     audit: Mapping[str, Any],
@@ -2854,6 +3493,20 @@ def validate_synthesis_review_packet(
         value,
         allow_stale_offline=allow_stale_offline,
     ).validate()
+
+
+def validate_backlog_review_verdict(value: Mapping[str, Any]) -> list[str]:
+    """Validate the advisory backlog-review-verdict envelope and digest."""
+
+    return BacklogReviewVerdictValidator(value).validate()
+
+
+def validate_backlog_review_verdict_against_packet(
+    value: Mapping[str, Any], packet: Mapping[str, Any]
+) -> list[str]:
+    """Validate a verdict and its exact bounded packet references."""
+
+    return BacklogReviewVerdictPacketValidator(value, packet).validate()
 
 
 def _dependency_is_closed(
