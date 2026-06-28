@@ -1755,3 +1755,64 @@ End of session -- 2026-06-27 orphaned governance review hardening
   refresh.
 
 End of session -- 2026-06-27 issue 96 packet freshness gates
+
+---
+
+## 2026-06-27 -- issue 97 backlog near-miss diagnostics
+
+**What changed**
+- Started `feat/97-near-miss-diagnostics` from updated
+  `donkey-kong-sandbox`.
+- Added deterministic backlog-synthesis `near_misses` and `omissions` arrays,
+  including stable advisory IDs, sorted output, validator coverage, and digest
+  coverage.
+- Preserved backlog diagnostic IDs into synthesis-review packets so later
+  review layers can cite considered-but-not-selected diagnostics.
+- Updated backlog-synthesis and synthesis-review packet schema docs, machine
+  schemas, focused tests, and `CHANGELOG.md`.
+- Follow-up review hardening aligned the backlog-synthesis machine schema's
+  recursive read-only forbidden-shape boundary with the Python validator.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 97 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 97` passed.
+- `python -m pytest -q scripts/triage/test_frontier.py` passed: 67 passed.
+- Follow-up `python -m pytest -q scripts/triage/test_frontier.py` passed:
+  68 passed.
+- `python -m pytest -q scripts/triage/test_triage.py` passed: 79 passed.
+- Follow-up `python -m pytest -q scripts/triage/test_triage.py` passed:
+  79 passed.
+- `python -m py_compile scripts/triage/frontier.py
+  scripts/triage/test_frontier.py` passed.
+- Follow-up `python -m py_compile scripts/triage/test_frontier.py` passed.
+- `python -m json.tool docs/backlog-synthesis-signals-schema-v1.json
+  >/dev/null` passed.
+- `python -m json.tool docs/synthesis-review-packet-schema-v1.json
+  >/dev/null` passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
+  tests 781 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+- Follow-up `bash .codex/bin/action.sh check` passed: Codex tests 93 passed;
+  offline tests 782 passed, 2 skipped, 20 deselected, 1 warning; compatibility
+  schema gate skipped as expected.
+- `bash .codex/bin/action.sh codex-quality --json` passed and refreshed the
+  protected-file receipt.
+- Follow-up `bash .codex/bin/action.sh codex-quality --json` passed and
+  refreshed the protected-file receipt.
+
+**Current state**
+- Work is on branch `feat/97-near-miss-diagnostics`.
+- Draft PR #126 is open against `donkey-kong-sandbox`.
+
+**Next steps**
+- Review PR #126 and address CI or review feedback.
+
+**Be careful**
+- Do not add #95 CLI, #96 freshness, #98 verdict schema, #101 backlog-review
+  skill, or #118 extraction/distribution work to this PR.
+- Keep near misses and omissions advisory, read-only, bounded, and free of full
+  issue bodies or mutation-shaped payloads.
+
+End of session -- 2026-06-27 issue 97 backlog near-miss diagnostics

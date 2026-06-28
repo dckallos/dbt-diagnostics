@@ -101,6 +101,49 @@ def signals_by_type(report: dict, signal_type: str) -> list[dict]:
     ]
 
 
+def backlog_report_digest(report: dict) -> str:
+    unsigned = json.loads(json.dumps(report))
+    unsigned.pop("backlog_synthesis_digest", None)
+    return frontier.sha256_json(unsigned)
+
+
+def near_misses_by_type(report: dict, near_miss_type: str) -> list[dict]:
+    return [
+        near_miss
+        for near_miss in report["near_misses"]
+        if near_miss["near_miss_type"] == near_miss_type
+    ]
+
+
+def test_backlog_synthesis_schema_matches_read_only_forbidden_boundary() -> None:
+    schema = json.loads(
+        (ROOT / "docs" / "backlog-synthesis-signals-schema-v1.json").read_text()
+    )
+
+    forbidden = {
+        tuple(item["required"])
+        for item in schema["$defs"]["forbiddenReadOnlyShape"]["not"]["anyOf"]
+    }
+    expected_single_keys = (
+        {"operations", "body", "state"}
+        | frontier.READ_ONLY_GITHUB_REQUEST_KEYS
+        | frontier.READ_ONLY_COMMENT_KEYS
+        | frontier.READ_ONLY_METADATA_MUTATION_KEYS
+    )
+
+    assert schema["allOf"] == [{"$ref": "#/$defs/safeObject"}]
+    for key in expected_single_keys:
+        assert (key,) in forbidden
+    assert ("issues", "pulls") in forbidden
+    assert ("issues", "pull_requests") in forbidden
+    assert schema["properties"]["near_misses"]["items"]["allOf"] == [
+        {"$ref": "#/$defs/safeObject"}
+    ]
+    assert schema["properties"]["omissions"]["items"]["allOf"] == [
+        {"$ref": "#/$defs/safeObject"}
+    ]
+
+
 def packet_digest(packet: dict) -> str:
     unsigned = json.loads(json.dumps(packet))
     unsigned.pop("synthesis_review_packet_digest", None)
@@ -601,6 +644,62 @@ def test_backlog_synthesis_reports_duplicate_pair_with_evidence() -> None:
     assert duplicates[0]["issue_numbers"] == [1, 2]
     assert duplicates[0]["confidence"] == "high"
     assert any("shared title tokens" in item for item in duplicates[0]["evidence"])
+    assert report["near_misses"] == []
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_reports_duplicate_near_miss_below_threshold() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="feat: deterministic backlog review"),
+    )
+    results = audit(
+        entry(
+            1,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+            parent_epics=[93],
+        ),
+        entry(
+            2,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+            parent_epics=[93],
+        ),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    assert signals_by_type(report, "likely-duplicate") == []
+    near_misses = near_misses_by_type(report, "possible-duplicate")
+    assert near_misses == [
+        {
+            "near_miss_id": (
+                "near-miss-possible-duplicate-001-002-"
+                "title-similarity-below-threshold"
+            ),
+            "near_miss_type": "possible-duplicate",
+            "issue_numbers": [1, 2],
+            "score": 0.5,
+            "reason_not_signaled": (
+                "title similarity below likely-duplicate threshold"
+            ),
+            "shared_evidence": [
+                "shared title tokens: backlog, deterministic",
+                "shared referenced paths: scripts/triage/frontier.py",
+                "shared parent epics: #93",
+                "shared issue kind: feature_enhancement",
+            ],
+            "details": {
+                "reason_category": "title_similarity_below_threshold",
+                "title_similarity": 0.5,
+                "shared_title_tokens": ["backlog", "deterministic"],
+                "shared_paths": ["scripts/triage/frontier.py"],
+                "shared_parent_epics": [93],
+                "shared_issue_kind": "feature_enhancement",
+            },
+        }
+    ]
     assert frontier.validate_backlog_synthesis_report(report) == []
 
 
@@ -617,6 +716,34 @@ def test_backlog_synthesis_avoids_unrelated_duplicate_suggestions() -> None:
     report = frontier.build_backlog_synthesis_report(snap, results)
 
     assert signals_by_type(report, "likely-duplicate") == []
+    assert report["near_misses"] == []
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_does_not_emit_weak_title_near_miss() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="fix: deterministic project ordering"),
+    )
+    results = audit(
+        entry(
+            1,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+            parent_epics=[93],
+        ),
+        entry(
+            2,
+            issue_kind="feature_enhancement",
+            referenced_paths=["scripts/triage/frontier.py"],
+            parent_epics=[93],
+        ),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    assert signals_by_type(report, "likely-duplicate") == []
+    assert report["near_misses"] == []
     assert frontier.validate_backlog_synthesis_report(report) == []
 
 
@@ -636,6 +763,15 @@ def test_backlog_synthesis_reports_split_candidate_marker() -> None:
     assert len(splits) == 1
     assert splits[0]["issue_numbers"] == [1]
     assert any("split marker" in item for item in splits[0]["evidence"])
+    assert "multiple coherent PRs" not in json.dumps(report, sort_keys=True)
+    assert report["omissions"] == [
+        {
+            "omission_id": "omission-no-issue-body-in-signals",
+            "omission_type": "no_issue_body_in_signals",
+            "reason": "read-only signal report excludes full issue body",
+            "details": {"reason_category": "bounded_signal_report"},
+        }
+    ]
     assert frontier.validate_backlog_synthesis_report(report) == []
 
 
@@ -689,6 +825,23 @@ def test_backlog_synthesis_sorts_dependency_inversion_issue_numbers() -> None:
     assert inversions[0]["issue_numbers"] == [10, 20]
     assert inversions[0]["details"]["issue_number"] == 20
     assert inversions[0]["details"]["dependency_issue_number"] == 10
+    assert frontier.validate_backlog_synthesis_report(report) == []
+
+
+def test_backlog_synthesis_does_not_invent_dependency_near_miss() -> None:
+    snap = snapshot(
+        issue(10, title="feat: blocker"),
+        issue(20, title="feat: dependent"),
+    )
+    results = audit(
+        entry(10),
+        entry(20, dependencies=[10]),
+    )
+
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    assert signals_by_type(report, "dependency-inversion") == []
+    assert report["near_misses"] == []
     assert frontier.validate_backlog_synthesis_report(report) == []
 
 
@@ -777,6 +930,15 @@ def test_backlog_synthesis_degrades_without_semantic_evidence() -> None:
     assert disposition["semantic_hypothesis"] is None
     assert disposition["recommended_disposition"] == "implement"
     assert disposition["semantic_evidence_status"] == "unknown"
+    assert report["near_misses"] == []
+    assert report["omissions"] == [
+        {
+            "omission_id": "omission-no-issue-body-in-signals",
+            "omission_type": "no_issue_body_in_signals",
+            "reason": "read-only signal report excludes full issue body",
+            "details": {"reason_category": "bounded_signal_report"},
+        }
+    ]
     assert frontier.validate_backlog_synthesis_report(report) == []
 
 
@@ -817,11 +979,166 @@ def test_backlog_synthesis_is_read_only_and_rejects_mutation_shape(monkeypatch) 
             "details": {"body": "do not ship issue content"},
         }
     ]
+    unsafe["near_misses"] = [
+        {
+            "near_miss_id": (
+                "near-miss-possible-duplicate-001-002-"
+                "title-similarity-below-threshold"
+            ),
+            "near_miss_type": "possible-duplicate",
+            "issue_numbers": [1, 2],
+            "score": 0.6,
+            "reason_not_signaled": (
+                "title similarity below likely-duplicate threshold"
+            ),
+            "shared_evidence": ["unsafe"],
+            "details": {
+                "reason_category": "title_similarity_below_threshold",
+                "state": "closed",
+            },
+        }
+    ]
+    unsafe["omissions"] = [
+        {
+            "omission_id": "omission-no-issue-body-in-signals",
+            "omission_type": "no_issue_body_in_signals",
+            "reason": "read-only signal report excludes full issue body",
+            "details": {"github_request": {"method": "PATCH"}},
+        }
+    ]
 
     errors = frontier.validate_backlog_synthesis_report(unsafe)
     assert "operations key is forbidden" in errors
     assert "safety.github_mutations must be false" in errors
     assert "signals[0].details.body is forbidden" in errors
+    assert "near_misses[0].details.state is forbidden" in errors
+    assert "omissions[0].details.github_request is forbidden" in errors
+
+
+def test_backlog_synthesis_diagnostics_are_sorted_and_deterministic() -> None:
+    snap = snapshot(
+        issue(3, title="feat: deterministic backlog synthesis"),
+        issue(1, title="feat: deterministic backlog review"),
+        issue(2, title="feat: deterministic backlog planning"),
+    )
+    results = audit(
+        entry(3, issue_kind="feature_enhancement", parent_epics=[93]),
+        entry(1, issue_kind="feature_enhancement", parent_epics=[93]),
+        entry(2, issue_kind="feature_enhancement", parent_epics=[93]),
+    )
+
+    left = frontier.build_backlog_synthesis_report(snap, results)
+    right = frontier.build_backlog_synthesis_report(snap, results)
+
+    assert [item["near_miss_id"] for item in left["near_misses"]] == sorted(
+        item["near_miss_id"] for item in left["near_misses"]
+    )
+    assert [item["omission_id"] for item in left["omissions"]] == sorted(
+        item["omission_id"] for item in left["omissions"]
+    )
+    assert json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+    assert frontier.validate_backlog_synthesis_report(left) == []
+
+
+def test_backlog_synthesis_validation_rejects_malformed_diagnostics() -> None:
+    report = frontier.build_backlog_synthesis_report(
+        snapshot(issue(1), issue(2)),
+        audit(entry(1), entry(2)),
+    )
+
+    bad_arrays = json.loads(json.dumps(report))
+    bad_arrays["near_misses"] = {}
+    bad_arrays["omissions"] = {}
+
+    duplicate_ids = json.loads(json.dumps(report))
+    duplicate_ids["near_misses"] = [
+        {
+            "near_miss_id": (
+                "near-miss-possible-duplicate-001-002-"
+                "title-similarity-below-threshold"
+            ),
+            "near_miss_type": "possible-duplicate",
+            "issue_numbers": [1, 2],
+            "score": 0.6,
+            "reason_not_signaled": (
+                "title similarity below likely-duplicate threshold"
+            ),
+            "shared_evidence": ["shared issue kind: feature_enhancement"],
+            "details": {"reason_category": "title_similarity_below_threshold"},
+        },
+        {
+            "near_miss_id": (
+                "near-miss-possible-duplicate-001-002-"
+                "title-similarity-below-threshold"
+            ),
+            "near_miss_type": "possible-duplicate",
+            "issue_numbers": [2, 1],
+            "score": 0.6,
+            "reason_not_signaled": (
+                "title similarity below likely-duplicate threshold"
+            ),
+            "shared_evidence": ["shared issue kind: feature_enhancement"],
+            "details": {"reason_category": "title_similarity_below_threshold"},
+        },
+    ]
+    duplicate_ids["omissions"] = [
+        {
+            "omission_id": "omission-no-issue-body-in-signals",
+            "omission_type": "no_issue_body_in_signals",
+            "reason": "read-only signal report excludes full issue body",
+            "details": {"reason_category": "bounded_signal_report"},
+        },
+        {
+            "omission_id": "omission-no-issue-body-in-signals",
+            "omission_type": "no_issue_body_in_signals",
+            "reason": "read-only signal report excludes full issue body",
+            "details": {"reason_category": "bounded_signal_report"},
+        },
+    ]
+    duplicate_ids["backlog_synthesis_digest"] = backlog_report_digest(duplicate_ids)
+
+    bad_array_errors = frontier.validate_backlog_synthesis_report(bad_arrays)
+    duplicate_errors = frontier.validate_backlog_synthesis_report(duplicate_ids)
+
+    assert "near_misses must be an array" in bad_array_errors
+    assert "omissions must be an array" in bad_array_errors
+    assert "near_misses contains duplicate near_miss_id" in duplicate_errors
+    assert "near_misses[1].issue_numbers must be sorted and unique" in duplicate_errors
+    assert "omissions contains duplicate omission_id" in duplicate_errors
+
+
+def test_backlog_synthesis_digest_changes_when_diagnostics_change() -> None:
+    report = frontier.build_backlog_synthesis_report(
+        snapshot(issue(1), issue(2)),
+        audit(entry(1), entry(2)),
+    )
+
+    changed_near_miss = json.loads(json.dumps(report))
+    changed_near_miss["near_misses"] = [
+        {
+            "near_miss_id": (
+                "near-miss-possible-duplicate-001-002-"
+                "title-similarity-below-threshold"
+            ),
+            "near_miss_type": "possible-duplicate",
+            "issue_numbers": [1, 2],
+            "score": 0.6,
+            "reason_not_signaled": (
+                "title similarity below likely-duplicate threshold"
+            ),
+            "shared_evidence": ["shared issue kind: feature_enhancement"],
+            "details": {"reason_category": "title_similarity_below_threshold"},
+        }
+    ]
+    changed_omission = json.loads(json.dumps(report))
+    changed_omission["omissions"] = []
+
+    assert backlog_report_digest(changed_near_miss) != report[
+        "backlog_synthesis_digest"
+    ]
+    assert backlog_report_digest(changed_omission) != report[
+        "backlog_synthesis_digest"
+    ]
 
 
 def test_synthesis_review_packet_validation_accepts_minimal_packet() -> None:
@@ -868,7 +1185,35 @@ def test_build_synthesis_review_packet_from_valid_sources() -> None:
     assert packet["safety"]["github_api_calls"] is False
     assert packet["safety"]["github_mutations"] is False
     assert "operations" not in packet
-    assert "body" not in json.dumps(packet, sort_keys=True)
+    assert '"body":' not in json.dumps(packet, sort_keys=True)
+
+
+def test_build_synthesis_review_packet_preserves_backlog_diagnostic_ids() -> None:
+    snap = snapshot(
+        issue(1, title="feat: deterministic backlog synthesis"),
+        issue(2, title="feat: deterministic backlog review"),
+    )
+    results = audit(
+        entry(1, issue_kind="feature_enhancement", parent_epics=[93]),
+        entry(2, issue_kind="feature_enhancement", parent_epics=[93]),
+    )
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    packet = frontier.build_synthesis_review_packet(snap, results, report)
+
+    assert frontier.validate_synthesis_review_packet(packet) == []
+    assert [
+        item["near_miss_id"] for item in packet["near_misses"]
+    ] == [
+        "near-miss-possible-duplicate-001-002-"
+        "title-similarity-below-threshold"
+    ]
+    assert "omission-no-issue-body-in-signals" in {
+        item["omission_id"] for item in packet["omissions"]
+    }
+    assert "issue-comments-not-collected" in {
+        item["omission_id"] for item in packet["omissions"]
+    }
 
 
 def test_build_synthesis_review_packet_scope_includes_disposition_only_issues() -> None:

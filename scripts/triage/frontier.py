@@ -98,6 +98,56 @@ SIGNAL_SORT_ORDER = {
     "split-candidate": 40,
     "dependency-inversion": 50,
 }
+LIKELY_DUPLICATE_TITLE_THRESHOLD = 0.8
+DUPLICATE_NEAR_MISS_MIN_TITLE_SCORE = 0.5
+DUPLICATE_NEAR_MISS_TYPE = "possible-duplicate"
+DUPLICATE_NEAR_MISS_REASON_CATEGORY = "title_similarity_below_threshold"
+DUPLICATE_NEAR_MISS_REASON = "title similarity below likely-duplicate threshold"
+BACKLOG_OMISSION_NO_ISSUE_BODY = "no_issue_body_in_signals"
+BACKLOG_OMISSION_REASON_CATEGORY = "bounded_signal_report"
+BACKLOG_OMISSION_REASON = "read-only signal report excludes full issue body"
+READ_ONLY_GITHUB_REQUEST_KEYS = {
+    "github_request",
+    "github_requests",
+    "github_request_payload",
+    "github_request_payloads",
+    "request_payload",
+    "request_payloads",
+    "rest_request",
+    "rest_requests",
+    "graphql_request",
+    "graphql_requests",
+    "mutation_request",
+    "mutation_requests",
+}
+READ_ONLY_COMMENT_KEYS = {
+    "comment",
+    "comments",
+    "issue_comment",
+    "issue_comments",
+    "review_comment",
+    "review_comments",
+    "review_thread",
+    "review_threads",
+}
+READ_ONLY_METADATA_MUTATION_KEYS = {
+    "body_update",
+    "body_updates",
+    "close_request",
+    "close_requests",
+    "label_update",
+    "label_updates",
+    "milestone_update",
+    "milestone_updates",
+    "project_update",
+    "project_updates",
+    "reopen_request",
+    "reopen_requests",
+    "state_update",
+    "state_updates",
+    "title_update",
+    "title_updates",
+}
 
 
 def _priority_label_score(labels: list[str]) -> int:
@@ -484,6 +534,55 @@ class BacklogSynthesisSignal:
 
 
 @dataclass(frozen=True)
+class BacklogSynthesisNearMiss:
+    near_miss_type: str
+    issue_numbers: tuple[int, ...]
+    score: float
+    reason_not_signaled: str
+    shared_evidence: tuple[str, ...]
+    details: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def near_miss_id(self) -> str:
+        reason_category = str(self.details.get("reason_category") or "")
+        return _near_miss_id(
+            self.near_miss_type,
+            self.issue_numbers,
+            reason_category,
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "near_miss_id": self.near_miss_id,
+            "near_miss_type": self.near_miss_type,
+            "issue_numbers": list(self.issue_numbers),
+            "score": self.score,
+            "reason_not_signaled": self.reason_not_signaled,
+            "shared_evidence": list(self.shared_evidence),
+            "details": dict(self.details),
+        }
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisOmission:
+    omission_type: str
+    reason: str
+    details: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def omission_id(self) -> str:
+        return _omission_id(self.omission_type)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "omission_id": self.omission_id,
+            "omission_type": self.omission_type,
+            "reason": self.reason,
+            "details": dict(self.details),
+        }
+
+
+@dataclass(frozen=True)
 class BacklogSynthesisReport:
     repository: str
     generated_at: str
@@ -491,6 +590,8 @@ class BacklogSynthesisReport:
     audit_digest: str
     issue_dispositions: tuple[BacklogIssueDisposition, ...]
     signals: tuple[BacklogSynthesisSignal, ...]
+    near_misses: tuple[BacklogSynthesisNearMiss, ...]
+    omissions: tuple[BacklogSynthesisOmission, ...]
     safety: BacklogSynthesisSafety = BacklogSynthesisSafety.read_only_contract()
     schema_version: int = BACKLOG_SYNTHESIS_SCHEMA_VERSION
 
@@ -505,6 +606,8 @@ class BacklogSynthesisReport:
                 item.to_json() for item in self.issue_dispositions
             ],
             "signals": [signal.to_json() for signal in self.signals],
+            "near_misses": [item.to_json() for item in self.near_misses],
+            "omissions": [item.to_json() for item in self.omissions],
             "safety": self.safety.to_json(),
         }
         report["backlog_synthesis_digest"] = sha256_json(
@@ -589,12 +692,19 @@ class SynthesisReviewPacketEvidenceItem:
 class SynthesisReviewPacketOmission:
     omission_id: str
     reason: str
+    omission_type: str | None = None
+    details: Mapping[str, Any] = field(default_factory=dict)
 
-    def to_json(self) -> dict[str, str]:
-        return {
+    def to_json(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
             "omission_id": self.omission_id,
             "reason": self.reason,
         }
+        if self.omission_type is not None:
+            result["omission_type"] = self.omission_type
+        if self.details:
+            result["details"] = dict(self.details)
+        return result
 
 
 @dataclass(frozen=True)
@@ -1109,6 +1219,160 @@ class BacklogSynthesisSignalShape:
                 context.errors.append(f"{self.path}.details.{forbidden} is forbidden")
 
 
+def _looks_like_github_request(value: Mapping[str, Any]) -> bool:
+    keys = set(value)
+    return (
+        "method" in keys
+        and bool(keys & {"path", "url", "endpoint"})
+        and bool(keys & {"body", "payload", "json", "data"})
+    )
+
+
+def _validate_read_only_forbidden_shape(
+    context: ValidationContext, value: Any, path: str
+) -> None:
+    if isinstance(value, Mapping):
+        if _looks_like_github_request(value):
+            context.errors.append(
+                f"{path} is a forbidden GitHub request payload"
+                if path
+                else "GitHub request payload is forbidden"
+            )
+        if "issues" in value and ("pulls" in value or "pull_requests" in value):
+            context.errors.append(
+                f"{path} is a forbidden full tracker snapshot"
+                if path
+                else "full tracker snapshot shape is forbidden"
+            )
+        for key, item in value.items():
+            item_path = f"{path}.{key}" if path else str(key)
+            if key == "operations":
+                context.errors.append(
+                    "operations key is forbidden"
+                    if not path
+                    else f"{item_path} is forbidden"
+                )
+            if key in READ_ONLY_GITHUB_REQUEST_KEYS:
+                context.errors.append(f"{item_path} is forbidden")
+            if key in READ_ONLY_COMMENT_KEYS:
+                context.errors.append(f"{item_path} is forbidden")
+            if key in READ_ONLY_METADATA_MUTATION_KEYS:
+                context.errors.append(f"{item_path} is forbidden")
+            if key in {"body", "state"}:
+                context.errors.append(f"{item_path} is forbidden")
+            _validate_read_only_forbidden_shape(context, item, item_path)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_read_only_forbidden_shape(context, item, f"{path}[{index}]")
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisNearMissShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"near_misses[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_non_empty_string(
+            self.value.get("near_miss_id"), name=f"{self.path}.near_miss_id"
+        )
+        context.require_non_empty_string(
+            self.value.get("near_miss_type"), name=f"{self.path}.near_miss_type"
+        )
+        context.require_positive_int_list(
+            self.value.get("issue_numbers"), name=f"{self.path}.issue_numbers"
+        )
+        issue_numbers = self.value.get("issue_numbers")
+        if (
+            isinstance(issue_numbers, list)
+            and all(_is_positive_int(item) for item in issue_numbers)
+            and issue_numbers != sorted(set(issue_numbers))
+        ):
+            context.errors.append(f"{self.path}.issue_numbers must be sorted and unique")
+        context.require_non_negative_number(
+            self.value.get("score"), name=f"{self.path}.score"
+        )
+        context.require_non_empty_string(
+            self.value.get("reason_not_signaled"),
+            name=f"{self.path}.reason_not_signaled",
+        )
+        context.require_string_list(
+            self.value.get("shared_evidence"), name=f"{self.path}.shared_evidence"
+        )
+        details = self.value.get("details")
+        if not isinstance(details, Mapping):
+            context.errors.append(f"{self.path}.details must be an object")
+            return
+        context.require_non_empty_string(
+            details.get("reason_category"),
+            name=f"{self.path}.details.reason_category",
+        )
+        self._validate_id(context, details)
+
+    def _validate_id(
+        self, context: ValidationContext, details: Mapping[str, Any]
+    ) -> None:
+        near_miss_type = self.value.get("near_miss_type")
+        issue_numbers = self.value.get("issue_numbers")
+        reason_category = details.get("reason_category")
+        if not (
+            isinstance(near_miss_type, str)
+            and isinstance(reason_category, str)
+            and isinstance(issue_numbers, list)
+            and all(_is_positive_int(item) for item in issue_numbers)
+            and issue_numbers == sorted(set(issue_numbers))
+        ):
+            return
+        expected = _near_miss_id(
+            near_miss_type,
+            tuple(int(item) for item in issue_numbers),
+            reason_category,
+        )
+        if self.value.get("near_miss_id") != expected:
+            context.errors.append(
+                f"{self.path}.near_miss_id must be deterministic ID {expected}"
+            )
+
+
+@dataclass(frozen=True)
+class BacklogSynthesisOmissionShape:
+    index: int
+    value: Mapping[str, Any]
+
+    @property
+    def path(self) -> str:
+        return f"omissions[{self.index}]"
+
+    def validate(self, context: ValidationContext) -> None:
+        context.require_non_empty_string(
+            self.value.get("omission_id"), name=f"{self.path}.omission_id"
+        )
+        context.require_non_empty_string(
+            self.value.get("omission_type"), name=f"{self.path}.omission_type"
+        )
+        context.require_non_empty_string(
+            self.value.get("reason"), name=f"{self.path}.reason"
+        )
+        details = self.value.get("details")
+        if not isinstance(details, Mapping):
+            context.errors.append(f"{self.path}.details must be an object")
+            return
+        context.require_non_empty_string(
+            details.get("reason_category"),
+            name=f"{self.path}.details.reason_category",
+        )
+        omission_type = self.value.get("omission_type")
+        if isinstance(omission_type, str):
+            expected = _omission_id(omission_type)
+            if self.value.get("omission_id") != expected:
+                context.errors.append(
+                    f"{self.path}.omission_id must be deterministic ID {expected}"
+                )
+
+
 @dataclass(frozen=True)
 class BacklogSynthesisReportValidator:
     value: Mapping[str, Any]
@@ -1121,6 +1385,8 @@ class BacklogSynthesisReportValidator:
         "audit_digest",
         "issue_dispositions",
         "signals",
+        "near_misses",
+        "omissions",
         "safety",
         "backlog_synthesis_digest",
     }
@@ -1128,8 +1394,7 @@ class BacklogSynthesisReportValidator:
     def validate(self) -> list[str]:
         context = ValidationContext()
         context.require_keys(self.value, self.REQUIRED_KEYS)
-        if "operations" in self.value:
-            context.errors.append("operations key is forbidden")
+        _validate_read_only_forbidden_shape(context, self.value, "")
         if self.value.get("schema_version") != BACKLOG_SYNTHESIS_SCHEMA_VERSION:
             context.errors.append("unsupported schema_version")
         context.require_repository(self.value.get("repository"))
@@ -1138,6 +1403,8 @@ class BacklogSynthesisReportValidator:
             context.require_digest(self.value.get(key), name=key)
         self._validate_issue_dispositions(context)
         self._validate_signals(context)
+        self._validate_near_misses(context)
+        self._validate_omissions(context)
         self._validate_safety(context)
         actual_digest = sha256_json(_backlog_synthesis_without_digest(self.value))
         if self.value.get("backlog_synthesis_digest") != actual_digest:
@@ -1165,6 +1432,40 @@ class BacklogSynthesisReportValidator:
                 context.errors.append(f"signals[{index}] must be an object")
                 continue
             BacklogSynthesisSignalShape(index, signal).validate(context)
+
+    def _validate_near_misses(self, context: ValidationContext) -> None:
+        near_misses = self.value.get("near_misses")
+        if not isinstance(near_misses, list):
+            context.errors.append("near_misses must be an array")
+            return
+        seen_ids: set[str] = set()
+        for index, near_miss in enumerate(near_misses):
+            if not isinstance(near_miss, Mapping):
+                context.errors.append(f"near_misses[{index}] must be an object")
+                continue
+            raw_id = near_miss.get("near_miss_id")
+            if isinstance(raw_id, str):
+                if raw_id in seen_ids:
+                    context.errors.append("near_misses contains duplicate near_miss_id")
+                seen_ids.add(raw_id)
+            BacklogSynthesisNearMissShape(index, near_miss).validate(context)
+
+    def _validate_omissions(self, context: ValidationContext) -> None:
+        omissions = self.value.get("omissions")
+        if not isinstance(omissions, list):
+            context.errors.append("omissions must be an array")
+            return
+        seen_ids: set[str] = set()
+        for index, omission in enumerate(omissions):
+            if not isinstance(omission, Mapping):
+                context.errors.append(f"omissions[{index}] must be an object")
+                continue
+            raw_id = omission.get("omission_id")
+            if isinstance(raw_id, str):
+                if raw_id in seen_ids:
+                    context.errors.append("omissions contains duplicate omission_id")
+                seen_ids.add(raw_id)
+            BacklogSynthesisOmissionShape(index, omission).validate(context)
 
     def _validate_safety(self, context: ValidationContext) -> None:
         safety = self.value.get("safety")
@@ -1494,53 +1795,11 @@ class SynthesisReviewPacketValidator:
         "safety",
         "synthesis_review_packet_digest",
     }
-    GITHUB_REQUEST_KEYS: ClassVar[set[str]] = {
-        "github_request",
-        "github_requests",
-        "github_request_payload",
-        "github_request_payloads",
-        "request_payload",
-        "request_payloads",
-        "rest_request",
-        "rest_requests",
-        "graphql_request",
-        "graphql_requests",
-        "mutation_request",
-        "mutation_requests",
-    }
-    COMMENT_KEYS: ClassVar[set[str]] = {
-        "comment",
-        "comments",
-        "issue_comment",
-        "issue_comments",
-        "review_comment",
-        "review_comments",
-        "review_thread",
-        "review_threads",
-    }
-    METADATA_MUTATION_KEYS: ClassVar[set[str]] = {
-        "body_update",
-        "body_updates",
-        "close_request",
-        "close_requests",
-        "label_update",
-        "label_updates",
-        "milestone_update",
-        "milestone_updates",
-        "project_update",
-        "project_updates",
-        "reopen_request",
-        "reopen_requests",
-        "state_update",
-        "state_updates",
-        "title_update",
-        "title_updates",
-    }
 
     def validate(self) -> list[str]:
         context = ValidationContext()
         context.require_keys(self.value, self.REQUIRED_KEYS)
-        self._validate_forbidden_shape(context, self.value, "")
+        _validate_read_only_forbidden_shape(context, self.value, "")
         if self.value.get("schema_version") != SYNTHESIS_REVIEW_PACKET_SCHEMA_VERSION:
             context.errors.append("unsupported schema_version")
         context.require_repository(self.value.get("repository"))
@@ -1670,54 +1929,6 @@ class SynthesisReviewPacketValidator:
             context.errors.append(
                 "safety.comments_included must match comments_included"
             )
-
-    def _validate_forbidden_shape(
-        self, context: ValidationContext, value: Any, path: str
-    ) -> None:
-        if isinstance(value, Mapping):
-            if self._looks_like_github_request(value):
-                context.errors.append(
-                    f"{path} is a forbidden GitHub request payload"
-                    if path
-                    else "GitHub request payload is forbidden"
-                )
-            if "issues" in value and (
-                "pulls" in value or "pull_requests" in value
-            ):
-                context.errors.append(
-                    f"{path} is a forbidden full tracker snapshot"
-                    if path
-                    else "full tracker snapshot shape is forbidden"
-                )
-            for key, item in value.items():
-                item_path = f"{path}.{key}" if path else str(key)
-                if key == "operations":
-                    context.errors.append(
-                        "operations key is forbidden"
-                        if not path
-                        else f"{item_path} is forbidden"
-                    )
-                if key in self.GITHUB_REQUEST_KEYS:
-                    context.errors.append(f"{item_path} is forbidden")
-                if key in self.COMMENT_KEYS:
-                    context.errors.append(f"{item_path} is forbidden")
-                if key in self.METADATA_MUTATION_KEYS:
-                    context.errors.append(f"{item_path} is forbidden")
-                if key in {"body", "state"}:
-                    context.errors.append(f"{item_path} is forbidden")
-                self._validate_forbidden_shape(context, item, item_path)
-        elif isinstance(value, list):
-            for index, item in enumerate(value):
-                self._validate_forbidden_shape(context, item, f"{path}[{index}]")
-
-    def _looks_like_github_request(self, value: Mapping[str, Any]) -> bool:
-        keys = set(value)
-        return (
-            "method" in keys
-            and bool(keys & {"path", "url", "endpoint"})
-            and bool(keys & {"body", "payload", "json", "data"})
-        )
-
 
 def build_project_plan(
     snapshot: Mapping[str, Any],
@@ -1853,6 +2064,27 @@ def _jaccard(left: set[str], right: set[str]) -> float:
     return len(left & right) / len(left | right)
 
 
+def _issue_number_id_segment(issue_numbers: Sequence[int]) -> str:
+    return "-".join(f"{number:03d}" for number in issue_numbers)
+
+
+def _near_miss_id(
+    near_miss_type: str,
+    issue_numbers: Sequence[int],
+    reason_category: str,
+) -> str:
+    return (
+        "near-miss-"
+        f"{slugify(near_miss_type)}-"
+        f"{_issue_number_id_segment(issue_numbers)}-"
+        f"{slugify(reason_category)}"
+    )
+
+
+def _omission_id(omission_type: str) -> str:
+    return f"omission-{slugify(omission_type)}"
+
+
 def _claim_path(value: str) -> str | None:
     candidate = value.split(" ", 1)[0].split(":", 1)[0]
     if "/" not in candidate and "." not in candidate:
@@ -1907,12 +2139,13 @@ def _shared_duplicate_evidence(
     return evidence, details
 
 
-def _duplicate_signals(
+def _duplicate_diagnostics(
     entries: Mapping[int, Mapping[str, Any]],
     issues: Mapping[int, Mapping[str, Any]],
     open_issue_numbers: set[int],
-) -> list[BacklogSynthesisSignal]:
+) -> tuple[list[BacklogSynthesisSignal], list[BacklogSynthesisNearMiss]]:
     signals: list[BacklogSynthesisSignal] = []
+    near_misses: list[BacklogSynthesisNearMiss] = []
     numbers = sorted(number for number in entries if number in open_issue_numbers)
     for left_index, left_number in enumerate(numbers):
         for right_number in numbers[left_index + 1 :]:
@@ -1934,13 +2167,31 @@ def _duplicate_signals(
                 key in details
                 for key in ("shared_paths", "shared_parent_epics", "shared_issue_kind")
             )
-            if score < 0.8 or not has_context:
+            if not has_context:
+                continue
+            issue_numbers = (left_number, right_number)
+            if score < LIKELY_DUPLICATE_TITLE_THRESHOLD:
+                if score >= DUPLICATE_NEAR_MISS_MIN_TITLE_SCORE:
+                    near_miss_details = dict(details)
+                    near_miss_details["reason_category"] = (
+                        DUPLICATE_NEAR_MISS_REASON_CATEGORY
+                    )
+                    near_misses.append(
+                        BacklogSynthesisNearMiss(
+                            near_miss_type=DUPLICATE_NEAR_MISS_TYPE,
+                            issue_numbers=issue_numbers,
+                            score=round(score, 3),
+                            reason_not_signaled=DUPLICATE_NEAR_MISS_REASON,
+                            shared_evidence=tuple(evidence),
+                            details=near_miss_details,
+                        )
+                    )
                 continue
             confidence = "high" if score == 1.0 else "medium"
             signals.append(
                 BacklogSynthesisSignal(
                     signal_type="likely-duplicate",
-                    issue_numbers=(left_number, right_number),
+                    issue_numbers=issue_numbers,
                     confidence=confidence,
                     summary=(
                         f"#{left_number} and #{right_number} have highly similar "
@@ -1950,7 +2201,7 @@ def _duplicate_signals(
                     details=details,
                 )
             )
-    return signals
+    return signals, near_misses
 
 
 def _explicit_overlap_signals(
@@ -2118,6 +2369,37 @@ def _sort_signals(
     )
 
 
+def _sort_near_misses(
+    near_misses: list[BacklogSynthesisNearMiss],
+) -> tuple[BacklogSynthesisNearMiss, ...]:
+    return tuple(
+        sorted(
+            near_misses,
+            key=lambda item: (
+                item.near_miss_id,
+                item.issue_numbers,
+                item.reason_not_signaled,
+            ),
+        )
+    )
+
+
+def _backlog_omissions() -> tuple[BacklogSynthesisOmission, ...]:
+    return (
+        BacklogSynthesisOmission(
+            omission_type=BACKLOG_OMISSION_NO_ISSUE_BODY,
+            reason=BACKLOG_OMISSION_REASON,
+            details={"reason_category": BACKLOG_OMISSION_REASON_CATEGORY},
+        ),
+    )
+
+
+def _sort_omissions(
+    omissions: Sequence[BacklogSynthesisOmission],
+) -> tuple[BacklogSynthesisOmission, ...]:
+    return tuple(sorted(omissions, key=lambda item: item.omission_id))
+
+
 def build_backlog_synthesis_report(
     snapshot: Mapping[str, Any], audit: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -2132,9 +2414,14 @@ def build_backlog_synthesis_report(
         if number in issues
     )
     signals: list[BacklogSynthesisSignal] = []
+    near_misses: list[BacklogSynthesisNearMiss] = []
     signals.extend(_semantic_disposition_signals(dispositions))
     signals.extend(_explicit_overlap_signals(entries, open_issue_numbers))
-    signals.extend(_duplicate_signals(entries, issues, open_issue_numbers))
+    duplicate_signals, duplicate_near_misses = _duplicate_diagnostics(
+        entries, issues, open_issue_numbers
+    )
+    signals.extend(duplicate_signals)
+    near_misses.extend(duplicate_near_misses)
     signals.extend(_split_candidate_signals(snapshot, entries, open_issue_numbers))
     signals.extend(_dependency_inversion_signals(snapshot, audit))
     return BacklogSynthesisReport(
@@ -2144,6 +2431,8 @@ def build_backlog_synthesis_report(
         audit_digest=str(audit.get("audit_digest") or ""),
         issue_dispositions=dispositions,
         signals=_sort_signals(signals),
+        near_misses=_sort_near_misses(near_misses),
+        omissions=_sort_omissions(_backlog_omissions()),
     ).to_json()
 
 
@@ -2215,6 +2504,38 @@ def _signal_in_scope(signal: Mapping[str, Any], issue_filter: set[int] | None) -
         _is_positive_int(number) and int(number) in issue_filter
         for number in signal.get("issue_numbers") or []
     )
+
+
+def _near_miss_in_scope(
+    near_miss: Mapping[str, Any], issue_filter: set[int] | None
+) -> bool:
+    if issue_filter is None:
+        return True
+    return any(
+        _is_positive_int(number) and int(number) in issue_filter
+        for number in near_miss.get("issue_numbers") or []
+    )
+
+
+def _copy_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _copy_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_copy_json_value(item) for item in value]
+    return value
+
+
+def _packet_near_misses(
+    backlog_synthesis: Mapping[str, Any], issue_filter: set[int] | None
+) -> tuple[Mapping[str, Any], ...]:
+    items: list[Mapping[str, Any]] = []
+    for near_miss in backlog_synthesis.get("near_misses") or []:
+        if not isinstance(near_miss, Mapping) or not _near_miss_in_scope(
+            near_miss, issue_filter
+        ):
+            continue
+        items.append(_copy_json_value(near_miss))
+    return tuple(items)
 
 
 def _packet_evidence_item(
@@ -2324,6 +2645,30 @@ def _packet_omissions() -> tuple[SynthesisReviewPacketOmission, ...]:
             reason="v1 uses bounded evidence excerpts instead of full tracker text",
         ),
     )
+
+
+def _packet_backlog_omissions(
+    backlog_synthesis: Mapping[str, Any],
+) -> tuple[SynthesisReviewPacketOmission, ...]:
+    omissions: list[SynthesisReviewPacketOmission] = []
+    for omission in backlog_synthesis.get("omissions") or []:
+        if not isinstance(omission, Mapping):
+            continue
+        omission_id = omission.get("omission_id")
+        reason = omission.get("reason")
+        if not (isinstance(omission_id, str) and isinstance(reason, str)):
+            continue
+        omission_type = omission.get("omission_type")
+        details = omission.get("details")
+        omissions.append(
+            SynthesisReviewPacketOmission(
+                omission_id=omission_id,
+                reason=reason,
+                omission_type=omission_type if isinstance(omission_type, str) else None,
+                details=details if isinstance(details, Mapping) else {},
+            )
+        )
+    return tuple(omissions)
 
 
 def _parse_utc_timestamp(value: object, *, name: str) -> datetime:
@@ -2464,6 +2809,10 @@ def build_synthesis_review_packet(
         issue_filter,
         start_index=len(signal_evidence) + 1,
     )
+    packet_near_misses = _packet_near_misses(backlog_synthesis, issue_filter)
+    packet_omissions = _packet_omissions() + _packet_backlog_omissions(
+        backlog_synthesis
+    )
     issue_numbers = _filtered_issue_numbers(backlog_synthesis, issue_filter)
     packet = SynthesisReviewPacket(
         repository=repository_name(snapshot),
@@ -2479,8 +2828,8 @@ def build_synthesis_review_packet(
         ),
         candidate_sets=candidate_sets,
         evidence_items=signal_evidence + disposition_evidence,
-        near_misses=(),
-        omissions=_packet_omissions(),
+        near_misses=packet_near_misses,
+        omissions=packet_omissions,
         comments_included=False,
         comment_evidence_status="not_collected",
         staleness=staleness,
