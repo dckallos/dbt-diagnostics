@@ -84,6 +84,37 @@ Avoid clever code when a simple structure makes the invariant obvious. Prefer a
 few named functions, value objects, and validator methods over one dense
 procedure with implicit state.
 
+## Replacement and cleanup discipline
+
+Code growth is acceptable when it buys a real boundary, contract, test, or
+safety property. It is not acceptable to keep obsolete internal paths merely
+because adding a new path is easier.
+
+Default order for implementation work:
+
+1. Find the existing function, class, module, command, fixture, schema, or docs
+   section that owns the behavior.
+2. Prefer modifying, extracting, or replacing that owner before adding a
+   parallel owner.
+3. If a new owner is necessary, route callers deliberately and name the old owner
+   it supersedes, if any.
+4. Delete or simplify superseded internal code, fixtures, tests, and docs in the
+   same PR when compatibility allows.
+5. If old and new paths must coexist, document the compatibility reason, the
+   cutover boundary, duplicate-execution prevention, and the future removal
+   trigger.
+6. Do not delete public JSON fields, stable CLI behavior, migration paths,
+   rollback paths, or regression tests solely to improve diff statistics.
+
+Final review for nontrivial PRs must include:
+
+- `git diff --stat` or equivalent add/delete counts;
+- production-code vs tests/docs/schema/fixture split;
+- existing functions/classes/modules modified;
+- new functions/classes/modules added;
+- obsolete paths removed or explicitly retained;
+- reason deletion was unsafe when additions are much larger than deletions.
+
 ## Layered architecture
 
 Default to this dependency direction for nontrivial changes:

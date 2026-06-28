@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Add synthesis review packet freshness gates
+
+- I added source freshness metadata to `synthesis-review-packet`, separating the
+  24-hour warning threshold from the 168-hour default hard LLM-review threshold.
+- Warning-only packets remain reviewable with explicit freshness warnings, while
+  hard-stale packets are rejected by default and can only be emitted as
+  non-reviewable offline inspection artifacts with
+  `--allow-stale-offline-packet`.
+- I kept serialized bytes as the deterministic hard packet budget and token
+  estimates as advisory telemetry.
+
 ### Harden governance review boundaries
 
 - I made GitHub mutation command classification shared between policy

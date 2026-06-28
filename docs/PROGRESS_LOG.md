@@ -1696,3 +1696,62 @@ End of session -- 2026-06-27 issue 95 synthesis review packet CLI
   read-only artifact GitHub mutation checks.
 
 End of session -- 2026-06-27 orphaned governance review hardening
+
+---
+
+## 2026-06-27 -- issue 96 packet freshness gates
+
+**What changed**
+- Started `feat/96-packet-freshness-gates` from updated
+  `donkey-kong-sandbox`.
+- The live #96 issue initially failed the contract gate. I drafted and
+  validated a local standardized body, then applied that exact body after
+  explicit maintainer authorization. The live contract now passes.
+- Added `synthesis-review-packet` freshness metadata with separate 24-hour
+  warning and 168-hour default hard-review thresholds.
+- Added hard-stale behavior: stale packets fail by default and can be emitted
+  only as non-reviewable offline inspection artifacts with
+  `--allow-stale-offline-packet`.
+- Added deterministic budget warning metadata while keeping serialized bytes as
+  the hard gate and estimated tokens advisory.
+- Updated packet schema docs, machine schema properties, tests, and
+  `CHANGELOG.md`.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  warning for the absent compatibility schema cache.
+- `bash .codex/bin/action.sh context 96 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 96` passed after the
+  maintainer-authorized issue body update.
+- `python -m pytest -q scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 139 passed.
+- `python -m pytest -q scripts/triage/test_contract.py
+  scripts/triage/test_readiness.py scripts/triage/test_frontier.py
+  scripts/triage/test_triage.py` passed: 232 passed.
+- `python -m compileall -q scripts .codex/scripts .codex/hooks .codex/tests`
+  passed.
+- `python -m py_compile scripts/triage/frontier.py scripts/triage/triage.py
+  scripts/triage/test_frontier.py scripts/triage/test_triage.py` passed.
+- `python -m json.tool docs/synthesis-review-packet-schema-v1.json
+  >/dev/null` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed and refreshed the
+  protected-file receipt.
+- `bash .codex/bin/action.sh check` passed: Codex tests 93 passed; offline
+  tests 774 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+
+**Current state**
+- Work is on branch `feat/96-packet-freshness-gates`.
+- No PR has been opened yet.
+
+**Next steps**
+- Review the branch diff, then commit/push/open a PR when requested.
+
+**Be careful**
+- Do not add #97+ verdict, recall, retrieval, backlog-review skill, or #118
+  extraction/distribution work to this PR.
+- Keep warning-only packets reviewable and hard-stale packets non-reviewable.
+- Keep local packet inputs offline; old inputs require regeneration, not live
+  refresh.
+
+End of session -- 2026-06-27 issue 96 packet freshness gates

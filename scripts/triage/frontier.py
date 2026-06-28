@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Any, ClassVar, Mapping, Sequence
 
 from scripts.triage.common import (
+    TriageError,
     canonical_json,
     issue_map,
     pull_map,
@@ -30,7 +32,11 @@ SYNTHESIS_REVIEW_TARGET_BYTES = 204800
 SYNTHESIS_REVIEW_HARD_BYTES = 307200
 SYNTHESIS_REVIEW_TARGET_TOKENS = 50000
 SYNTHESIS_REVIEW_HARD_TOKENS = 75000
+SYNTHESIS_REVIEW_WARNING_AGE_HOURS = 24
 DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS = 168
+SOURCE_AGE_EXCEEDS_WARNING_AGE = "source_age_exceeds_warning_age"
+SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES = "serialized_bytes_exceeds_target_bytes"
+ESTIMATED_TOKENS_EXCEEDS_TARGET = "estimated_tokens_exceeds_target"
 
 AUDIT_STATE_PRIORITY = {
     "unsafe": 1200,
@@ -595,6 +601,7 @@ class SynthesisReviewPacketOmission:
 class SynthesisReviewPacketBudget:
     serialized_bytes: int = 0
     estimated_tokens: int = 0
+    budget_warnings: tuple[str, ...] = ()
     target_bytes: int = SYNTHESIS_REVIEW_TARGET_BYTES
     hard_bytes: int = SYNTHESIS_REVIEW_HARD_BYTES
     target_estimated_tokens: int = SYNTHESIS_REVIEW_TARGET_TOKENS
@@ -610,18 +617,31 @@ class SynthesisReviewPacketBudget:
             "target_estimated_tokens": self.target_estimated_tokens,
             "hard_estimated_tokens": self.hard_estimated_tokens,
             "token_estimate_method": self.token_estimate_method,
+            "budget_warnings": list(self.budget_warnings),
         }
 
 
 @dataclass(frozen=True)
 class SynthesisReviewPacketStaleness:
+    source_generated_at: str
+    evaluated_at: str
+    source_age_hours: float
+    warning_age_hours: int
     max_age_hours: int
+    freshness_status: str
+    freshness_warnings: tuple[str, ...] = ()
     stale: bool = False
     llm_review_allowed: bool = True
 
     def to_json(self) -> dict[str, Any]:
         return {
+            "source_generated_at": self.source_generated_at,
+            "evaluated_at": self.evaluated_at,
+            "source_age_hours": self.source_age_hours,
+            "warning_age_hours": self.warning_age_hours,
             "max_age_hours": self.max_age_hours,
+            "freshness_status": self.freshness_status,
+            "freshness_warnings": list(self.freshness_warnings),
             "stale": self.stale,
             "llm_review_allowed": self.llm_review_allowed,
         }
@@ -766,6 +786,10 @@ class ValidationContext:
     def require_non_negative_int(self, value: Any, *, name: str) -> None:
         if not _is_non_negative_int(value):
             self.errors.append(f"{name} must be a non-negative integer")
+
+    def require_non_negative_number(self, value: Any, *, name: str) -> None:
+        if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+            self.errors.append(f"{name} must be a non-negative number")
 
     def require_int_or_null(self, value: Any, *, name: str) -> None:
         if value is not None and (
@@ -1188,6 +1212,10 @@ class SynthesisReviewPacketBudgetShape:
         "target_estimated_tokens": 50000,
         "hard_estimated_tokens": 75000,
     }
+    KNOWN_WARNINGS: ClassVar[set[str]] = {
+        SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES,
+        ESTIMATED_TOKENS_EXCEEDS_TARGET,
+    }
 
     def validate(self, context: ValidationContext) -> None:
         context.require_keys(self.value, self.REQUIRED_KEYS)
@@ -1207,6 +1235,16 @@ class SynthesisReviewPacketBudgetShape:
             self.value.get("token_estimate_method"),
             name="budget.token_estimate_method",
         )
+        if "budget_warnings" in self.value:
+            context.require_string_list(
+                self.value.get("budget_warnings"),
+                name="budget.budget_warnings",
+            )
+            for warning in self.value.get("budget_warnings") or []:
+                if warning not in self.KNOWN_WARNINGS:
+                    context.errors.append(
+                        f"budget.budget_warnings contains unknown warning: {warning}"
+                    )
         serialized = self.value.get("serialized_bytes")
         hard = self.value.get("hard_bytes")
         if _is_non_negative_int(serialized) and _is_non_negative_int(hard):
@@ -1214,28 +1252,117 @@ class SynthesisReviewPacketBudgetShape:
                 context.errors.append(
                     "budget.serialized_bytes must not exceed budget.hard_bytes"
                 )
+        self._validate_warning_consistency(context)
+
+    def _validate_warning_consistency(self, context: ValidationContext) -> None:
+        warnings = self.value.get("budget_warnings")
+        warning_values = warnings if isinstance(warnings, list) else []
+        serialized = self.value.get("serialized_bytes")
+        target_bytes = self.value.get("target_bytes")
+        estimated_tokens = self.value.get("estimated_tokens")
+        target_tokens = self.value.get("target_estimated_tokens")
+        if _is_non_negative_int(serialized) and _is_non_negative_int(target_bytes):
+            has_warning = SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES in warning_values
+            exceeds_target = int(serialized) > int(target_bytes)
+            if exceeds_target and not has_warning:
+                context.errors.append(
+                    "budget.budget_warnings must include "
+                    "serialized_bytes_exceeds_target_bytes when serialized_bytes "
+                    "exceeds target_bytes"
+                )
+            if has_warning and not exceeds_target:
+                context.errors.append(
+                    "budget.budget_warnings must not include "
+                    "serialized_bytes_exceeds_target_bytes unless serialized_bytes "
+                    "exceeds target_bytes"
+                )
+        if _is_non_negative_int(estimated_tokens) and _is_non_negative_int(
+            target_tokens
+        ):
+            has_warning = ESTIMATED_TOKENS_EXCEEDS_TARGET in warning_values
+            exceeds_target = int(estimated_tokens) > int(target_tokens)
+            if exceeds_target and not has_warning:
+                context.errors.append(
+                    "budget.budget_warnings must include "
+                    "estimated_tokens_exceeds_target when estimated_tokens exceeds "
+                    "target_estimated_tokens"
+                )
+            if has_warning and not exceeds_target:
+                context.errors.append(
+                    "budget.budget_warnings must not include "
+                    "estimated_tokens_exceeds_target unless estimated_tokens exceeds "
+                    "target_estimated_tokens"
+                )
 
 
 @dataclass(frozen=True)
 class SynthesisReviewPacketStalenessShape:
     value: Mapping[str, Any]
+    allow_stale_offline: bool = False
 
     REQUIRED_KEYS: ClassVar[set[str]] = {
+        "source_generated_at",
+        "evaluated_at",
+        "source_age_hours",
+        "warning_age_hours",
         "max_age_hours",
+        "freshness_status",
+        "freshness_warnings",
         "stale",
         "llm_review_allowed",
     }
+    FRESHNESS_STATUSES: ClassVar[set[str]] = {"fresh", "warning", "stale"}
 
     def validate(self, context: ValidationContext) -> None:
         context.require_keys(self.value, self.REQUIRED_KEYS)
+        context.require_string(
+            self.value.get("source_generated_at"),
+            name="staleness.source_generated_at",
+        )
+        context.require_string(
+            self.value.get("evaluated_at"), name="staleness.evaluated_at"
+        )
+        context.require_non_negative_number(
+            self.value.get("source_age_hours"),
+            name="staleness.source_age_hours",
+        )
+        context.require_positive_int(
+            self.value.get("warning_age_hours"),
+            name="staleness.warning_age_hours",
+        )
         context.require_positive_int(
             self.value.get("max_age_hours"), name="staleness.max_age_hours"
+        )
+        status = self.value.get("freshness_status")
+        if status not in self.FRESHNESS_STATUSES:
+            context.errors.append(
+                "staleness.freshness_status must be fresh, warning, or stale"
+            )
+        context.require_string_list(
+            self.value.get("freshness_warnings"),
+            name="staleness.freshness_warnings",
         )
         context.require_bool(self.value.get("stale"), name="staleness.stale")
         context.require_bool(
             self.value.get("llm_review_allowed"),
             name="staleness.llm_review_allowed",
         )
+        warning_age = self.value.get("warning_age_hours")
+        max_age = self.value.get("max_age_hours")
+        if _is_positive_int(warning_age) and _is_positive_int(max_age):
+            if int(warning_age) > int(max_age):
+                context.errors.append(
+                    "staleness.warning_age_hours must not exceed "
+                    "staleness.max_age_hours"
+                )
+        if (
+            self.value.get("stale") is False
+            and self.value.get("llm_review_allowed") is not True
+        ):
+            context.errors.append(
+                "staleness.llm_review_allowed must be true when "
+                "staleness.stale is false"
+            )
         if (
             self.value.get("stale") is True
             and self.value.get("llm_review_allowed") is not False
@@ -1244,9 +1371,82 @@ class SynthesisReviewPacketStalenessShape:
                 "staleness.llm_review_allowed must be false when "
                 "staleness.stale is true"
             )
-        if self.value.get("stale") is True:
+        self._validate_status_consistency(context)
+        if self.value.get("stale") is True and not self.allow_stale_offline:
             context.errors.append(
                 "staleness.stale packets are not valid for LLM review"
+            )
+
+    def _validate_status_consistency(self, context: ValidationContext) -> None:
+        status = self.value.get("freshness_status")
+        if status not in self.FRESHNESS_STATUSES:
+            return
+        warnings = self.value.get("freshness_warnings")
+        warning_values = warnings if isinstance(warnings, list) else []
+        source_age = self.value.get("source_age_hours")
+        warning_age = self.value.get("warning_age_hours")
+        max_age = self.value.get("max_age_hours")
+        stale = self.value.get("stale")
+        review_allowed = self.value.get("llm_review_allowed")
+
+        if status == "fresh":
+            if stale is not False:
+                context.errors.append("staleness.fresh freshness must not be stale")
+            if review_allowed is not True:
+                context.errors.append(
+                    "staleness.fresh freshness must allow LLM review"
+                )
+            if warning_values:
+                context.errors.append(
+                    "staleness.fresh freshness must not include warnings"
+                )
+        elif status == "warning":
+            if stale is not False:
+                context.errors.append("staleness.warning freshness must not be stale")
+            if review_allowed is not True:
+                context.errors.append(
+                    "staleness.warning freshness must allow LLM review"
+                )
+            if SOURCE_AGE_EXCEEDS_WARNING_AGE not in warning_values:
+                context.errors.append(
+                    "staleness.warning freshness must include "
+                    "source_age_exceeds_warning_age"
+                )
+        elif status == "stale":
+            if stale is not True:
+                context.errors.append("staleness.stale freshness must be stale")
+            if review_allowed is not False:
+                context.errors.append(
+                    "staleness.stale freshness must not allow LLM review"
+                )
+            if SOURCE_AGE_EXCEEDS_WARNING_AGE not in warning_values:
+                context.errors.append(
+                    "staleness.stale freshness must include "
+                    "source_age_exceeds_warning_age"
+                )
+
+        if not (
+            isinstance(source_age, int | float)
+            and not isinstance(source_age, bool)
+            and _is_positive_int(warning_age)
+            and _is_positive_int(max_age)
+        ):
+            return
+        if status == "fresh" and float(source_age) > int(warning_age):
+            context.errors.append(
+                "staleness.fresh source_age_hours must not exceed warning_age_hours"
+            )
+        if status == "warning" and (
+            float(source_age) <= int(warning_age)
+            or float(source_age) > int(max_age)
+        ):
+            context.errors.append(
+                "staleness.warning source_age_hours must be greater than "
+                "warning_age_hours and no greater than max_age_hours"
+            )
+        if status == "stale" and float(source_age) <= int(max_age):
+            context.errors.append(
+                "staleness.stale source_age_hours must exceed max_age_hours"
             )
 
 
@@ -1274,6 +1474,7 @@ class SynthesisReviewPacketSafetyShape:
 @dataclass(frozen=True)
 class SynthesisReviewPacketValidator:
     value: Mapping[str, Any]
+    allow_stale_offline: bool = False
 
     REQUIRED_KEYS: ClassVar[set[str]] = {
         "schema_version",
@@ -1430,9 +1631,19 @@ class SynthesisReviewPacketValidator:
         if not isinstance(budget, Mapping):
             return
         hard = budget.get("hard_bytes")
+        target = budget.get("target_bytes")
+        warnings = budget.get("budget_warnings")
+        warning_values = warnings if isinstance(warnings, list) else []
         if not _is_non_negative_int(hard):
             return
         serialized_bytes = len(canonical_json(self.value).encode("utf-8"))
+        if _is_non_negative_int(target) and serialized_bytes > int(target):
+            if SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES not in warning_values:
+                context.errors.append(
+                    "budget.budget_warnings must include "
+                    "serialized_bytes_exceeds_target_bytes when actual serialized "
+                    "bytes exceed target_bytes"
+                )
         if serialized_bytes > int(hard):
             context.errors.append(
                 "synthesis_review_packet serialized bytes must not exceed "
@@ -1444,7 +1655,10 @@ class SynthesisReviewPacketValidator:
         if not isinstance(staleness, Mapping):
             context.errors.append("staleness must be an object")
             return
-        SynthesisReviewPacketStalenessShape(staleness).validate(context)
+        SynthesisReviewPacketStalenessShape(
+            staleness,
+            allow_stale_offline=self.allow_stale_offline,
+        ).validate(context)
 
     def _validate_safety(self, context: ValidationContext) -> None:
         safety = self.value.get("safety")
@@ -2112,6 +2326,78 @@ def _packet_omissions() -> tuple[SynthesisReviewPacketOmission, ...]:
     )
 
 
+def _parse_utc_timestamp(value: object, *, name: str) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise TriageError(f"{name} must be a non-empty ISO-8601 timestamp")
+    text = value.strip()
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise TriageError(f"{name} must be a valid ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None:
+        raise TriageError(f"{name} must include a timezone")
+    return parsed.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def _format_utc_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def build_synthesis_review_packet_staleness(
+    *,
+    source_generated_at: object,
+    evaluated_at: object,
+    max_age_hours: int,
+    warning_age_hours: int = SYNTHESIS_REVIEW_WARNING_AGE_HOURS,
+) -> SynthesisReviewPacketStaleness:
+    if not _is_positive_int(warning_age_hours):
+        raise TriageError("warning_age_hours must be a positive integer")
+    if not _is_positive_int(max_age_hours):
+        raise TriageError("max_age_hours must be a positive integer")
+    if warning_age_hours > max_age_hours:
+        raise TriageError("warning_age_hours must not exceed max_age_hours")
+
+    source_dt = _parse_utc_timestamp(
+        source_generated_at, name="source_generated_at"
+    )
+    evaluated_dt = _parse_utc_timestamp(evaluated_at, name="evaluated_at")
+    source_age_seconds = int((evaluated_dt - source_dt).total_seconds())
+    if source_age_seconds < 0:
+        raise TriageError("source_generated_at must not be after evaluated_at")
+
+    warning_age_seconds = warning_age_hours * 3600
+    max_age_seconds = max_age_hours * 3600
+    source_age_hours = round(source_age_seconds / 3600, 6)
+    if source_age_seconds <= warning_age_seconds:
+        status = "fresh"
+        warnings: tuple[str, ...] = ()
+        stale = False
+        review_allowed = True
+    elif source_age_seconds <= max_age_seconds:
+        status = "warning"
+        warnings = (SOURCE_AGE_EXCEEDS_WARNING_AGE,)
+        stale = False
+        review_allowed = True
+    else:
+        status = "stale"
+        warnings = (SOURCE_AGE_EXCEEDS_WARNING_AGE,)
+        stale = True
+        review_allowed = False
+
+    return SynthesisReviewPacketStaleness(
+        source_generated_at=_format_utc_timestamp(source_dt),
+        evaluated_at=_format_utc_timestamp(evaluated_dt),
+        source_age_hours=source_age_hours,
+        warning_age_hours=warning_age_hours,
+        max_age_hours=max_age_hours,
+        freshness_status=status,
+        freshness_warnings=warnings,
+        stale=stale,
+        llm_review_allowed=review_allowed,
+    )
+
+
 def _finalize_synthesis_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
     result = dict(packet)
     result["synthesis_review_packet_digest"] = "0" * 64
@@ -2120,6 +2406,14 @@ def _finalize_synthesis_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
         budget = dict(result["budget"])
         budget["serialized_bytes"] = serialized_bytes
         budget["estimated_tokens"] = (serialized_bytes + 3) // 4
+        budget_warnings: list[str] = []
+        if serialized_bytes > int(budget.get("target_bytes") or 0):
+            budget_warnings.append(SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES)
+        if int(budget["estimated_tokens"]) > int(
+            budget.get("target_estimated_tokens") or 0
+        ):
+            budget_warnings.append(ESTIMATED_TOKENS_EXCEEDS_TARGET)
+        budget["budget_warnings"] = budget_warnings
         result["budget"] = budget
         digest = sha256_json(_synthesis_review_packet_without_digest(result))
         if (
@@ -2139,9 +2433,16 @@ def build_synthesis_review_packet(
     project_plan: Mapping[str, Any] | None = None,
     issue_filter: set[int] | None = None,
     max_age_hours: int = DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS,
+    evaluated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a bounded read-only synthesis review packet from local artifacts."""
 
+    source_generated_at = str(snapshot.get("generated_at") or "")
+    staleness = build_synthesis_review_packet_staleness(
+        source_generated_at=source_generated_at,
+        evaluated_at=evaluated_at or source_generated_at,
+        max_age_hours=max_age_hours,
+    )
     source_artifacts = SynthesisReviewPacketSourceArtifacts(
         snapshot_digest=snapshot_digest(snapshot),
         audit_digest=str(audit.get("audit_digest") or ""),
@@ -2166,8 +2467,8 @@ def build_synthesis_review_packet(
     issue_numbers = _filtered_issue_numbers(backlog_synthesis, issue_filter)
     packet = SynthesisReviewPacket(
         repository=repository_name(snapshot),
-        generated_at=str(snapshot.get("generated_at") or "unknown"),
-        source_generated_at=str(snapshot.get("generated_at") or "unknown"),
+        generated_at=staleness.evaluated_at,
+        source_generated_at=staleness.source_generated_at,
         source_artifacts=source_artifacts,
         packet_scope=SynthesisReviewPacketScope(
             review_task="backlog-synthesis",
@@ -2182,7 +2483,7 @@ def build_synthesis_review_packet(
         omissions=_packet_omissions(),
         comments_included=False,
         comment_evidence_status="not_collected",
-        staleness=SynthesisReviewPacketStaleness(max_age_hours=max_age_hours),
+        staleness=staleness,
     )
     return packet.to_json()
 
@@ -2193,10 +2494,17 @@ def validate_backlog_synthesis_report(value: Mapping[str, Any]) -> list[str]:
     return BacklogSynthesisReportValidator(value).validate()
 
 
-def validate_synthesis_review_packet(value: Mapping[str, Any]) -> list[str]:
+def validate_synthesis_review_packet(
+    value: Mapping[str, Any],
+    *,
+    allow_stale_offline: bool = False,
+) -> list[str]:
     """Validate the read-only synthesis-review-packet envelope and digest."""
 
-    return SynthesisReviewPacketValidator(value).validate()
+    return SynthesisReviewPacketValidator(
+        value,
+        allow_stale_offline=allow_stale_offline,
+    ).validate()
 
 
 def _dependency_is_closed(

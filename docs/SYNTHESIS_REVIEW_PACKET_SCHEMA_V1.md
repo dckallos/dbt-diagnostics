@@ -96,23 +96,60 @@ Token estimates are advisory telemetry:
 - `target_estimated_tokens`: `50000`
 - `hard_estimated_tokens`: `75000`
 - `token_estimate_method`
+- `budget_warnings`
 
 The validator checks token estimate types and constants, but it does not reject
 a packet merely because `estimated_tokens` exceeds the token target or hard
 token estimate. Packet creation must use the serialized byte budget as the
 deterministic gate.
 
+`budget_warnings` is an array of advisory warning codes. It is empty when the
+packet is at or below target byte and token thresholds. It includes
+`serialized_bytes_exceeds_target_bytes` when the final serialized packet exceeds
+the target byte size but remains at or below the hard byte size. It includes
+`estimated_tokens_exceeds_target` when the deterministic token estimate exceeds
+the target token count. These warnings do not make a packet invalid by
+themselves.
+
 ## Staleness
 
 `staleness` includes:
 
+- `source_generated_at`
+- `evaluated_at`
+- `source_age_hours`
+- `warning_age_hours`
 - `max_age_hours`
+- `freshness_status`
+- `freshness_warnings`
 - `stale`
 - `llm_review_allowed`
 
+The default freshness warning age is 24 hours. Crossing that threshold does not
+make the packet stale. A warning-only packet uses:
+
+- `freshness_status: warning`
+- `freshness_warnings: ["source_age_exceeds_warning_age"]`
+- `stale: false`
+- `llm_review_allowed: true`
+
+The default hard LLM-review age is 168 hours. `--max-age-hours` may make that
+hard threshold stricter, but it may not make packets older than 168 hours
+reviewable by default.
+
+Boundary semantics are inclusive at the threshold: exactly 24 hours is still
+`fresh`, exactly 168 hours is still reviewable with warning metadata, and only a
+source age greater than the hard threshold is `stale`.
+
 A stale packet is not LLM-reviewable. If `stale` is `true`,
-`llm_review_allowed` must be `false`. A verdict produced from a stale packet is
-invalid.
+`llm_review_allowed` must be `false`. The default
+`validate_synthesis_review_packet()` path rejects stale packets for LLM review.
+The CLI can emit a hard-stale packet only for offline inspection when
+`--allow-stale-offline-packet` is supplied, and that artifact must remain
+`llm_review_allowed: false`.
+
+Source digest or lineage mismatch is not represented as a successful packet
+status. Packet creation fails before output when source artifacts disagree.
 
 ## Safety
 
@@ -145,7 +182,9 @@ Use bounded evidence excerpts with `evidence_id` instead of embedding
 
 `scripts/triage/frontier.py:validate_synthesis_review_packet` validates
 required keys, field types, source digests, comments status, budget constants,
-self-reported and actual byte-budget enforcement, staleness reviewability,
-read-only safety fields, recursive forbidden mutation shape, and the canonical
-packet digest. It returns an empty list for a valid packet and a list of
-specific error strings for malformed or stale packets.
+self-reported and actual byte-budget enforcement, freshness/staleness
+consistency, read-only safety fields, recursive forbidden mutation shape, and
+the canonical packet digest. It returns an empty list for a valid reviewable
+packet and a list of specific error strings for malformed or stale packets.
+Its explicit offline-stale mode permits only non-reviewable stale inspection
+artifacts.

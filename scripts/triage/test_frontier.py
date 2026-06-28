@@ -142,9 +142,16 @@ def synthesis_review_packet(**overrides: object) -> dict:
             "target_estimated_tokens": 50000,
             "hard_estimated_tokens": 75000,
             "token_estimate_method": "bytes_div_4",
+            "budget_warnings": ["estimated_tokens_exceeds_target"],
         },
         "staleness": {
-            "max_age_hours": 24,
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-24T01:00:00Z",
+            "source_age_hours": 1.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "fresh",
+            "freshness_warnings": [],
             "stale": False,
             "llm_review_allowed": True,
         },
@@ -958,6 +965,17 @@ def test_synthesis_review_packet_machine_schema_documents_required_surface() -> 
         schema["properties"]["comment_evidence_status"]["const"] == "not_collected"
     )
     assert schema["properties"]["budget"]["properties"]["hard_bytes"]["const"] == 307200
+    assert "serialized_bytes_exceeds_target_bytes" in schema["properties"]["budget"][
+        "properties"
+    ]["budget_warnings"]["items"]["enum"]
+    staleness = schema["properties"]["staleness"]["properties"]
+    assert staleness["warning_age_hours"]["const"] == 24
+    assert staleness["max_age_hours"]["type"] == "integer"
+    assert set(staleness["freshness_status"]["enum"]) == {
+        "fresh",
+        "warning",
+        "stale",
+    }
     assert (
         schema["properties"]["safety"]["properties"]["github_mutations"]["const"]
         is False
@@ -1050,16 +1068,78 @@ def test_synthesis_review_packet_validation_allows_empty_collections() -> None:
 def test_synthesis_review_packet_validation_enforces_byte_not_token_limit() -> None:
     advisory_tokens = synthesis_review_packet()
     advisory_tokens["budget"]["estimated_tokens"] = 1000000
+    advisory_tokens["budget"]["budget_warnings"] = [
+        "estimated_tokens_exceeds_target"
+    ]
     advisory_tokens = sign_packet(advisory_tokens)
 
     too_large = synthesis_review_packet()
     too_large["budget"]["serialized_bytes"] = 307201
+    too_large["budget"]["budget_warnings"] = [
+        "serialized_bytes_exceeds_target_bytes",
+        "estimated_tokens_exceeds_target",
+    ]
     too_large = sign_packet(too_large)
 
     assert frontier.validate_synthesis_review_packet(advisory_tokens) == []
     assert (
         "budget.serialized_bytes must not exceed budget.hard_bytes"
         in frontier.validate_synthesis_review_packet(too_large)
+    )
+
+
+def test_synthesis_review_packet_budget_warnings_are_consistent() -> None:
+    under_target = frontier.build_synthesis_review_packet(
+        snapshot(issue(96)),
+        audit(entry(96)),
+        frontier.build_backlog_synthesis_report(
+            snapshot(issue(96)),
+            audit(entry(96)),
+        ),
+    )
+    over_target = synthesis_review_packet()
+    over_target["budget"]["serialized_bytes"] = 204801
+    over_target["budget"]["estimated_tokens"] = 50001
+    over_target["budget"]["budget_warnings"] = [
+        "serialized_bytes_exceeds_target_bytes",
+        "estimated_tokens_exceeds_target",
+    ]
+    over_target = sign_packet(over_target)
+    missing_warning = synthesis_review_packet()
+    missing_warning["budget"]["serialized_bytes"] = 204801
+    missing_warning["budget"]["budget_warnings"] = [
+        "estimated_tokens_exceeds_target"
+    ]
+    missing_warning = sign_packet(missing_warning)
+
+    assert under_target["budget"]["budget_warnings"] == []
+    assert frontier.validate_synthesis_review_packet(over_target) == []
+    assert (
+        "budget.budget_warnings must include "
+        "serialized_bytes_exceeds_target_bytes when serialized_bytes exceeds "
+        "target_bytes"
+        in frontier.validate_synthesis_review_packet(missing_warning)
+    )
+
+
+def test_synthesis_review_packet_actual_size_requires_target_warning() -> None:
+    packet = synthesis_review_packet()
+    packet["budget"]["serialized_bytes"] = 1024
+    packet["budget"]["estimated_tokens"] = 1
+    packet["budget"]["budget_warnings"] = []
+    packet["evidence_items"] = [
+        {
+            "evidence_id": "large-but-under-hard",
+            "excerpt": "x" * 205000,
+        }
+    ]
+    packet = sign_packet(packet)
+
+    assert (
+        "budget.budget_warnings must include "
+        "serialized_bytes_exceeds_target_bytes when actual serialized bytes exceed "
+        "target_bytes"
+        in frontier.validate_synthesis_review_packet(packet)
     )
 
 
@@ -1083,14 +1163,26 @@ def test_synthesis_review_packet_validation_enforces_actual_serialized_bytes() -
 def test_synthesis_review_packet_validation_rejects_stale_packets() -> None:
     not_reviewable = synthesis_review_packet(
         staleness={
-            "max_age_hours": 24,
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-07-02T00:00:01Z",
+            "source_age_hours": 192.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "stale",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
             "stale": True,
             "llm_review_allowed": False,
         }
     )
     packet = synthesis_review_packet(
         staleness={
-            "max_age_hours": 24,
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-07-02T00:00:01Z",
+            "source_age_hours": 192.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "stale",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
             "stale": True,
             "llm_review_allowed": True,
         }
@@ -1104,6 +1196,170 @@ def test_synthesis_review_packet_validation_rejects_stale_packets() -> None:
         "staleness.stale packets are not valid for LLM review"
         in frontier.validate_synthesis_review_packet(not_reviewable)
     )
+    assert frontier.validate_synthesis_review_packet(
+        not_reviewable, allow_stale_offline=True
+    ) == []
+
+
+def test_synthesis_review_packet_builds_freshness_statuses_with_boundaries() -> None:
+    snap = snapshot(issue(96))
+    results = audit(entry(96))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    under_warning = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-06-24T23:59:59Z",
+    )
+    exact_warning = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-06-25T00:00:00Z",
+    )
+    warning = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-06-25T00:00:01Z",
+    )
+    exact_hard = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-07-01T00:00:00Z",
+    )
+    stale = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-07-01T00:00:01Z",
+    )
+
+    assert under_warning["staleness"]["freshness_status"] == "fresh"
+    assert under_warning["staleness"]["freshness_warnings"] == []
+    assert exact_warning["staleness"]["freshness_status"] == "fresh"
+    assert warning["staleness"]["freshness_status"] == "warning"
+    assert warning["staleness"]["stale"] is False
+    assert warning["staleness"]["llm_review_allowed"] is True
+    assert warning["staleness"]["freshness_warnings"] == [
+        "source_age_exceeds_warning_age"
+    ]
+    assert frontier.validate_synthesis_review_packet(warning) == []
+    assert exact_hard["staleness"]["freshness_status"] == "warning"
+    assert exact_hard["staleness"]["stale"] is False
+    assert exact_hard["staleness"]["llm_review_allowed"] is True
+    assert stale["staleness"]["freshness_status"] == "stale"
+    assert stale["staleness"]["stale"] is True
+    assert stale["staleness"]["llm_review_allowed"] is False
+    assert (
+        "staleness.stale packets are not valid for LLM review"
+        in frontier.validate_synthesis_review_packet(stale)
+    )
+    assert frontier.validate_synthesis_review_packet(
+        stale, allow_stale_offline=True
+    ) == []
+
+
+def test_synthesis_review_packet_stricter_max_age_can_make_warning_stale() -> None:
+    snap = snapshot(issue(96))
+    results = audit(entry(96))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    packet = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        max_age_hours=48,
+        evaluated_at="2026-06-27T00:00:01Z",
+    )
+
+    assert round(packet["staleness"]["source_age_hours"], 3) == 72.0
+    assert packet["staleness"]["freshness_status"] == "stale"
+    assert packet["staleness"]["stale"] is True
+    assert packet["staleness"]["llm_review_allowed"] is False
+
+
+def test_synthesis_review_packet_validation_rejects_staleness_contradictions() -> None:
+    warning_stale = synthesis_review_packet(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-25T01:00:00Z",
+            "source_age_hours": 25.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "warning",
+            "freshness_warnings": [],
+            "stale": True,
+            "llm_review_allowed": False,
+        }
+    )
+    bad_thresholds = synthesis_review_packet(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-25T01:00:00Z",
+            "source_age_hours": 25.0,
+            "warning_age_hours": 169,
+            "max_age_hours": 168,
+            "freshness_status": "warning",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": False,
+            "llm_review_allowed": True,
+        }
+    )
+    unknown_status = synthesis_review_packet(
+        staleness={
+            "source_generated_at": "2026-06-24T00:00:00Z",
+            "evaluated_at": "2026-06-25T01:00:00Z",
+            "source_age_hours": 25.0,
+            "warning_age_hours": 24,
+            "max_age_hours": 168,
+            "freshness_status": "invalid_lineage",
+            "freshness_warnings": ["source_age_exceeds_warning_age"],
+            "stale": False,
+            "llm_review_allowed": True,
+        }
+    )
+    missing_age = synthesis_review_packet()
+    missing_age["staleness"].pop("source_age_hours")
+    missing_age = sign_packet(missing_age)
+
+    warning_errors = frontier.validate_synthesis_review_packet(warning_stale)
+    threshold_errors = frontier.validate_synthesis_review_packet(bad_thresholds)
+    status_errors = frontier.validate_synthesis_review_packet(unknown_status)
+    missing_errors = frontier.validate_synthesis_review_packet(missing_age)
+
+    assert "staleness.warning freshness must not be stale" in warning_errors
+    assert (
+        "staleness.warning_age_hours must not exceed staleness.max_age_hours"
+        in threshold_errors
+    )
+    assert "staleness.freshness_status must be fresh, warning, or stale" in status_errors
+    assert "missing keys: source_age_hours" in missing_errors
+
+
+def test_synthesis_review_packet_digest_changes_with_freshness_metadata() -> None:
+    snap = snapshot(issue(96))
+    results = audit(entry(96))
+    report = frontier.build_backlog_synthesis_report(snap, results)
+
+    fresh = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-06-25T00:00:00Z",
+    )
+    warning = frontier.build_synthesis_review_packet(
+        snap,
+        results,
+        report,
+        evaluated_at="2026-06-25T00:00:01Z",
+    )
+
+    assert fresh["synthesis_review_packet_digest"] != warning[
+        "synthesis_review_packet_digest"
+    ]
 
 
 def test_synthesis_review_packet_rejects_nested_read_only_forbidden_shapes() -> None:
