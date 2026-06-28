@@ -2111,3 +2111,65 @@ End of session -- 2026-06-28 issue 101 backlog-review skill
   GitHub write path.
 
 End of session -- 2026-06-28 issue 102 bounded LLM governance workflow docs
+
+---
+
+## 2026-06-28 -- issue 103 retrieval governance spike
+
+**What changed**
+- Started `spike/103-retrieval-governance` from updated
+  `donkey-kong-sandbox` after the maintainer applied the standardized #103
+  issue body.
+- Added an offline experimental retrieval-governance harness under
+  `scripts/triage/experiments/` that builds bounded local artifacts through
+  existing frontier functions and scores deterministic token-overlap retrieval
+  queries.
+- Added focused tests proving #99 recall-label coverage, #103 distractor and
+  guardrail cases, deterministic scoring, false-negative/noise accounting,
+  corpus exclusions, no production `triage.py` command, and research-only
+  changelog wording.
+- Added `docs/RETRIEVAL_GOVERNANCE_SPIKE.md` with the measured results,
+  closed-issue gap audit, recommendation to add more fixture/evaluation work
+  first, draft-only future retrieval considerations, and hard guardrails.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 2 expected
+  warnings before branching.
+- `bash .codex/bin/action.sh context 103 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 103` passed with the
+  existing missing-type-label warning.
+- Verified #94 through #102 are closed with merged-PR evidence into
+  `donkey-kong-sandbox`, #103 remains open, #118/#120/#121 remain downstream,
+  and #199 does not resolve as an issue or PR.
+- `python scripts/triage/experiments/retrieval_governance_spike.py --json`
+  passed.
+- `python -m pytest -q scripts/triage/test_retrieval_governance_spike.py`
+  passed: 7 passed.
+- `python -m pytest -q scripts/triage/test_frontier.py scripts/triage/test_triage.py`
+  passed: 176 passed.
+- `python -m py_compile scripts/triage/experiments/retrieval_governance_spike.py scripts/triage/test_retrieval_governance_spike.py`
+  passed.
+- The three schema JSON parse checks passed.
+- `bash .codex/bin/action.sh check` passed: Codex tests 106 passed; offline
+  tests 818 passed, 2 skipped, 20 deselected, 1 warning; compatibility schema
+  gate skipped as expected.
+- `bash .codex/bin/action.sh codex-quality --json` passed.
+
+**Current state**
+- Work is local on branch `spike/103-retrieval-governance`.
+- The spike recommends `add more fixture/evaluation work first`.
+- No production retrieval command, stable schema, validator, CLI behavior,
+  skill behavior, GitHub/comment retrieval, LLM call, apply integration, or
+  #118/#120/#121 extraction/distribution work changed.
+
+**Next steps**
+- Review the spike report and harness, then commit, push, and open a PR to
+  `donkey-kong-sandbox` with `Closes #103` if the measured recommendation is
+  acceptable.
+
+**Be careful**
+- Keep this PR research/evaluation only. Do not expand it into production
+  retrieval, comments collection, operator workflow docs, reusable extraction,
+  package/plugin publication, GitHub mutation, or apply integration.
+
+End of session -- 2026-06-28 issue 103 retrieval governance spike
