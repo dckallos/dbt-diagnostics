@@ -1979,11 +1979,15 @@ End of session -- 2026-06-27 issue 99 bounded review recall fixtures
 
 **Current state**
 - Work is on branch `feat/100-packet-verdict-validation`.
-- No PR has been opened yet.
+- Draft PR #129 is open against `donkey-kong-sandbox`.
+- The original feature commit was already present on the protected remote
+  `donkey-kong-sandbox` ref before the PR was opened. The approved
+  non-fast-forward restore to `7ac5669` was attempted, but GitHub branch
+  protection rejected it because changes must be made through a pull request.
 
 **Next steps**
-- Review the diff, then commit and open the implementation PR against
-  `donkey-kong-sandbox` with exactly one `Closes #100` line.
+- Review PR #129, including the base-state note in the PR body, and decide
+  whether the protected base ref needs maintainer-side repair.
 
 **Be careful**
 - Do not add #101 backlog-review skill work, LLM calls, retrieval/indexing,
