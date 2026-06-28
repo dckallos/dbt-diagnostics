@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Retrieval governance spike
+
+- I added a local research/evaluation harness and spike report for evaluating
+  retrieval as supplemental bounded-governance evidence.
+- The spike uses deterministic offline token-overlap scoring over bounded
+  backlog-synthesis and synthesis-review-packet artifacts, records false
+  negatives and noisy retrieval cases, and recommends more fixture/evaluation
+  work before implementing retrieval.
+- This adds no production retrieval command, no stable schema, no validator,
+  no skill behavior change, no GitHub mutation, and no apply integration.
+
 ### Document bounded LLM governance workflow
 
 - I documented the full bounded LLM backlog-review operator workflow from
