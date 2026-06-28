@@ -1910,11 +1910,11 @@ End of session -- 2026-06-27 issue 98 backlog review verdict schema
   gate skipped as expected.
 
 **Current state**
-- Work is local on branch `feat/99-bounded-review-recall-fixtures`.
-- No PR has been opened yet.
+- Work is on branch `feat/99-bounded-review-recall-fixtures`.
+- Draft PR #128 is open against `donkey-kong-sandbox`.
 
 **Next steps**
-- Review the local diff, then commit, push, and open a PR when requested.
+- Review PR #128 and address CI or review feedback.
 
 **Be careful**
 - Do not add #100 validation CLI/gate, #101 backlog-review skill, or #118
