@@ -1849,11 +1849,10 @@ End of session -- 2026-06-27 issue 97 backlog near-miss diagnostics
 
 **Current state**
 - Work is on branch `feat/98-backlog-review-verdict-schema`.
-- No PR has been opened yet.
+- Draft PR #127 is open against `donkey-kong-sandbox`.
 
 **Next steps**
-- Review the branch diff, refresh the Codex quality receipt, then commit, push,
-  and open a PR when requested.
+- Review PR #127 and address CI or review feedback.
 
 **Be careful**
 - Do not add #100 validation CLI/gate, #101 backlog-review skill, or #118
