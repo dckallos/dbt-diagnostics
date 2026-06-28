@@ -81,9 +81,21 @@ def test_issue_governance_documents_diagnostic_id_flow() -> None:
     assert "backlog-synthesis.omissions[].omission_id" in text
     assert "synthesis-review-packet.omissions[].omission_id" in text
     assert "backlog-review-verdict.verdicts[].omission_refs[]" in text
+    assert "when copied into the packet" in plain
+    assert "including packet-level omissions" in plain
+    assert "issue-comments-not-collected" in text
+    assert "full-issue-bodies-not-embedded" in text
+    assert (
+        "each backlog-review-verdict.verdicts[].omission_refs[] entry must cite "
+        "an exact synthesis-review-packet.omissions[].omission_id value"
+    ) in plain
     assert "refs are exact packet-provided strings" in plain
     assert "model must not invent or recompute diagnostic ids" in plain
     assert "diagnostic refs do not authorize writes" in plain
+    assert "do not authorize fetching comments" in plain
+    assert (
+        "embedding full issue bodies, retrieval, github writes, or apply operations"
+    ) in plain
 
 
 def test_codex_onboarding_points_to_bounded_review_docs() -> None:

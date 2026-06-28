@@ -572,9 +572,11 @@ GitHub implicitly.
 
 The serialized byte budget is the hard deterministic packet gate. Token
 estimates are advisory telemetry. Issue comments are omitted in v1, and full
-issue bodies are not embedded in the default bounded review flow. Omissions are
-explicit local artifact evidence, not permission to fetch unbounded context
-automatically.
+issue bodies are not embedded in the default bounded review flow. Packet
+omissions include copied `backlog-synthesis.omissions[]` entries and
+packet-level omissions such as `issue-comments-not-collected` and
+`full-issue-bodies-not-embedded`. Omissions are explicit local artifact
+evidence, not permission to fetch unbounded context automatically.
 
 Diagnostic IDs flow through the artifacts unchanged:
 
@@ -583,14 +585,21 @@ backlog-synthesis.near_misses[].near_miss_id
   -> synthesis-review-packet.near_misses[].near_miss_id
   -> backlog-review-verdict.verdicts[].near_miss_refs[]
 
-backlog-synthesis.omissions[].omission_id
+backlog-synthesis.omissions[].omission_id, when copied into the packet
   -> synthesis-review-packet.omissions[].omission_id
+  -> backlog-review-verdict.verdicts[].omission_refs[]
+
+synthesis-review-packet.omissions[].omission_id, including packet-level omissions
   -> backlog-review-verdict.verdicts[].omission_refs[]
 ```
 
-The refs are exact packet-provided strings, not model-generated guesses. The
-model must not invent or recompute diagnostic IDs. Diagnostic refs do not
-authorize writes, do not embed full issue bodies, and do not replace
+The refs are exact packet-provided strings, not model-generated guesses. Each
+`backlog-review-verdict.verdicts[].omission_refs[]` entry must cite an exact
+`synthesis-review-packet.omissions[].omission_id` value, whether that omission
+came from backlog synthesis or from the packet builder. The model must not
+invent or recompute diagnostic IDs. Diagnostic refs do not authorize writes.
+Omission refs do not authorize fetching comments, embedding full issue bodies,
+retrieval, GitHub writes, or apply operations, and do not replace
 freshness/staleness or integrated validation gates.
 
 Schema details live in:

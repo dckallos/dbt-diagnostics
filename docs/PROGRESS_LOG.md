@@ -2060,10 +2060,17 @@ End of session -- 2026-06-28 issue 101 backlog-review skill
 - Updated #102 with the maintainer-approved contract body, then started
   `feat/102-bounded-llm-governance-docs` from updated
   `donkey-kong-sandbox`.
+- Opened draft PR #131 from
+  `feat/102-bounded-llm-governance-docs` into `donkey-kong-sandbox` with
+  `Closes #102`.
 - Expanded `docs/ISSUE_GOVERNANCE.md` with the bounded LLM backlog-review
   operator workflow from snapshot and audit through backlog synthesis,
   optional project plan, synthesis review packet, `$backlog-review`, verdict
   validation, maintainer decision, and optional future approved/manual action.
+- Clarified that packet omission refs cite exact packet
+  `omissions[].omission_id` values, including packet-level omissions for
+  omitted comments and full issue bodies, not only copied backlog-synthesis
+  omissions.
 - Added short onboarding pointers in `.codex/README.md` and
   `docs/CODEX_GETTING_STARTED.md`, a concise `CHANGELOG.md` entry, and a
   static Codex docs test for workflow, freshness, diagnostic refs, and
@@ -2089,13 +2096,14 @@ End of session -- 2026-06-28 issue 101 backlog-review skill
 
 **Current state**
 - Work is on branch `feat/102-bounded-llm-governance-docs`.
+- Draft PR #131 is open against `donkey-kong-sandbox`.
 - No production code, CLI behavior, schemas, validators, skill semantics,
   retrieval, LLM invocation, GitHub mutation, apply integration, or #118
   extraction/distribution work changed.
 
 **Next steps**
-- Review the docs wording and static test, then commit, push, and open a PR to
-  `donkey-kong-sandbox` with `Closes #102`.
+- Review PR #131, especially the bounded-review omission-ref wording and static
+  docs assertions.
 
 **Be careful**
 - Keep this PR docs/static-test only. Do not expand it into reusable extraction,
