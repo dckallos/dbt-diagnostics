@@ -1792,10 +1792,10 @@ End of session -- 2026-06-27 issue 96 packet freshness gates
 
 **Current state**
 - Work is on branch `feat/97-near-miss-diagnostics`.
-- No PR has been opened yet.
+- Draft PR #126 is open against `donkey-kong-sandbox`.
 
 **Next steps**
-- Review the branch diff, then commit/push/open a PR when requested.
+- Review PR #126 and address CI or review feedback.
 
 **Be careful**
 - Do not add #95 CLI, #96 freshness, #98 verdict schema, #101 backlog-review
