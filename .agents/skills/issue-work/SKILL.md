@@ -23,11 +23,10 @@ Input: exactly one GitHub issue number.
    modify GitHub tracker text. Present the final `proposed-body.md` for
    maintainer-applied review, then stop. Resume only after the live issue
    changes outside issue-work and the contract audit accepts the live issue.
-   Escalate
-   instead of implementing when `issue-governance` stops for a disposition other
-   than `keep`, for a section that cannot be grounded, or when the maintainer
-   does not approve the exact body. Never implement against a non-conformant
-   spec, and never loosen the contract to pass this gate.
+   Escalate instead of implementing when `issue-governance` stops for a
+   disposition other than `keep`, for a section that cannot be grounded, or when
+   the maintainer does not approve the exact body. Never implement against a
+   non-conformant spec, and never loosen the contract to pass this gate.
 
 3. Treat the live, standardized issue as the current task specification.
 
@@ -41,55 +40,173 @@ Input: exactly one GitHub issue number.
 
 5. Do not read every open issue or preload the whole repository.
 
-6. Before editing, print:
-   - acceptance criteria;
-   - non-goals;
-   - blockers;
-   - intended files;
-   - intended tests;
-   - existing code paths/helpers/modules to reuse or replace;
-   - possible obsolete paths, fixtures, docs, or tests to delete if the
-     implementation supersedes them.
+6. Before editing, print the acceptance criteria, non-goals, blockers,
+   intended files, intended tests, existing code paths/helpers/modules to reuse
+   or replace, possible obsolete paths, fixtures, docs, or tests to delete if
+   the implementation supersedes them, and this risk contract:
 
-7. Stop without editing if:
+   ```markdown
+   Risk contract:
+   - issue:
+   - parent/dependencies:
+   - blocker/dependency state:
+   - change class:
+   - protected surfaces expected:
+   - stable artifacts/contracts touched:
+   - read-only/write-boundary risk:
+   - existing owners to modify:
+   - likely obsolete paths to remove or simplify:
+   - required focused tests:
+   - required gates:
+   - stop conditions:
+   - remaining uncertainty:
+   ```
+
+   The risk contract must cover the issue number, parent epic, direct
+   dependencies and blockers, change class, expected protected files/surfaces,
+   stable JSON artifacts or public contracts touched, read-only/write-boundary
+   risk, required focused tests/checks, required local gates, existing code
+   paths/helpers/modules/fixtures/docs to reuse, replace, simplify, or delete,
+   likely obsolete paths to remove, stop conditions, and remaining uncertainty.
+
+7. If implementation discovers any of these after editing starts, pause and
+   refresh the risk contract before continuing:
+   - new protected surface;
+   - stable artifact or schema/doc/validator contract;
+   - public CLI or JSON contract;
+   - new dependency or package;
+   - broader issue scope;
+   - new writer/mutation risk;
+   - unresolved blocker or maintainer decision;
+   - contradiction between live issue text and current source.
+
+8. Classify protected surfaces from
+   `scripts/triage/policy.toml [governance.paths].protected_surfaces`
+   (`governance.paths.protected_surfaces`), not in a hard-coded skill list.
+   Current examples include:
+   - `.agents/skills/**`
+   - `.codex/agent-regression-cases-v1.json`
+   - `.codex/agent-regression/**`
+   - `.codex/artifact-contracts-v1.json`
+   - `.codex/bin/**`
+   - `.codex/scripts/**`
+   - `.codex/hooks/**`
+   - `.codex/hooks.json`
+   - `scripts/triage/**`
+   - `docs/*SCHEMA*.md`
+   - `docs/*schema*.json`
+   - `docs/ISSUE_GOVERNANCE.md`
+   - `AGENTS.md`
+   - `.github/workflows/**`
+
+   Policy is authoritative. Treat this list as orientation only.
+
+9. Stop without editing if:
    - a dependency is open;
    - a required decision is unresolved;
    - the issue contradicts the current source;
-   - the work cannot fit one coherent PR.
+   - the work cannot fit one coherent PR;
+   - implementation discovers broader scope that cannot be handled by a
+     refreshed risk contract;
+   - the issue would require GitHub mutation or an executable writer path.
 
    If implementation would benefit from a package that is not already installed,
    ask the user whether they approve installing it and adding it to
    `requirements.txt` before editing dependency files or relying on the package.
 
-8. Add or update a failing test first where practical.
+10. Add or update a failing test first where practical.
 
-Implement only the issue scope. Prefer modifying or replacing the existing
-owner of behavior before adding a parallel owner. Before final tests, do one
-cleanup pass for obsolete internal branches, helpers, fixtures, docs, and
-redundant tests made unnecessary by the change.
+11. Implement only the issue scope. Prefer modifying or replacing the existing
+    owner of behavior before adding a parallel owner. Before final tests, do one
+    cleanup pass for obsolete internal branches, helpers, fixtures, docs, and
+    redundant tests made unnecessary by the change.
 
-10. Run:
+12. If intended or actual changes touch configured protected surfaces, run this
+    before final handoff:
+
+    ```bash
+    bash .codex/bin/action.sh codex-quality --json
+    ```
+
+    `codex-quality --path` is allowed only for deliberate scoped or targeted
+    receipt coverage. Do not claim targeted `--path` output as full-repo
+    semantic coverage.
+
+13. Run:
     - focused tests;
     - `bash .codex/bin/action.sh check`;
     - any issue-specific verification.
 
-11. Report:
+14. When `codex-quality` is required, report:
+    - receipt path, normally `output/codex/quality-receipt.json`;
+    - whether the receipt JSON was readable;
+    - whether `quality_receipt_digest` validated;
+    - `generated_at`;
+    - `passed`;
+    - check names and statuses for `governance-boundary`,
+      `artifact-contracts`, and `agent-regression`;
+    - any findings or failed check summaries;
+    - `freshness_bound_protected_paths`;
+    - `semantically_checked_protected_paths`;
+    - receipt limitations and omissions;
+    - whether the receipt was generated after the protected changes it is meant
+      to cover.
+
+15. Report protected-change evidence precisely:
+    - a clean worktree is not proof that committed protected changes were not
+      made;
+    - the local Stop hook path is based on local changed paths/worktree status
+      unless explicit changed paths are supplied;
+    - final handoff must name the protected-change evidence source: worktree
+      status, branch/base diff, both, or not available;
+    - if branch/base diff was not checked, report that limitation;
+    - if committed protected changes are not covered by the local Stop hook
+      path, say so instead of treating a clean worktree as proof;
+    - if only worktree status was used, say "worktree status only" and do not
+      claim committed protected-file coverage.
+
+16. Report:
     - changed files;
     - diffstat: additions, deletions, and add/delete ratio;
     - production-code vs tests/docs/schema/fixture split;
     - existing functions/classes/modules modified vs new ones added;
     - cleanup/deletion ledger, including paths removed or simplified;
+    - obsolete paths removed or simplified;
     - parallel paths intentionally retained and the compatibility reason;
     - why no deletion was safe, when applicable;
+    - whether likely obsolete paths identified in the risk contract were
+      removed, simplified, or intentionally retained;
     - tests and exact results;
     - acceptance criteria satisfied;
     - remaining uncertainty;
     - suggested review focus.
 
-12. Do not push, merge, or mutate GitHub metadata unless the current task
+17. Preserve the write boundary:
+    - no GitHub metadata mutation;
+    - issue-work never edits issue bodies;
+    - nonconformant issue updates remain maintainer-applied review artifacts
+      outside issue-work;
+    - no executable issue-body writer flow;
+    - no labels/milestones/Project moves/workflow dispatches/PR merges;
+    - no `triage.py apply --execute` guidance from issue-work;
+    - write payloads for issue body/title/state remain forbidden;
+    - no apply operation generation.
+
+18. Explicit non-goals for issue-work:
+    - No GitHub mutation.
+    - No issue-body writer.
+    - No new hook behavior.
+    - No new `codex-quality` check.
+    - No production diagnostic runtime change.
+    - No #110 `codex-review-packet` implementation.
+    - No #111 `$codex-review` implementation.
+    - No #133 wiring `$codex-review` into `$issue-work`.
+    - No #118/#120/#121 extraction/distribution.
+
+19. Do not push, merge, or mutate GitHub metadata unless the current task
     explicitly authorizes it.
 
-13. Do not use `Refs #<issue>` or `Issue: #<issue>` as the only issue link for
+20. Do not use `Refs #<issue>` or `Issue: #<issue>` as the only issue link for
     an implementation PR. When the current task explicitly authorizes pushing
     and creating a PR, compose the exact PR body with a standalone
     `Closes #<issue>` line before validation or test details. Keep close

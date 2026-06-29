@@ -2365,3 +2365,57 @@ End of session -- 2026-06-29 issue 108 artifact-contract checker
   #112, #118, #120, #121, #133, or retrieval implementation.
 
 End of session -- 2026-06-29 issue 109 agent-regression suite
+
+---
+
+## 2026-06-29 -- issue 112 issue-work risk contracts
+
+**What changed**
+- Started `docs/112-issue-work-risk-contracts` from updated
+  `donkey-kong-sandbox` after live preflight confirmed #112 is open and
+  conformant, #109/PR #142, #108/PR #141, and #107/PR #140 are merged,
+  #105/#106/#93/#103 are closed, #134 remains open, and #110/#111/#133 plus
+  #118/#120/#121 remain separate follow-up work.
+- Hardened `.agents/skills/issue-work/SKILL.md` so `$issue-work` now requires a
+  pre-edit risk contract, risk-contract refresh on discovered scope or boundary
+  changes, policy-owned protected-surface classification, protected-change
+  `codex-quality --json` gating, detailed receipt reporting, and explicit
+  worktree-status versus branch/base-diff limitation reporting.
+- Preserved the no-mutation/no issue-body-writer boundary, PR `Closes #<issue>`
+  discipline, package-approval stop condition, and cleanup/deletion ledger.
+- Added `.codex/tests/test_issue_work_skill.py` as the dedicated static-test
+  owner for the issue-work skill invariants and updated `CHANGELOG.md`.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  compatibility-cache warning.
+- `bash .codex/bin/action.sh context 112 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 112` passed with the
+  existing non-blocking type-label warning.
+- Focused suites passed:
+  `.codex/tests/test_issue_work_skill.py`, `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_environment.py`, `.codex/tests/test_task_context.py`,
+  `.codex/tests/test_agent_regression.py`, and
+  `.codex/tests/test_artifact_contracts.py`.
+- `python -m py_compile .codex/tests/test_issue_work_skill.py`,
+  `bash .codex/bin/action.sh codex-quality --json`, `git diff --check`, and
+  `bash .codex/bin/action.sh check` passed.
+
+**Current state**
+- Work is local on branch `docs/112-issue-work-risk-contracts`.
+- No PR has been opened yet.
+- No GitHub mutation, issue-body writer flow, hook implementation, new checker,
+  public command, production diagnostic runtime change, #110/#111/#133
+  implementation, or #118/#120/#121 extraction/distribution work was added.
+
+**Next steps**
+- Do a final diff review, rerun `codex-quality --json` if protected files
+  change, then commit, push, and open a PR to `donkey-kong-sandbox` with
+  `Closes #112` when PR publication is approved.
+
+**Be careful**
+- Keep this PR scoped to the issue-work skill/docs/static-test hardening. Do
+  not expand it into branch/base diff tooling, hooks, codex-review packet/skill
+  work, reusable extraction/distribution, or any writer path.
+
+End of session -- 2026-06-29 issue 112 issue-work risk contracts
