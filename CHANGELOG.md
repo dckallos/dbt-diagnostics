@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Harden issue-work risk contracts
+
+- I added a required pre-edit risk contract to `$issue-work`, including
+  protected-surface expectations, write-boundary risk, existing owners, likely
+  obsolete paths, focused tests, gates, stop conditions, and uncertainty.
+- I required protected-surface changes to run `codex-quality --json` before
+  final handoff and report receipt digest, generated timestamp,
+  freshness-bound paths, semantically checked paths, check statuses, findings,
+  limitations, and omissions.
+- I clarified that clean worktree status is not proof of branch/base
+  protected-change coverage and preserved the no-mutation/no issue-body writer
+  boundary.
+
 ### Add Codex agent-regression suite
 
 - I added a manifest-driven `agent-regression` codex-quality check with local
