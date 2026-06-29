@@ -17,6 +17,7 @@ from scripts.triage import repo_config
 
 ROOT = Path(__file__).resolve().parents[2]
 WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
+_OMIT = object()
 
 
 def _load_codex_script(name: str):
@@ -74,6 +75,7 @@ def _receipt(
     semantic_paths: list[str] | None = None,
     passed: bool = True,
     digest_valid: bool = True,
+    generated_at: object = "2026-06-29T00:00:00Z",
 ) -> dict[str, Any]:
     quality = _load_codex_script("codex_quality")
     checks = [
@@ -87,13 +89,14 @@ def _receipt(
     ]
     value: dict[str, Any] = {
         "schema_version": 1,
-        "generated_at": "2026-06-29T00:00:00Z",
         "tool": "codex-quality",
         "passed": passed,
         "freshness_bound_protected_paths": protected_paths or [],
         "semantically_checked_protected_paths": semantic_paths or [],
         "checks": checks,
     }
+    if generated_at is not _OMIT:
+        value["generated_at"] = generated_at
     value["quality_receipt_digest"] = quality.receipt_digest(value)
     if not digest_valid:
         value["quality_receipt_digest"] = "0" * 64
@@ -196,6 +199,84 @@ def test_cli_json_stdout_and_output_file_are_valid(tmp_path: Path) -> None:
     assert saved["schema_version"] == 1
 
 
+def test_cli_command_log_mutation_fails_closed_and_safe_log_works(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    script = ROOT / ".codex" / "scripts" / "codex_review_packet.py"
+    unsafe_log = repo / "unsafe-command-log.json"
+    safe_log = repo / "safe-command-log.json"
+    unsafe_log.write_text(
+        json.dumps(
+            [
+                {
+                    "command": "python scripts/triage/triage.py apply --execute",
+                    "returncode": 0,
+                }
+            ]
+        ),
+        encoding="ascii",
+    )
+    safe_log.write_text(
+        json.dumps(
+            [
+                {
+                    "command": "python scripts/triage/triage.py contract --issue 110",
+                    "returncode": 0,
+                    "stdout": "ok\n",
+                }
+            ]
+        ),
+        encoding="ascii",
+    )
+
+    unsafe_result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--issue",
+            "110",
+            "--json",
+            "--command-log",
+            str(unsafe_log),
+        ],
+        cwd=repo,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert unsafe_result.returncode == 1
+    assert unsafe_result.stdout == ""
+    assert "risk_findings contains error severity: mutation-command-rejected" in (
+        unsafe_result.stderr
+    )
+
+    safe_result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--issue",
+            "110",
+            "--json",
+            "--command-log",
+            str(safe_log),
+        ],
+        cwd=repo,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert safe_result.returncode == 0, safe_result.stderr
+    packet = json.loads(safe_result.stdout)
+    assert review_packet.validate_codex_review_packet(packet) == []
+    assert any(
+        command["command"] == "python scripts/triage/triage.py contract --issue 110"
+        and command["untrusted"] is True
+        for command in packet["commands"]
+    )
+
+
 def test_valid_receipt_is_usable_evidence(tmp_path: Path) -> None:
     review_packet = _load_codex_script("codex_review_packet")
     repo = _init_repo(tmp_path)
@@ -210,6 +291,80 @@ def test_valid_receipt_is_usable_evidence(tmp_path: Path) -> None:
     assert packet["quality_receipt"]["passed"] is True
     assert packet["quality_receipt"]["usable_as_evidence"] is True
     assert packet["quality_receipt"]["missing_freshness_bound_protected_paths"] == []
+
+
+def test_digest_valid_passed_receipt_missing_generated_at_is_not_usable(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+    _write_receipt(
+        repo,
+        _receipt(review_packet, protected_paths=[path], generated_at=_OMIT),
+    )
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    assert packet["quality_receipt"]["digest_valid"] is True
+    assert packet["quality_receipt"]["passed"] is True
+    assert packet["quality_receipt"]["generated_at"] is None
+    assert packet["quality_receipt"]["usable_as_evidence"] is False
+    assert "missing-quality-receipt-generated-at" in {
+        item["code"] for item in packet["risk_findings"]
+    }
+
+
+def test_digest_valid_passed_receipt_invalid_generated_at_is_not_usable(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+
+    cases = [
+        (None, "missing-quality-receipt-generated-at"),
+        (123, "missing-quality-receipt-generated-at"),
+        ("", "missing-quality-receipt-generated-at"),
+        ("not-a-timestamp", "invalid-quality-receipt-generated-at"),
+    ]
+    for generated_at, expected_code in cases:
+        _write_receipt(
+            repo,
+            _receipt(
+                review_packet,
+                protected_paths=[path],
+                generated_at=generated_at,
+            ),
+        )
+        packet = _build_packet(repo, parent_epic=134)
+
+        assert packet["quality_receipt"]["digest_valid"] is True
+        assert packet["quality_receipt"]["passed"] is True
+        assert packet["quality_receipt"]["usable_as_evidence"] is False
+        assert expected_code in {item["code"] for item in packet["risk_findings"]}
+
+
+def test_forged_usable_receipt_with_invalid_generated_at_fails_validation(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+    _write_receipt(repo, _receipt(review_packet, protected_paths=[path]))
+    packet = _build_packet(repo, parent_epic=134)
+
+    forged = deepcopy(packet)
+    forged["quality_receipt"]["generated_at"] = "not-a-timestamp"
+    forged["quality_receipt"]["usable_as_evidence"] = True
+    forged = _resign(forged)
+
+    assert "quality_receipt.usable_as_evidence requires valid generated_at" in (
+        review_packet.validate_codex_review_packet(forged)
+    )
 
 
 def test_receipt_missing_malformed_digest_invalid_failed_noncovering_and_stale(

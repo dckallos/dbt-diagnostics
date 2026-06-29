@@ -98,9 +98,13 @@ The packet reads a local receipt from `output/codex/quality-receipt.json` unless
 - changed protected paths newer than the receipt;
 - whether the receipt is usable as evidence.
 
-Missing, malformed, failed, digest-invalid, stale, or non-covering receipts are
-not usable evidence. A receipt is evidence only for the checks and path coverage
-it names; it is not universal proof.
+Missing, malformed, failed, digest-invalid, stale, non-covering, or
+timestamp-invalid receipts are not usable evidence. `generated_at` may be null
+only for non-usable summaries, such as missing or unreadable receipts. A receipt
+with `usable_as_evidence: true` must have a present, non-empty,
+timezone-bearing ISO timestamp in `generated_at`; Python validation owns this
+invariant. A receipt is evidence only for the checks and path coverage it names;
+it is not universal proof.
 
 ## Diff Snippets
 
@@ -118,7 +122,9 @@ log records. The builder never runs commands from packet inputs. If no command
 log is supplied, the packet records an omission.
 
 Command strings must not be GitHub/tracker mutation commands. Validation routes
-command text through the shared governance mutation classifier.
+command text through the shared governance mutation classifier. Mutation-shaped
+command-log input is recorded as an error-severity finding and the packet is not
+a clean valid artifact; the builder never executes command-log entries.
 
 ## Budget
 
@@ -182,7 +188,7 @@ SHAs, missing generated timestamp, or unavailable git errors.
 `.codex/scripts/codex_review_packet.py:validate_codex_review_packet` validates
 required keys, field types, safety constants, recursive forbidden shapes,
 mutation command strings, secret redaction, quality receipt evidence rules,
-canonical digest, and serialized byte budget.
+error-severity findings, canonical digest, and serialized byte budget.
 
 Local validation commands:
 

@@ -2493,6 +2493,10 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   coverage. No #111 review skill, #133 issue-work integration, #118/#120/#121
   extraction/distribution work, production diagnostic runtime change, live
   GitHub fetch, LLM call, or full-repository prompt bundle was added.
+- Revised PR #145 after review feedback so usable quality-receipt evidence now
+  requires a present, valid, timezone-bearing `generated_at` timestamp, and
+  mutation-shaped `--command-log` input now fails closed through packet
+  validation without executing command-log entries.
 
 **Validation**
 - Focused suites passed:
@@ -2507,17 +2511,30 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   `bash .codex/bin/action.sh codex-review-packet --issue 110 --json`,
   `bash .codex/bin/action.sh codex-quality --json`, and
   `bash .codex/bin/action.sh check` passed before publishing PR #145.
+- After the review revision, focused packet tests passed with 18 cases, the
+  requested focused suites and artifact checks passed, `codex-quality --json`
+  passed with a digest-valid receipt generated at `2026-06-29T23:46:32Z`, and
+  `bash .codex/bin/action.sh check` passed with `.codex/tests` at 208 tests and
+  the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
 
 **Current state**
 - PR #145 is open, non-draft, and clean against `donkey-kong-sandbox` from
   branch `feat/codex-review-packet-110`.
-- The implementation commit is pushed on that branch and the PR body includes
-  exactly one auto-close line for #110.
+- The implementation, progress-log, and review-revision commits are pushed on
+  that branch, and the PR body includes exactly one auto-close line for #110.
 - The progress log entry was added after PR publication because the initial
   handoff missed the wrap-up update required by `AGENTS.md`.
+- The latest normal `codex-quality --json` receipt covers the review revision's
+  worktree protected paths: `.codex/artifact-contracts-v1.json`,
+  `.codex/scripts/codex_review_packet.py`, and
+  `docs/CODEX_REVIEW_PACKET_SCHEMA_V1.md`. It does not freshness-bind all
+  committed branch/base protected paths in PR #145, so packet receipt evidence
+  still reports that branch/base coverage limitation.
 
 **Next steps**
-- Review PR #145, wait for CI, and address any review or check feedback.
+- Review the revised PR #145, wait for CI, and address any remaining review or
+  check feedback.
 
 **Be careful**
 - Keep this PR scoped to the bounded local review packet surface. Do not expand

@@ -158,6 +158,21 @@ def _utc_now() -> str:
     )
 
 
+def _parse_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
 def _normalize_path(path: str) -> str:
     return codex_surface.normalize_path(path)
 
@@ -905,7 +920,13 @@ def _load_quality_receipt(
     summary["readable"] = True
     expected = raw.get("quality_receipt_digest")
     summary["digest_valid"] = isinstance(expected, str) and expected == codex_quality.receipt_digest(raw)
-    summary["generated_at"] = raw.get("generated_at") if isinstance(raw.get("generated_at"), str) else None
+    raw_generated_at = raw.get("generated_at")
+    summary["generated_at"] = (
+        raw_generated_at
+        if isinstance(raw_generated_at, str) and raw_generated_at.strip()
+        else None
+    )
+    generated_at_valid = _parse_timestamp(summary["generated_at"]) is not None
     summary["passed"] = raw.get("passed") is True
     checks = raw.get("checks")
     check_statuses: dict[str, str] = {}
@@ -965,12 +986,29 @@ def _load_quality_receipt(
         summary["readable"] is True
         and summary["digest_valid"] is True
         and summary["passed"] is True
+        and generated_at_valid
         and not required_missing
         and not missing_freshness
         and not missing_semantic
         and not stale_paths
     )
     summary["usable_as_evidence"] = usable
+    if not generated_at_valid:
+        if isinstance(raw_generated_at, str) and raw_generated_at.strip():
+            code = "invalid-quality-receipt-generated-at"
+            message = "The codex-quality receipt generated_at timestamp is invalid."
+        else:
+            code = "missing-quality-receipt-generated-at"
+            message = "The codex-quality receipt generated_at timestamp is missing."
+        findings.append(
+            _finding(
+                code,
+                "warning",
+                message,
+                "Run current codex-quality, then rebuild the packet.",
+                evidence_source="quality_receipt",
+            )
+        )
     if not summary["digest_valid"]:
         findings.append(
             _finding(
@@ -1352,6 +1390,7 @@ class CodexReviewPacketValidator:
         self._validate_safety(context)
         self._validate_budget(context)
         self._validate_digest(context)
+        self._validate_risk_findings(context)
         self._validate_forbidden_shapes(context)
         self._validate_secret_redaction(context)
         self._validate_commands(context)
@@ -1426,6 +1465,18 @@ class CodexReviewPacketValidator:
         if digest != expected:
             context.errors.append(f"{DIGEST_FIELD} does not match canonical digest")
 
+    def _validate_risk_findings(self, context: PacketValidationContext) -> None:
+        for index, finding in enumerate(self.packet.get("risk_findings", [])):
+            if not isinstance(finding, Mapping):
+                context.errors.append("risk_findings entries must be objects")
+                continue
+            if finding.get("severity") == "error":
+                code = finding.get("code")
+                suffix = f": {code}" if isinstance(code, str) and code else f" at {index}"
+                context.errors.append(
+                    f"risk_findings contains error severity{suffix}"
+                )
+
     def _validate_forbidden_shapes(self, context: PacketValidationContext) -> None:
         _reject_forbidden_shapes(self.packet, errors=context.errors, path="$")
 
@@ -1471,12 +1522,19 @@ class CodexReviewPacketValidator:
         receipt = self.packet.get("quality_receipt")
         if not isinstance(receipt, Mapping):
             return
+        generated_at = receipt.get("generated_at")
+        if generated_at is not None and not isinstance(generated_at, str):
+            context.errors.append("quality_receipt.generated_at must be a string or null")
         if receipt.get("usable_as_evidence") is True:
             for field_name in ("present", "readable", "digest_valid", "passed"):
                 if receipt.get(field_name) is not True:
                     context.errors.append(
                         f"quality_receipt.usable_as_evidence requires {field_name}"
                     )
+            if _parse_timestamp(generated_at) is None:
+                context.errors.append(
+                    "quality_receipt.usable_as_evidence requires valid generated_at"
+                )
             for field_name in (
                 "missing_freshness_bound_protected_paths",
                 "missing_semantically_checked_protected_paths",

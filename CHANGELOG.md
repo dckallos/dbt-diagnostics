@@ -7,8 +7,8 @@
 - I added a local `codex-review-packet` v1 artifact, schema, validator, and
   wrapper for bounded PR/self-review evidence.
 - The packet records local worktree and branch/base diff evidence,
-  policy-derived protected surfaces, quality receipt status, bounded untrusted
-  diff snippets, omissions, and read-only safety flags.
+  policy-derived protected surfaces, timestamp-validated quality receipt status,
+  bounded untrusted diff snippets, omissions, and read-only safety flags.
 - The command is local/offline and adds no GitHub mutation, LLM call,
   full-repository prompt bundle, production diagnostic runtime change, or
   codex-review skill.

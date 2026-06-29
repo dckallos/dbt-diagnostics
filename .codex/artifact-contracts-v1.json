@@ -192,8 +192,10 @@
         "serialized_bytes": "python_validator",
         "read_only_forbidden_shape": "python_validator",
         "receipt_digest_validation": "python_validator",
+        "receipt_generated_at_validation": "python_validator",
         "protected_surface_policy_classification": "python_validator",
         "mutation_command_string": "shared_classifier",
+        "error_severity_findings": "python_validator",
         "secret_redaction": "python_validator"
       }
     },
