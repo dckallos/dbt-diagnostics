@@ -1,0 +1,1 @@
+pytest -q && gh pr merge 123

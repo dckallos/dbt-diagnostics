@@ -1,0 +1,1 @@
+bash -lc 'gh issue close 1'

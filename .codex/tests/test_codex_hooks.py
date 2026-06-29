@@ -69,6 +69,18 @@ def write_pending_artifact_contract_manifest(root: Path) -> None:
         json.dumps(pending, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="ascii",
     )
+    agent_manifest = root / ".codex" / "agent-regression-cases-v1.json"
+    agent_manifest.parent.mkdir(parents=True, exist_ok=True)
+    agent_manifest.write_text(
+        json.dumps(
+            {"schema_version": 1, "cases": []},
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="ascii",
+    )
 
 
 def bash_payload(

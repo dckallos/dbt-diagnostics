@@ -1,0 +1,397 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "artifact-contract-digest-validator-drift",
+      "risk_class": "artifact_contract_drift",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/artifact-contract-digest-validator-drift/.codex/artifact-contracts-v1.json",
+        ".codex/agent-regression/fixtures/artifact-contract-digest-validator-drift/docs/SYNTHESIS_REVIEW_PACKET_SCHEMA_V1.md",
+        ".codex/agent-regression/fixtures/artifact-contract-digest-validator-drift/docs/synthesis-review-packet-schema-v1.json",
+        ".codex/agent-regression/fixtures/artifact-contract-digest-validator-drift/bad_validator_digest.py"
+      ],
+      "expected_checker": "artifact-contracts",
+      "expected_status": "failed",
+      "expected_finding_code": "validator-digest-not-enforced",
+      "repair_guidance": "Keep artifact-contract drift checks proving active validators reject digest tampering.",
+      "case_data": {
+        "fixture_root": ".codex/agent-regression/fixtures/artifact-contract-digest-validator-drift",
+        "manifest_path": ".codex/artifact-contracts-v1.json",
+        "import_modules": [
+          "bad_validator_digest"
+        ]
+      }
+    },
+    {
+      "case_id": "artifact-contract-forbidden-shape-validator-drift",
+      "risk_class": "artifact_contract_drift",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/artifact-contract-forbidden-shape-validator-drift/.codex/artifact-contracts-v1.json",
+        ".codex/agent-regression/fixtures/artifact-contract-forbidden-shape-validator-drift/docs/SYNTHESIS_REVIEW_PACKET_SCHEMA_V1.md",
+        ".codex/agent-regression/fixtures/artifact-contract-forbidden-shape-validator-drift/docs/synthesis-review-packet-schema-v1.json",
+        ".codex/agent-regression/fixtures/artifact-contract-forbidden-shape-validator-drift/bad_validator_forbidden_shape.py"
+      ],
+      "expected_checker": "artifact-contracts",
+      "expected_status": "failed",
+      "expected_finding_code": "validator-forbidden-shape-not-enforced",
+      "repair_guidance": "Keep artifact-contract drift checks proving active validators reject nested write-shaped content.",
+      "case_data": {
+        "fixture_root": ".codex/agent-regression/fixtures/artifact-contract-forbidden-shape-validator-drift",
+        "manifest_path": ".codex/artifact-contracts-v1.json",
+        "import_modules": [
+          "bad_validator_forbidden_shape"
+        ]
+      }
+    },
+    {
+      "case_id": "artifact-contract-schema-required-field-drift",
+      "risk_class": "artifact_contract_drift",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/artifact-contract-schema-required-field-drift/.codex/artifact-contracts-v1.json",
+        ".codex/agent-regression/fixtures/artifact-contract-schema-required-field-drift/docs/SYNTHESIS_REVIEW_PACKET_SCHEMA_V1.md",
+        ".codex/agent-regression/fixtures/artifact-contract-schema-required-field-drift/docs/synthesis-review-packet-schema-v1.json"
+      ],
+      "expected_checker": "artifact-contracts",
+      "expected_status": "failed",
+      "expected_finding_code": "schema-required-fields",
+      "repair_guidance": "Keep artifact-contract drift checks proving manifest required_fields and machine schema required fields stay aligned.",
+      "case_data": {
+        "fixture_root": ".codex/agent-regression/fixtures/artifact-contract-schema-required-field-drift",
+        "manifest_path": ".codex/artifact-contracts-v1.json"
+      }
+    },
+    {
+      "case_id": "backlog-review-fabricated-evidence-ref",
+      "risk_class": "bounded_artifact_reference_integrity",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/backlog-review-fabricated-evidence-ref/case.json"
+      ],
+      "expected_checker": "backlog-review-validate",
+      "expected_status": "failed",
+      "expected_finding_code": "unknown_packet_reference",
+      "repair_guidance": "Keep integrated backlog-review validation rejecting evidence refs absent from the packet.",
+      "case_data": {
+        "variant": "fabricated-evidence-ref"
+      }
+    },
+    {
+      "case_id": "backlog-review-fabricated-near-miss-ref",
+      "risk_class": "bounded_artifact_reference_integrity",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/backlog-review-fabricated-near-miss-ref/case.json"
+      ],
+      "expected_checker": "backlog-review-validate",
+      "expected_status": "failed",
+      "expected_finding_code": "unknown_packet_reference",
+      "repair_guidance": "Keep integrated backlog-review validation rejecting near_miss refs absent from the packet.",
+      "case_data": {
+        "variant": "fabricated-near-miss-ref"
+      }
+    },
+    {
+      "case_id": "backlog-review-fabricated-omission-ref",
+      "risk_class": "bounded_artifact_reference_integrity",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/backlog-review-fabricated-omission-ref/case.json"
+      ],
+      "expected_checker": "backlog-review-validate",
+      "expected_status": "failed",
+      "expected_finding_code": "unknown_packet_reference",
+      "repair_guidance": "Keep integrated backlog-review validation rejecting omission refs absent from the packet.",
+      "case_data": {
+        "variant": "fabricated-omission-ref"
+      }
+    },
+    {
+      "case_id": "backlog-review-hard-stale-packet-verdict",
+      "risk_class": "bounded_artifact_staleness",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/backlog-review-hard-stale-packet-verdict/case.json"
+      ],
+      "expected_checker": "backlog-review-validate",
+      "expected_status": "failed",
+      "expected_finding_code": "packet_hard_stale",
+      "repair_guidance": "Keep integrated backlog-review validation rejecting hard-stale packets.",
+      "case_data": {
+        "variant": "hard-stale-packet-verdict"
+      }
+    },
+    {
+      "case_id": "codex-quality-explicit-path-missing",
+      "risk_class": "quality_receipt_path_coverage",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/codex-quality-explicit-path-missing/case.json"
+      ],
+      "expected_checker": "codex-quality-receipt",
+      "expected_status": "failed",
+      "expected_finding_code": "explicit-path-missing",
+      "repair_guidance": "Keep scoped quality checks failing closed when explicit paths are missing.",
+      "case_data": {
+        "path": ".codex/agent-regression/fixtures/codex-quality-explicit-path-missing/missing.md"
+      }
+    },
+    {
+      "case_id": "governance-boundary-gh-issue-edit",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-gh-issue-edit/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "forbidden-mutation-command",
+      "repair_guidance": "Keep read-only guidance from authorizing gh issue edit commands."
+    },
+    {
+      "case_id": "governance-boundary-gh-pr-merge",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-gh-pr-merge/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "forbidden-mutation-command",
+      "repair_guidance": "Keep read-only guidance from authorizing gh pr merge commands."
+    },
+    {
+      "case_id": "governance-boundary-gh-workflow-run",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-gh-workflow-run/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "forbidden-mutation-command",
+      "repair_guidance": "Keep read-only guidance from authorizing workflow dispatch commands."
+    },
+    {
+      "case_id": "governance-boundary-issue-body-write",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-issue-body-write/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "issue-body-write",
+      "repair_guidance": "Keep read-only guidance from authorizing issue-body writes."
+    },
+    {
+      "case_id": "governance-boundary-must-close-issue",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-must-close-issue/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "authorized-tracker-mutation",
+      "repair_guidance": "Keep read-only guidance from authorizing issue closure."
+    },
+    {
+      "case_id": "governance-boundary-must-set-milestone",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-must-set-milestone/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "authorized-tracker-mutation",
+      "repair_guidance": "Keep read-only guidance from authorizing milestone changes."
+    },
+    {
+      "case_id": "governance-boundary-safe-negative-docs",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-safe-negative-docs/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "passed",
+      "expected_finding_code": "no_findings",
+      "repair_guidance": "Keep forbidden-operation documentation allowed when it stays explicitly negative."
+    },
+    {
+      "case_id": "governance-boundary-should-assign-labels",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-should-assign-labels/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "authorized-tracker-mutation",
+      "repair_guidance": "Keep read-only guidance from authorizing label assignment."
+    },
+    {
+      "case_id": "governance-boundary-triage-apply-execute",
+      "risk_class": "read_only_write_boundary",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/governance-boundary-triage-apply-execute/.agents/skills/bad/SKILL.md"
+      ],
+      "expected_checker": "governance-boundary",
+      "expected_status": "failed",
+      "expected_finding_code": "forbidden-mutation-command",
+      "repair_guidance": "Keep read-only guidance from authorizing triage.py apply --execute."
+    },
+    {
+      "case_id": "hook-policy-gh-issue-close",
+      "risk_class": "hook_mutation_blocking",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/hook-policy-gh-issue-close/command.txt"
+      ],
+      "expected_checker": "hook-policy",
+      "expected_status": "failed",
+      "expected_finding_code": "hook_denied_github_mutation",
+      "repair_guidance": "Keep hook policy routing Bash GitHub mutations through the shared classifier."
+    },
+    {
+      "case_id": "limitation-protected-path-freshness-not-semantic",
+      "risk_class": "quality_receipt_limitation",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/limitation-protected-path-freshness-not-semantic/rationale.md"
+      ],
+      "expected_checker": "limitation-record",
+      "expected_status": "omission",
+      "expected_omission_code": "semantic_coverage_limitation",
+      "expectation_rationale": "Some protected hook or script paths may be freshness-bound without semantic or syntax coverage in the same receipt.",
+      "case_data": {
+        "omission_code": "semantic_coverage_limitation"
+      }
+    },
+    {
+      "case_id": "limitation-stop-hook-committed-protected-path",
+      "risk_class": "quality_receipt_limitation",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/limitation-stop-hook-committed-protected-path/rationale.md"
+      ],
+      "expected_checker": "limitation-record",
+      "expected_status": "omission",
+      "expected_omission_code": "stop_hook_committed_path_limitation",
+      "expectation_rationale": "Current stop-hook freshness checks focus on uncommitted protected paths and receipt age, not branch/base diff coverage for already committed local changes.",
+      "case_data": {
+        "omission_code": "stop_hook_committed_path_limitation"
+      }
+    },
+    {
+      "case_id": "packet-validator-comments-included",
+      "risk_class": "bounded_packet_safety",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/packet-validator-comments-included/case.json"
+      ],
+      "expected_checker": "synthesis-review-packet-validator",
+      "expected_status": "failed",
+      "expected_finding_code": "packet_comments_included",
+      "repair_guidance": "Keep packet validation rejecting comments embedded in bounded review packets.",
+      "case_data": {
+        "variant": "comments-included"
+      }
+    },
+    {
+      "case_id": "packet-validator-full-snapshot-nested",
+      "risk_class": "bounded_packet_safety",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/packet-validator-full-snapshot-nested/case.json"
+      ],
+      "expected_checker": "synthesis-review-packet-validator",
+      "expected_status": "failed",
+      "expected_finding_code": "forbidden_mutation_shape",
+      "repair_guidance": "Keep packet validation rejecting full tracker snapshots nested inside bounded packets.",
+      "case_data": {
+        "variant": "full-snapshot-nested"
+      }
+    },
+    {
+      "case_id": "packet-validator-serialized-bytes-lie",
+      "risk_class": "bounded_packet_safety",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/packet-validator-serialized-bytes-lie/case.json"
+      ],
+      "expected_checker": "synthesis-review-packet-validator",
+      "expected_status": "failed",
+      "expected_finding_code": "packet_serialized_bytes_mismatch",
+      "repair_guidance": "Keep packet validation recomputing serialized byte budgets.",
+      "case_data": {
+        "variant": "serialized-bytes-lie"
+      }
+    },
+    {
+      "case_id": "packet-validator-stale-reviewable-lie",
+      "risk_class": "bounded_packet_staleness",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/packet-validator-stale-reviewable-lie/case.json"
+      ],
+      "expected_checker": "synthesis-review-packet-validator",
+      "expected_status": "failed",
+      "expected_finding_code": "packet_hard_stale",
+      "repair_guidance": "Keep packet validation rejecting hard-stale packet inputs.",
+      "case_data": {
+        "variant": "stale-reviewable-lie"
+      }
+    },
+    {
+      "case_id": "packet-validator-warning-only-reviewable",
+      "risk_class": "bounded_packet_staleness",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/packet-validator-warning-only-reviewable/case.json"
+      ],
+      "expected_checker": "synthesis-review-packet-validator",
+      "expected_status": "warning",
+      "expected_warning_code": "packet_freshness_warning",
+      "repair_guidance": "Keep warning-only packet freshness reviewable while preserving the warning.",
+      "case_data": {
+        "variant": "warning-only-reviewable"
+      }
+    },
+    {
+      "case_id": "shared-command-classifier-bash-lc-gh-issue-close",
+      "risk_class": "shared_mutation_classifier",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/shared-command-classifier-bash-lc-gh-issue-close/command.txt"
+      ],
+      "expected_checker": "shared-command-classifier",
+      "expected_status": "failed",
+      "expected_finding_code": "governance-mutation-command",
+      "repair_guidance": "Keep the shared classifier rejecting GitHub mutation inside bash -lc wrappers."
+    },
+    {
+      "case_id": "shared-command-classifier-compound-gh-pr-merge",
+      "risk_class": "shared_mutation_classifier",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/shared-command-classifier-compound-gh-pr-merge/command.txt"
+      ],
+      "expected_checker": "shared-command-classifier",
+      "expected_status": "failed",
+      "expected_finding_code": "governance-mutation-command",
+      "repair_guidance": "Keep the shared classifier rejecting GitHub mutation hidden after shell control operators."
+    },
+    {
+      "case_id": "shared-command-classifier-env-gh-workflow-run",
+      "risk_class": "shared_mutation_classifier",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/shared-command-classifier-env-gh-workflow-run/command.txt"
+      ],
+      "expected_checker": "shared-command-classifier",
+      "expected_status": "failed",
+      "expected_finding_code": "governance-mutation-command",
+      "repair_guidance": "Keep the shared classifier rejecting GitHub mutation hidden behind env wrappers."
+    },
+    {
+      "case_id": "shared-command-classifier-inert-rg-gh-issue-edit",
+      "risk_class": "shared_mutation_classifier",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/shared-command-classifier-inert-rg-gh-issue-edit/command.txt"
+      ],
+      "expected_checker": "shared-command-classifier",
+      "expected_status": "passed",
+      "expected_finding_code": "no_findings",
+      "repair_guidance": "Keep dangerous command text allowed when it is inert data to a safe command."
+    },
+    {
+      "case_id": "shared-command-classifier-multiline-gh-issue-edit",
+      "risk_class": "shared_mutation_classifier",
+      "fixture_files": [
+        ".codex/agent-regression/fixtures/shared-command-classifier-multiline-gh-issue-edit/command.txt"
+      ],
+      "expected_checker": "shared-command-classifier",
+      "expected_status": "failed",
+      "expected_finding_code": "governance-mutation-command",
+      "repair_guidance": "Keep the shared classifier rejecting later GitHub mutation after a safe newline-separated command."
+    }
+  ]
+}

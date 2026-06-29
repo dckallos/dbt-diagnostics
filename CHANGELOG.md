@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Add Codex agent-regression suite
+
+- I added a manifest-driven `agent-regression` codex-quality check with local
+  fixtures for known governance-boundary, shared-classifier, artifact-contract,
+  packet-validator, backlog-review validation, hook-policy, receipt, and
+  limitation cases.
+- I protected the agent-regression manifest and fixture tree and kept the suite
+  local/read-only with no live Codex invocation, GitHub mutation, public CLI
+  command, or production diagnostic runtime change.
+
 ### Add artifact-contract checker
 
 - I added a manifest-backed `artifact-contracts` codex-quality check for stable

@@ -52,6 +52,18 @@ def _write_pending_artifact_contract_manifest(root: Path) -> None:
         json.dumps(pending, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="ascii",
     )
+    agent_manifest = root / ".codex" / "agent-regression-cases-v1.json"
+    agent_manifest.parent.mkdir(parents=True, exist_ok=True)
+    agent_manifest.write_text(
+        json.dumps(
+            {"schema_version": 1, "cases": []},
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="ascii",
+    )
 
 
 def _checks_by_name(receipt: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -399,11 +411,17 @@ def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
     saved = json.loads(receipt_path.read_text(encoding="ascii"))
     assert saved["schema_version"] == 1
     checks = _checks_by_name(saved)
-    assert set(checks) == {"governance-boundary", "artifact-contracts"}
+    assert set(checks) == {
+        "governance-boundary",
+        "artifact-contracts",
+        "agent-regression",
+    }
     assert checks["governance-boundary"]["status"] == "passed"
     assert checks["artifact-contracts"]["status"] == "passed"
+    assert checks["agent-regression"]["status"] == "passed"
     assert saved["semantically_checked_protected_paths"] == [
         ".agents/skills/issue-work/SKILL.md",
+        ".codex/agent-regression-cases-v1.json",
         ".codex/artifact-contracts-v1.json",
         "AGENTS.md",
     ]
@@ -445,6 +463,7 @@ def test_codex_quality_records_artifact_contract_failures_in_receipt(
     assert receipt["passed"] is False
     assert checks["governance-boundary"]["status"] == "passed"
     assert checks["artifact-contracts"]["status"] == "failed"
+    assert checks["agent-regression"]["status"] == "failed"
     assert checks["artifact-contracts"]["findings"][0]["code"] == "manifest-missing"
 
 
@@ -479,6 +498,39 @@ def test_codex_quality_digest_covers_artifact_contract_findings() -> None:
     assert quality.receipt_digest(receipt) != quality.receipt_digest(changed)
 
 
+def test_codex_quality_digest_covers_agent_regression_case_results() -> None:
+    quality = _load_codex_script("codex_quality")
+    receipt = {
+        "schema_version": 1,
+        "generated_at": "2026-06-29T00:00:00Z",
+        "tool": "codex-quality",
+        "passed": True,
+        "freshness_bound_protected_paths": [],
+        "semantically_checked_protected_paths": [],
+        "checks": [
+            {
+                "name": "agent-regression",
+                "status": "passed",
+                "checked_files": [],
+                "case_results": [{"case_id": "fixture", "matched": True}],
+                "findings": [],
+            }
+        ],
+    }
+    changed = dict(receipt)
+    changed["checks"] = [
+        {
+            "name": "agent-regression",
+            "status": "failed",
+            "checked_files": [],
+            "case_results": [{"case_id": "fixture", "matched": False}],
+            "findings": [{"code": "case-mismatch"}],
+        }
+    ]
+
+    assert quality.receipt_digest(receipt) != quality.receipt_digest(changed)
+
+
 def test_codex_quality_records_deterministic_freshness_bound_protected_paths(
     tmp_path: Path,
 ) -> None:
@@ -502,15 +554,52 @@ def test_codex_quality_records_deterministic_freshness_bound_protected_paths(
     )
 
     assert receipt["semantically_checked_protected_paths"] == [
+        ".codex/agent-regression-cases-v1.json",
         ".codex/artifact-contracts-v1.json"
     ]
     assert receipt["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     saved = json.loads(receipt_path.read_text(encoding="ascii"))
     assert saved["semantically_checked_protected_paths"] == [
+        ".codex/agent-regression-cases-v1.json",
         ".codex/artifact-contracts-v1.json"
     ]
     assert saved["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)
+
+
+def test_codex_quality_freshness_binds_agent_regression_paths(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    fixture = tmp_path / ".codex" / "agent-regression" / "fixtures" / "case.md"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("fixture\n", encoding="ascii")
+    policy = repo_config.load_repo_policy()
+
+    assert quality.freshness_bound_protected_paths(
+        root=tmp_path,
+        requested_paths=[
+            Path(".codex/agent-regression-cases-v1.json"),
+            Path(".codex/agent-regression/fixtures/case.md"),
+        ],
+        repo_policy=policy,
+    ) == (
+        ".codex/agent-regression-cases-v1.json",
+        ".codex/agent-regression/fixtures/case.md",
+    )
+
+    receipt = quality.run_quality(
+        root=tmp_path,
+        paths=[
+            Path(".codex/agent-regression/fixtures/case.md"),
+        ],
+    )
+
+    assert receipt["passed"] is True
+    assert receipt["freshness_bound_protected_paths"] == [
+        ".codex/agent-regression/fixtures/case.md",
+    ]
 
 
 def test_codex_quality_uses_configured_receipt_and_protected_surfaces(
@@ -557,6 +646,7 @@ def test_codex_quality_default_scan_uses_policy_semantic_scan_roots(
         "custom/governance/rules.md"
     ]
     assert checks["artifact-contracts"]["status"] == "passed"
+    assert checks["agent-regression"]["status"] == "passed"
     assert receipt["semantically_checked_protected_paths"] == [
         "custom/governance/rules.md"
     ]
@@ -661,6 +751,7 @@ def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(
     )
 
     assert receipt["semantically_checked_protected_paths"] == [
+        ".codex/agent-regression-cases-v1.json",
         ".codex/artifact-contracts-v1.json"
     ]
     assert receipt["freshness_bound_protected_paths"] == [

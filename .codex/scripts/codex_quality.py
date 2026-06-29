@@ -21,6 +21,7 @@ if str(ROOT_DIR) not in sys.path:
 
 import check_governance_boundary
 import check_artifact_contracts
+import check_agent_regression
 import codex_surface
 from scripts.triage import repo_config
 
@@ -133,6 +134,7 @@ def run_quality(
         paths, root=root, repo_policy=active_policy
     )
     artifact_result = check_artifact_contracts.run_check(root=root)
+    agent_regression_result = check_agent_regression.run_check(root=root)
     checks = [
         {
             "name": "governance-boundary",
@@ -149,13 +151,26 @@ def run_quality(
             "findings": [
                 finding.to_json() for finding in artifact_result.findings
             ],
-        }
+        },
+        {
+            "name": "agent-regression",
+            "status": "passed" if agent_regression_result.passed else "failed",
+            "checked_files": list(agent_regression_result.checked_files),
+            "case_results": [
+                case_result.to_json()
+                for case_result in agent_regression_result.case_results
+            ],
+            "findings": [
+                finding.to_json() for finding in agent_regression_result.findings
+            ],
+        },
     ]
     semantically_checked_paths = semantically_checked_protected_paths(
         root=root,
         checked_files=(
             tuple(governance_result.checked_files)
             + tuple(artifact_result.checked_files)
+            + tuple(agent_regression_result.checked_files)
         ),
         repo_policy=active_policy,
     )

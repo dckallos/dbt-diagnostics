@@ -2301,3 +2301,52 @@ End of session -- 2026-06-29 issue 107 governance-boundary hardening
   #111, #112, #118, #120, #121, or #133.
 
 End of session -- 2026-06-29 issue 108 artifact-contract checker
+
+---
+
+## 2026-06-29 -- issue 109 agent-regression suite
+
+**What changed**
+- Started `test/109-agent-regression-cases` from updated
+  `donkey-kong-sandbox` after live preflight confirmed #109 is open, #108/PR
+  #141 and #107/PR #140 are merged, #105/#106/#93/#103 are closed, #134 remains
+  open, and #118/#120/#121 remain separate downstream extraction/distribution
+  work.
+- Added `.codex/agent-regression-cases-v1.json`,
+  `.codex/scripts/check_agent_regression.py`, and 30 local fixture-backed cases
+  covering governance-boundary, shared-command-classifier, artifact-contract,
+  synthesis-review-packet validator, backlog-review validation, hook-policy,
+  codex-quality receipt, and explicit limitation records.
+- Wired `agent-regression` into `codex-quality` after `governance-boundary` and
+  `artifact-contracts`, protected the manifest and fixture tree in policy, and
+  recorded the case manifest as pending in the artifact-contract inventory.
+- Added focused tests for manifest malformedness, deterministic case results,
+  expected warning/omission handling, fabricated packet refs, codex-quality
+  receipt digest coverage, and protected-path freshness binding.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
+  compatibility-cache warning.
+- `bash .codex/bin/action.sh context 109 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 109` passed.
+- Focused pytest, py_compile, JSON, direct checker, `codex-quality`, and
+  repository `check` commands were run during implementation and passed before
+  handoff.
+
+**Current state**
+- Work is local and uncommitted on branch `test/109-agent-regression-cases`.
+- No PR has been opened yet.
+- No live Codex invocation, GitHub mutation, LLM call, network call in the
+  checker, Snowflake access, public CLI command, production diagnostic runtime
+  change, or #118/#120/#121 extraction/distribution work was added.
+
+**Next steps**
+- Review the local diff, then commit, push, and open a PR to
+  `donkey-kong-sandbox` with `Closes #109` when PR publication is approved.
+
+**Be careful**
+- Keep this PR scoped to the local regression suite and direct
+  codex-quality/policy/test integration. Do not expand it into #110, #111,
+  #112, #118, #120, #121, #133, or retrieval implementation.
+
+End of session -- 2026-06-29 issue 109 agent-regression suite
