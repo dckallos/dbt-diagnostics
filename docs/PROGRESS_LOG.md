@@ -2402,16 +2402,15 @@ End of session -- 2026-06-29 issue 109 agent-regression suite
   `bash .codex/bin/action.sh check` passed.
 
 **Current state**
-- Work is local on branch `docs/112-issue-work-risk-contracts`.
-- No PR has been opened yet.
+- PR #143 is open and ready for review against `donkey-kong-sandbox` from
+  branch `docs/112-issue-work-risk-contracts`.
+- The implementation commit is pushed on that branch.
 - No GitHub mutation, issue-body writer flow, hook implementation, new checker,
   public command, production diagnostic runtime change, #110/#111/#133
   implementation, or #118/#120/#121 extraction/distribution work was added.
 
 **Next steps**
-- Do a final diff review, rerun `codex-quality --json` if protected files
-  change, then commit, push, and open a PR to `donkey-kong-sandbox` with
-  `Closes #112` when PR publication is approved.
+- Review PR #143, wait for CI, and address any review or check feedback.
 
 **Be careful**
 - Keep this PR scoped to the issue-work skill/docs/static-test hardening. Do
