@@ -121,9 +121,16 @@ def test_issue_work_skill_requires_quality_receipt_reporting() -> None:
         "semantically_checked_protected_paths",
         "limitations",
         "omissions",
+        "protected-change evidence source",
+        "every changed protected path appears",
+        "every semantically relevant protected path appears",
         "generated after the protected changes",
     ):
         assert expected in skill
+
+    assert "The receipt proves named local checks and freshness-bound path coverage" in skill
+    assert "paths it actually covered" in skill
+    assert "unless those paths appear in the receipt coverage evidence" in skill
 
 
 def test_issue_work_skill_reports_worktree_vs_branch_base_diff_limits() -> None:
@@ -135,34 +142,76 @@ def test_issue_work_skill_reports_worktree_vs_branch_base_diff_limits() -> None:
     assert "protected-change evidence source" in skill
     assert "worktree status" in skill
     assert "branch/base diff" in skill
+    assert "explicit path list" in skill
     assert "both" in skill
     assert "not available" in skill
     assert "worktree status only" in skill
+    assert "`quality_receipt_digest` validates" in skill
+
+
+def test_issue_work_skill_scopes_non_goals_to_live_issue() -> None:
+    skill = _normalized_skill()
+
+    assert "Issue-scoped non-goals come from the live issue and current task" in skill
+    assert "unless the live issue explicitly asks for that scope" in skill
+    assert "risk contract names it as in scope" in skill
+
+    for stale_global_non_goal in (
+        "No new hook behavior.",
+        "No new `codex-quality` check.",
+        "No production diagnostic runtime change.",
+    ):
+        assert stale_global_non_goal not in _skill_text()
+
+    for conditionally_allowed_scope in (
+        "hook behavior",
+        "new `codex-quality` checks",
+        "production diagnostic runtime changes",
+        "codex-review-packet work",
+        "codex-review skill work",
+        "codex-review integration",
+        "extraction/distribution work",
+    ):
+        assert conditionally_allowed_scope in skill
 
 
 def test_issue_work_skill_preserves_write_boundary() -> None:
     skill = _normalized_skill()
 
     assert "issue-work never edits issue bodies" in skill
-    assert "no GitHub metadata mutation" in skill
+    assert "no unauthorized GitHub metadata mutation" in skill
     assert "no executable issue-body writer flow" in skill
     assert "no labels/milestones/Project moves/workflow dispatches/PR merges" in skill
     assert "write payloads for issue body/title/state remain forbidden" in skill
     assert "no apply operation generation" in skill
-    assert "No GitHub mutation" in skill
-    assert "No issue-body writer" in skill
-    assert "No new hook behavior" in skill
-    assert "No new `codex-quality` check" in skill
-    assert "No #110 `codex-review-packet`" in skill
-    assert "No #111 `$codex-review`" in skill
-    assert "No #133 wiring `$codex-review` into `$issue-work`" in skill
-    assert "No #118/#120/#121 extraction/distribution" in skill
-
     assert "live issue body is updated" not in skill
     assert "authorized writer flow" not in skill
     assert "only GitHub metadata mutation allowed" not in skill
     assert "maintainer updates the live issue" not in skill
     assert "recommended command: triage.py apply --execute" not in skill.lower()
+
+
+def test_issue_work_skill_preserves_explicit_pr_publication_carveout() -> None:
+    skill = _normalized_skill()
+
+    assert "current task explicitly authorizes the exact action" in skill
+    assert "pushing and creating or updating the implementation PR" in skill
+    assert "compose or repair the implementation PR body" in skill
+    assert "for that exact PR action" in skill
+
+    for forbidden in (
+        "issue edits",
+        "labels",
+        "milestones",
+        "Project moves",
+        "workflow dispatches",
+        "PR merges",
+        "comments",
+        "reviews",
+        "issue body/title/state write payloads",
+        "apply payloads",
+    ):
+        assert forbidden in skill
 
 
 def test_issue_work_skill_preserves_cleanup_ledger() -> None:
@@ -185,5 +234,5 @@ def test_issue_work_skill_preserves_existing_gates_and_pr_rules() -> None:
     assert "Closes #<issue>" in skill
     assert "Refs #<issue>" in skill
     assert "closingIssuesReferences" in skill
-    assert "Do not push, merge, or mutate GitHub metadata" in skill
+    assert "Do not push, merge, comment/review, or mutate GitHub metadata" in skill
     assert "a package that is not already installed" in skill

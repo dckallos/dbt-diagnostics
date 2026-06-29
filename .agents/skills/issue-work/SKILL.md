@@ -129,8 +129,9 @@ Input: exactly one GitHub issue number.
     ```
 
     `codex-quality --path` is allowed only for deliberate scoped or targeted
-    receipt coverage. Do not claim targeted `--path` output as full-repo
-    semantic coverage.
+    receipt coverage. Use explicit path coverage when a scoped receipt is meant
+    to prove freshness for named protected paths. Do not claim targeted `--path`
+    output as full-repo semantic coverage.
 
 13. Run:
     - focused tests;
@@ -149,8 +150,19 @@ Input: exactly one GitHub issue number.
     - `freshness_bound_protected_paths`;
     - `semantically_checked_protected_paths`;
     - receipt limitations and omissions;
+    - protected-change evidence source: worktree status, branch/base diff,
+      explicit path list, both, or not available;
+    - whether every changed protected path appears in
+      `freshness_bound_protected_paths`;
+    - whether every semantically relevant protected path appears in
+      `semantically_checked_protected_paths`, when semantic scanning applies;
     - whether the receipt was generated after the protected changes it is meant
       to cover.
+
+    The receipt proves named local checks and freshness-bound path coverage for
+    the paths it actually covered. It does not prove all committed branch/base
+    protected files were checked unless those paths appear in the receipt
+    coverage evidence.
 
 15. Report protected-change evidence precisely:
     - a clean worktree is not proof that committed protected changes were not
@@ -158,7 +170,13 @@ Input: exactly one GitHub issue number.
     - the local Stop hook path is based on local changed paths/worktree status
       unless explicit changed paths are supplied;
     - final handoff must name the protected-change evidence source: worktree
-      status, branch/base diff, both, or not available;
+      status, branch/base diff, explicit path list, both, or not available;
+    - final handoff must say whether every changed protected path appears in
+      `freshness_bound_protected_paths`;
+    - final handoff must say whether every semantically relevant protected path
+      appears in `semantically_checked_protected_paths`, when semantic scanning
+      applies;
+    - final handoff must say whether `quality_receipt_digest` validates;
     - if branch/base diff was not checked, report that limitation;
     - if committed protected changes are not covered by the local Stop hook
       path, say so instead of treating a clean worktree as proof;
@@ -182,7 +200,7 @@ Input: exactly one GitHub issue number.
     - suggested review focus.
 
 17. Preserve the write boundary:
-    - no GitHub metadata mutation;
+    - no unauthorized GitHub metadata mutation;
     - issue-work never edits issue bodies;
     - nonconformant issue updates remain maintainer-applied review artifacts
       outside issue-work;
@@ -193,18 +211,25 @@ Input: exactly one GitHub issue number.
     - no apply operation generation.
 
 18. Explicit non-goals for issue-work:
-    - No GitHub mutation.
-    - No issue-body writer.
-    - No new hook behavior.
-    - No new `codex-quality` check.
-    - No production diagnostic runtime change.
-    - No #110 `codex-review-packet` implementation.
-    - No #111 `$codex-review` implementation.
-    - No #133 wiring `$codex-review` into `$issue-work`.
-    - No #118/#120/#121 extraction/distribution.
+    - Universal safety boundaries are issue-work boundaries: issue bodies are
+      never edited by issue-work, issue/tracker metadata mutation remains
+      prohibited, labels/milestones/Project moves/workflow dispatches/PR
+      merges remain prohibited, apply operation generation remains prohibited,
+      and write payloads in read-only artifacts remain prohibited.
+    - Issue-scoped non-goals come from the live issue and current task. Do not
+      implement hook behavior, new `codex-quality` checks, production
+      diagnostic runtime changes, codex-review-packet work, codex-review skill
+      work, codex-review integration, or extraction/distribution work unless
+      the live issue explicitly asks for that scope and the risk contract names
+      it as in scope.
 
-19. Do not push, merge, or mutate GitHub metadata unless the current task
-    explicitly authorizes it.
+19. Do not push, merge, comment/review, or mutate GitHub metadata unless the
+    current task explicitly authorizes the exact action. When the current task
+    explicitly authorizes pushing and creating or updating the implementation
+    PR, issue-work may compose or repair the implementation PR body for that
+    exact PR action. This carveout does not authorize issue edits, labels,
+    milestones, Project moves, workflow dispatches, PR merges, comments,
+    reviews, issue body/title/state write payloads, or apply payloads.
 
 20. Do not use `Refs #<issue>` or `Issue: #<issue>` as the only issue link for
     an implementation PR. When the current task explicitly authorizes pushing
