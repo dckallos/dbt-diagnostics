@@ -2323,6 +2323,13 @@ End of session -- 2026-06-29 issue 108 artifact-contract checker
 - Added focused tests for manifest malformedness, deterministic case results,
   expected warning/omission handling, fabricated packet refs, codex-quality
   receipt digest coverage, and protected-path freshness binding.
+- Revised PR #142 after review so the checker fails closed for empty manifests,
+  missing required checker-group coverage, invalid checker-specific paths or
+  import module names, and `case.json` fixture data drift.
+- Refactored `codex_quality` receipt assembly into reusable non-recursive
+  helpers and made the `codex-quality-receipt` regression case prove failed
+  receipt/check fields and digest behavior instead of only calling the
+  governance-boundary path gate.
 
 **Validation**
 - `bash .codex/bin/action.sh doctor` passed with 0 failures and 1 expected
@@ -2332,12 +2339,19 @@ End of session -- 2026-06-29 issue 108 artifact-contract checker
 - Focused pytest, py_compile, JSON, direct checker, `codex-quality`, and
   repository `check` commands were run during implementation and passed before
   handoff.
+- PR #142 review revision validation also passed:
+  `.codex/tests/test_agent_regression.py`,
+  `.codex/tests/test_codex_quality.py`, `.codex/tests/test_codex_hooks.py`,
+  `.codex/tests/test_artifact_contracts.py`,
+  `scripts/triage/test_frontier.py`, `scripts/triage/test_triage.py`,
+  `scripts/triage/test_repo_config.py`, `py_compile`, both manifest
+  `json.tool` checks, direct agent/artifact checker JSON runs,
+  `codex-quality --json`, and `bash .codex/bin/action.sh check`.
 
 **Current state**
 - Draft PR #142 is open against `donkey-kong-sandbox` from branch
   `test/109-agent-regression-cases`.
-- The implementation commit has been pushed; this progress-log update is the
-  only post-PR branch change.
+- The implementation and review-revision commits are on that branch.
 - No live Codex invocation, GitHub mutation, LLM call, network call in the
   checker, Snowflake access, public CLI command, production diagnostic runtime
   change, or #118/#120/#121 extraction/distribution work was added.

@@ -8,6 +8,8 @@
   fixtures for known governance-boundary, shared-classifier, artifact-contract,
   packet-validator, backlog-review validation, hook-policy, receipt, and
   limitation cases.
+- I made the agent-regression manifest fail closed when it is empty, no longer
+  covers required checker groups, or lets checker-specific fixture data drift.
 - I protected the agent-regression manifest and fixture tree and kept the suite
   local/read-only with no live Codex invocation, GitHub mutation, public CLI
   command, or production diagnostic runtime change.

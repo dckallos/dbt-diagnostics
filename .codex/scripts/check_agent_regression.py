@@ -32,6 +32,7 @@ CASES_PATH = Path(".codex/agent-regression-cases-v1.json")
 FIXTURE_ROOT = Path(".codex/agent-regression/fixtures")
 SCHEMA_VERSION = 1
 NO_FINDINGS_CODE = "no_findings"
+MODULE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 ALLOWED_CHECKERS = frozenset(
     {
@@ -47,6 +48,17 @@ ALLOWED_CHECKERS = frozenset(
 )
 ALLOWED_STATUSES = frozenset({"failed", "passed", "warning", "omission"})
 IN_MEMORY_CHECKERS = frozenset({"shared-command-classifier"})
+REQUIRED_CHECKER_GROUPS = (
+    "artifact-contracts",
+    "backlog-review-validate",
+    "governance-boundary",
+    "limitation-record",
+    "shared-command-classifier",
+    "synthesis-review-packet-validator",
+)
+REQUIRED_CHECKER_ALTERNATIVES = (
+    ("hook-policy", "codex-quality-receipt"),
+)
 CASE_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RISK_CLASS_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -281,6 +293,304 @@ def _validate_fixture_path(
     return raw_path, tuple(findings)
 
 
+def _safe_relative_posix_path(
+    raw_path: str,
+    *,
+    root: Path,
+    base: Path,
+    case_id: str,
+    risk_class: str,
+    field: str,
+    code: str = "case-data-path-invalid",
+    require_existing_dir: bool = False,
+) -> tuple[str | None, tuple[AgentRegressionFinding, ...]]:
+    findings: list[AgentRegressionFinding] = []
+    if "\\" in raw_path:
+        findings.append(
+            _finding(
+                code,
+                f"{case_id}.case_data.{field} must use forward slashes: {raw_path}",
+                "Use repository-relative POSIX paths under the regression fixture root.",
+                case_id=case_id,
+                risk_class=risk_class,
+                path=raw_path,
+            )
+        )
+        return None, tuple(findings)
+    pure = PurePosixPath(raw_path)
+    if pure.is_absolute() or ".." in pure.parts:
+        findings.append(
+            _finding(
+                code,
+                f"{case_id}.case_data.{field} escapes the regression fixture root: {raw_path}",
+                "Keep checker-specific paths under .codex/agent-regression/fixtures/.",
+                case_id=case_id,
+                risk_class=risk_class,
+                path=raw_path,
+            )
+        )
+        return None, tuple(findings)
+    path = (base / raw_path).resolve()
+    try:
+        path.relative_to(_fixture_root(root).resolve())
+    except ValueError:
+        findings.append(
+            _finding(
+                code,
+                f"{case_id}.case_data.{field} is outside {FIXTURE_ROOT.as_posix()}: {raw_path}",
+                "Keep checker-specific paths under .codex/agent-regression/fixtures/.",
+                case_id=case_id,
+                risk_class=risk_class,
+                path=raw_path,
+            )
+        )
+        return None, tuple(findings)
+    if require_existing_dir and not path.is_dir():
+        findings.append(
+            _finding(
+                "case-data-path-missing",
+                f"{case_id}.case_data.{field} directory is missing: {raw_path}",
+                "Restore the fixture directory or update the case_data path.",
+                case_id=case_id,
+                risk_class=risk_class,
+                path=raw_path,
+            )
+        )
+        return None, tuple(findings)
+    return raw_path, tuple(findings)
+
+
+def _validate_case_json_fixtures(
+    *,
+    root: Path,
+    case_id: str,
+    risk_class: str,
+    fixture_files: Sequence[str],
+    data: Mapping[str, Any],
+) -> tuple[AgentRegressionFinding, ...]:
+    findings: list[AgentRegressionFinding] = []
+    for fixture in fixture_files:
+        if not fixture.endswith("/case.json"):
+            continue
+        path = root / fixture
+        if not path.is_file():
+            continue
+        try:
+            fixture_data = json.loads(_read_ascii(path))
+        except UnicodeDecodeError:
+            continue
+        except json.JSONDecodeError as exc:
+            findings.append(
+                _finding(
+                    "fixture-case-json-invalid",
+                    f"{case_id} case.json is invalid JSON: {exc}",
+                    "Keep case.json fixtures as minimal valid JSON objects.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                    path=fixture,
+                )
+            )
+            continue
+        if not isinstance(fixture_data, Mapping):
+            findings.append(
+                _finding(
+                    "fixture-case-json-object",
+                    f"{case_id} case.json must be a JSON object",
+                    "Use a JSON object that mirrors the manifest case_data.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                    path=fixture,
+                )
+            )
+            continue
+        if dict(fixture_data) != dict(data):
+            findings.append(
+                _finding(
+                    "fixture-case-data-mismatch",
+                    f"{case_id} case.json no longer matches manifest case_data",
+                    "Update the fixture and manifest together so case data cannot drift silently.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                    path=fixture,
+                )
+            )
+    return tuple(findings)
+
+
+def _validate_case_data(
+    *,
+    root: Path,
+    case_id: str,
+    risk_class: str,
+    expected_checker: str,
+    data: Mapping[str, Any],
+    fixture_files: Sequence[str],
+) -> tuple[AgentRegressionFinding, ...]:
+    findings: list[AgentRegressionFinding] = []
+    if expected_checker == "artifact-contracts":
+        fixture_root = data.get("fixture_root")
+        if not isinstance(fixture_root, str) or not fixture_root:
+            findings.append(
+                _finding(
+                    "case-data-fixture-root",
+                    f"{case_id} artifact-contract case requires case_data.fixture_root",
+                    "Set fixture_root to the artifact-contract fixture directory.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+            case_root = root / FIXTURE_ROOT / case_id
+        else:
+            _, path_findings = _safe_relative_posix_path(
+                fixture_root,
+                root=root,
+                base=root,
+                case_id=case_id,
+                risk_class=risk_class,
+                field="fixture_root",
+                require_existing_dir=True,
+            )
+            findings.extend(path_findings)
+            case_root = root / fixture_root
+
+        manifest_path = data.get("manifest_path")
+        if not isinstance(manifest_path, str) or not manifest_path:
+            findings.append(
+                _finding(
+                    "case-data-manifest-path",
+                    f"{case_id} artifact-contract case requires case_data.manifest_path",
+                    "Set manifest_path to the fixture-local artifact-contract manifest.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+        else:
+            _, path_findings = _safe_relative_posix_path(
+                manifest_path,
+                root=root,
+                base=case_root,
+                case_id=case_id,
+                risk_class=risk_class,
+                field="manifest_path",
+            )
+            findings.extend(path_findings)
+
+        import_roots = data.get("import_roots", [])
+        if not isinstance(import_roots, list) or not all(
+            isinstance(item, str) for item in import_roots
+        ):
+            findings.append(
+                _finding(
+                    "case-data-import-roots",
+                    f"{case_id}.case_data.import_roots must be an array of strings",
+                    "Use fixture-local import root paths when imports are needed.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+        else:
+            for index, import_root in enumerate(import_roots):
+                _, path_findings = _safe_relative_posix_path(
+                    import_root,
+                    root=root,
+                    base=case_root,
+                    case_id=case_id,
+                    risk_class=risk_class,
+                    field=f"import_roots[{index}]",
+                    require_existing_dir=True,
+                )
+                findings.extend(path_findings)
+
+        import_modules = data.get("import_modules", [])
+        if not isinstance(import_modules, list) or not all(
+            isinstance(item, str) for item in import_modules
+        ):
+            findings.append(
+                _finding(
+                    "case-data-import-modules",
+                    f"{case_id}.case_data.import_modules must be an array of strings",
+                    "Use conservative Python dotted module names for import_modules.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+        else:
+            for module_name in import_modules:
+                if not MODULE_NAME_RE.fullmatch(module_name):
+                    findings.append(
+                        _finding(
+                            "case-data-import-module-invalid",
+                            f"{case_id} import module is not a safe dotted identifier: {module_name}",
+                            "Use a Python identifier or dotted identifier for import_modules.",
+                            case_id=case_id,
+                            risk_class=risk_class,
+                        )
+                    )
+
+    if expected_checker == "codex-quality-receipt":
+        raw_path = data.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            findings.append(
+                _finding(
+                    "case-data-path",
+                    f"{case_id} codex-quality receipt case requires case_data.path",
+                    "Set path to the missing or scoped fixture path to test.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+        else:
+            _, path_findings = _safe_relative_posix_path(
+                raw_path,
+                root=root,
+                base=root,
+                case_id=case_id,
+                risk_class=risk_class,
+                field="path",
+            )
+            findings.extend(path_findings)
+
+    if expected_checker in {
+        "synthesis-review-packet-validator",
+        "backlog-review-validate",
+    }:
+        variant = data.get("variant")
+        if not isinstance(variant, str) or not variant:
+            findings.append(
+                _finding(
+                    "case-data-variant",
+                    f"{case_id} requires case_data.variant",
+                    "Set variant to the deterministic packet or verdict fixture case.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+
+    if expected_checker == "limitation-record":
+        omission_code = data.get("omission_code")
+        if not isinstance(omission_code, str) or not omission_code:
+            findings.append(
+                _finding(
+                    "case-data-omission-code",
+                    f"{case_id} requires case_data.omission_code",
+                    "Set omission_code to the deterministic limitation code.",
+                    case_id=case_id,
+                    risk_class=risk_class,
+                )
+            )
+
+    findings.extend(
+        _validate_case_json_fixtures(
+            root=root,
+            case_id=case_id,
+            risk_class=risk_class,
+            fixture_files=fixture_files,
+            data=data,
+        )
+    )
+    return tuple(findings)
+
+
 def _case_from_mapping(
     value: Mapping[str, Any], *, index: int, root: Path
 ) -> tuple[AgentRegressionCase | None, tuple[AgentRegressionFinding, ...]]:
@@ -415,6 +725,16 @@ def _case_from_mapping(
             )
         )
         data = {}
+    findings.extend(
+        _validate_case_data(
+            root=root,
+            case_id=case_id,
+            risk_class=risk_class,
+            expected_checker=str(expected_checker),
+            data=data,
+            fixture_files=tuple(valid_fixture_files),
+        )
+    )
 
     case = AgentRegressionCase(
         case_id=case_id,
@@ -496,6 +816,15 @@ def _load_cases(
             )
         )
         return (), findings
+    if not cases_raw:
+        findings.append(
+            _finding(
+                "manifest-cases-empty",
+                "agent regression manifest must include at least one case",
+                "Add committed regression cases for every required checker group.",
+                path=_relpath(path, root),
+            )
+        )
     cases: list[AgentRegressionCase] = []
     seen: set[str] = set()
     for index, item in enumerate(cases_raw):
@@ -526,6 +855,46 @@ def _load_cases(
         seen.add(case.case_id)
         cases.append(case)
     return tuple(sorted(cases, key=lambda item: item.case_id)), findings
+
+
+def _coverage_findings(
+    cases: Sequence[AgentRegressionCase],
+    findings: Sequence[AgentRegressionFinding],
+) -> tuple[AgentRegressionFinding, ...]:
+    invalid_case_ids = {
+        finding.case_id for finding in findings if finding.case_id is not None
+    }
+    groups = {
+        case.expected_checker
+        for case in cases
+        if case.case_id not in invalid_case_ids
+        and case.expected_checker in ALLOWED_CHECKERS
+    }
+    coverage_findings: list[AgentRegressionFinding] = []
+    for required in REQUIRED_CHECKER_GROUPS:
+        if required not in groups:
+            coverage_findings.append(
+                _finding(
+                    "manifest-required-checker-group-missing",
+                    f"agent regression manifest does not cover required checker group: {required}",
+                    "Add a committed case for every required checker group.",
+                    path=CASES_PATH.as_posix(),
+                )
+            )
+    for alternatives in REQUIRED_CHECKER_ALTERNATIVES:
+        if not any(group in groups for group in alternatives):
+            coverage_findings.append(
+                _finding(
+                    "manifest-required-checker-group-alternative-missing",
+                    (
+                        "agent regression manifest must cover at least one of: "
+                        + ", ".join(alternatives)
+                    ),
+                    "Add a committed hook-policy or codex-quality-receipt case.",
+                    path=CASES_PATH.as_posix(),
+                )
+            )
+    return tuple(coverage_findings)
 
 
 def _read_case_text(case: AgentRegressionCase, root: Path) -> str:
@@ -947,11 +1316,38 @@ def _evaluate_codex_quality_receipt(
             ("case-data-invalid",),
             ("codex-quality-receipt case requires case_data.path",),
         )
-    # Use the lower-level governance-boundary path gate to avoid recursive
-    # codex-quality execution while codex-quality is running this check.
+    # Build the receipt from a lower-level governance result to avoid recursive
+    # full codex-quality execution while still exercising receipt semantics.
+    import codex_quality
+
     result = check_governance_boundary.run_check([Path(raw_path)], root=root)
-    codes = tuple(sorted({violation.code for violation in result.violations}))
-    return ObservedCaseResult(_normalize_status_from_codes(codes), codes)
+    check = codex_quality.governance_check_entry(result)
+    receipt = codex_quality.build_quality_receipt(
+        root=root,
+        checks=[check],
+        semantically_checked_files=result.checked_files,
+        requested_paths=[Path(raw_path)],
+        repo_policy=repo_config.load_repo_policy(),
+        generated_at="2026-06-29T00:00:00Z",
+    )
+    checks = receipt.get("checks")
+    codes: set[str] = set()
+    if isinstance(checks, list):
+        for item in checks:
+            if not isinstance(item, Mapping):
+                continue
+            findings = item.get("findings")
+            if not isinstance(findings, list):
+                continue
+            for finding in findings:
+                if isinstance(finding, Mapping) and isinstance(finding.get("code"), str):
+                    codes.add(str(finding["code"]))
+    if receipt.get("quality_receipt_digest") != codex_quality.receipt_digest(receipt):
+        codes.add("quality-receipt-digest-mismatch")
+    return ObservedCaseResult(
+        "failed" if receipt.get("passed") is False else "passed",
+        tuple(sorted(codes)),
+    )
 
 
 def _evaluate_limitation_record(
@@ -1035,6 +1431,7 @@ def run_check(
     manifest = cases_path if cases_path.is_absolute() else root / cases_path
     checked_files: set[str] = {_relpath(manifest, root)}
     cases, findings = _load_cases(root, cases_path)
+    findings.extend(_coverage_findings(cases, findings))
     case_results: list[AgentRegressionCaseResult] = []
 
     for case in cases:

@@ -117,6 +117,75 @@ def freshness_bound_protected_paths(
     return codex_surface.protected_paths(existing_candidates, repo_policy=repo_policy)
 
 
+def governance_check_entry(
+    result: check_governance_boundary.CheckResult,
+) -> dict[str, object]:
+    return {
+        "name": "governance-boundary",
+        "status": "passed" if result.passed else "failed",
+        "checked_files": list(result.checked_files),
+        "findings": [violation.to_json() for violation in result.violations],
+    }
+
+
+def artifact_contracts_check_entry(
+    result: check_artifact_contracts.ArtifactContractResult,
+) -> dict[str, object]:
+    return {
+        "name": "artifact-contracts",
+        "status": "passed" if result.passed else "failed",
+        "checked_files": list(result.checked_files),
+        "findings": [finding.to_json() for finding in result.findings],
+    }
+
+
+def agent_regression_check_entry(
+    result: check_agent_regression.AgentRegressionResult,
+) -> dict[str, object]:
+    return {
+        "name": "agent-regression",
+        "status": "passed" if result.passed else "failed",
+        "checked_files": list(result.checked_files),
+        "case_results": [
+            case_result.to_json() for case_result in result.case_results
+        ],
+        "findings": [finding.to_json() for finding in result.findings],
+    }
+
+
+def build_quality_receipt(
+    *,
+    root: Path,
+    checks: Sequence[dict[str, object]],
+    semantically_checked_files: Sequence[str],
+    requested_paths: Sequence[Path] | None,
+    repo_policy: repo_config.RepoPolicy,
+    generated_at: str | None = None,
+) -> dict[str, object]:
+    semantically_checked_paths = semantically_checked_protected_paths(
+        root=root,
+        checked_files=semantically_checked_files,
+        repo_policy=repo_policy,
+    )
+    freshness_bound_paths = freshness_bound_protected_paths(
+        root=root,
+        requested_paths=requested_paths,
+        repo_policy=repo_policy,
+    )
+    passed = all(check["status"] == "passed" for check in checks)
+    receipt: dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": generated_at or utc_now(),
+        "tool": "codex-quality",
+        "passed": passed,
+        "freshness_bound_protected_paths": list(freshness_bound_paths),
+        "semantically_checked_protected_paths": list(semantically_checked_paths),
+        "checks": list(checks),
+    }
+    receipt["quality_receipt_digest"] = receipt_digest(receipt)
+    return receipt
+
+
 def run_quality(
     *,
     root: Path | None = None,
@@ -136,60 +205,21 @@ def run_quality(
     artifact_result = check_artifact_contracts.run_check(root=root)
     agent_regression_result = check_agent_regression.run_check(root=root)
     checks = [
-        {
-            "name": "governance-boundary",
-            "status": "passed" if governance_result.passed else "failed",
-            "checked_files": list(governance_result.checked_files),
-            "findings": [
-                violation.to_json() for violation in governance_result.violations
-            ],
-        },
-        {
-            "name": "artifact-contracts",
-            "status": "passed" if artifact_result.passed else "failed",
-            "checked_files": list(artifact_result.checked_files),
-            "findings": [
-                finding.to_json() for finding in artifact_result.findings
-            ],
-        },
-        {
-            "name": "agent-regression",
-            "status": "passed" if agent_regression_result.passed else "failed",
-            "checked_files": list(agent_regression_result.checked_files),
-            "case_results": [
-                case_result.to_json()
-                for case_result in agent_regression_result.case_results
-            ],
-            "findings": [
-                finding.to_json() for finding in agent_regression_result.findings
-            ],
-        },
+        governance_check_entry(governance_result),
+        artifact_contracts_check_entry(artifact_result),
+        agent_regression_check_entry(agent_regression_result),
     ]
-    semantically_checked_paths = semantically_checked_protected_paths(
+    receipt = build_quality_receipt(
         root=root,
-        checked_files=(
+        checks=checks,
+        semantically_checked_files=(
             tuple(governance_result.checked_files)
             + tuple(artifact_result.checked_files)
             + tuple(agent_regression_result.checked_files)
         ),
-        repo_policy=active_policy,
-    )
-    freshness_bound_paths = freshness_bound_protected_paths(
-        root=root,
         requested_paths=paths,
         repo_policy=active_policy,
     )
-    passed = all(check["status"] == "passed" for check in checks)
-    receipt: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
-        "generated_at": utc_now(),
-        "tool": "codex-quality",
-        "passed": passed,
-        "freshness_bound_protected_paths": list(freshness_bound_paths),
-        "semantically_checked_protected_paths": list(semantically_checked_paths),
-        "checks": checks,
-    }
-    receipt["quality_receipt_digest"] = receipt_digest(receipt)
 
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(

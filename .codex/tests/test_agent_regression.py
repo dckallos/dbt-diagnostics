@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+from scripts.triage import repo_config
+
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH = ROOT / ".codex" / "agent-regression-cases-v1.json"
@@ -191,6 +193,47 @@ def test_agent_regression_rejects_malformed_manifest_fields(
     assert {finding.code for finding in result.findings} >= {expected_code}
 
 
+def test_agent_regression_rejects_empty_case_manifest(tmp_path: Path) -> None:
+    checker = _load_codex_script("check_agent_regression")
+    manifest = _write_manifest(tmp_path, [])
+
+    result = checker.run_check(root=tmp_path, cases_path=manifest)
+
+    codes = {finding.code for finding in result.findings}
+    assert result.passed is False
+    assert "manifest-cases-empty" in codes
+    assert "manifest-required-checker-group-missing" in codes
+    assert result.case_results == ()
+
+
+def test_agent_regression_rejects_missing_required_checker_group(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_agent_regression")
+    fixture = (
+        ".codex/agent-regression/fixtures/governance-boundary-must-close-issue/"
+        ".agents/skills/bad/SKILL.md"
+    )
+    _write_fixture(
+        tmp_path,
+        fixture,
+        "This read-only skill must close GitHub issues after review.\n",
+    )
+    manifest = _write_manifest(tmp_path, [_base_case(fixture)])
+
+    result = checker.run_check(root=tmp_path, cases_path=manifest)
+
+    assert result.passed is False
+    messages = {
+        finding.message for finding in result.findings
+        if finding.code == "manifest-required-checker-group-missing"
+    }
+    assert any("artifact-contracts" in message for message in messages)
+    assert {
+        finding.code for finding in result.findings
+    } >= {"manifest-required-checker-group-alternative-missing"}
+
+
 def test_agent_regression_rejects_missing_fixture_file(tmp_path: Path) -> None:
     checker = _load_codex_script("check_agent_regression")
     fixture = (
@@ -233,6 +276,66 @@ def test_agent_regression_rejects_fixture_outside_fixture_root(tmp_path: Path) -
     assert result.passed is False
     assert {finding.code for finding in result.findings} >= {
         "fixture-path-outside-root"
+    }
+
+
+def test_agent_regression_rejects_invalid_checker_case_data(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_agent_regression")
+    fixture = ".codex/agent-regression/fixtures/artifact-contract-invalid/rationale.md"
+    _write_fixture(tmp_path, fixture, "invalid artifact-contract case data\n")
+    case = {
+        "case_id": "artifact-contract-invalid",
+        "risk_class": "artifact_contract_drift",
+        "fixture_files": [fixture],
+        "expected_checker": "artifact-contracts",
+        "expected_status": "failed",
+        "expected_finding_code": "manifest-missing",
+        "repair_guidance": "Use fixture-local artifact-contract case data.",
+        "case_data": {
+            "fixture_root": "/tmp/outside",
+            "manifest_path": "../artifact-contracts-v1.json",
+            "import_roots": ["../outside"],
+            "import_modules": ["bad-module;name"],
+        },
+    }
+    manifest = _write_manifest(tmp_path, [case])
+
+    result = checker.run_check(root=tmp_path, cases_path=manifest)
+
+    codes = {finding.code for finding in result.findings}
+    assert result.passed is False
+    assert "case-data-path-invalid" in codes
+    assert "case-data-import-module-invalid" in codes
+
+
+def test_agent_regression_detects_case_json_fixture_data_drift(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_agent_regression")
+    fixture = (
+        ".codex/agent-regression/fixtures/packet-validator-serialized-bytes-lie/"
+        "case.json"
+    )
+    _write_fixture(tmp_path, fixture, '{\n  "variant": "comments-included"\n}\n')
+    case = {
+        "case_id": "packet-validator-serialized-bytes-lie",
+        "risk_class": "bounded_packet_safety",
+        "fixture_files": [fixture],
+        "expected_checker": "synthesis-review-packet-validator",
+        "expected_status": "failed",
+        "expected_finding_code": "packet_serialized_bytes_mismatch",
+        "repair_guidance": "Keep case.json and manifest case_data aligned.",
+        "case_data": {"variant": "serialized-bytes-lie"},
+    }
+    manifest = _write_manifest(tmp_path, [case])
+
+    result = checker.run_check(root=tmp_path, cases_path=manifest)
+
+    assert result.passed is False
+    assert {finding.code for finding in result.findings} >= {
+        "fixture-case-data-mismatch"
     }
 
 
@@ -283,6 +386,39 @@ def test_agent_regression_records_fabricated_refs_as_integrated_failures() -> No
         case = by_id[case_id]
         assert case.observed_status == "failed"
         assert case.observed_codes == ("unknown_packet_reference",)
+
+
+def test_agent_regression_codex_quality_receipt_case_uses_receipt_fields() -> None:
+    checker = _load_codex_script("check_agent_regression")
+    quality = _load_codex_script("codex_quality")
+    governance = _load_codex_script("check_governance_boundary")
+    result = checker.run_check(root=ROOT)
+    by_id = _case_results_by_id(result)
+
+    case = by_id["codex-quality-explicit-path-missing"]
+    assert case.observed_status == "failed"
+    assert case.observed_codes == ("explicit-path-missing",)
+
+    path = Path(
+        ".codex/agent-regression/fixtures/codex-quality-explicit-path-missing/"
+        "missing.md"
+    )
+    governance_result = governance.run_check([path], root=ROOT)
+    receipt = quality.build_quality_receipt(
+        root=ROOT,
+        checks=[quality.governance_check_entry(governance_result)],
+        semantically_checked_files=governance_result.checked_files,
+        requested_paths=[path],
+        repo_policy=repo_config.load_repo_policy(),
+        generated_at="2026-06-29T00:00:00Z",
+    )
+    check = receipt["checks"][0]
+    assert receipt["passed"] is False
+    assert check["name"] == "governance-boundary"
+    assert check["status"] == "failed"
+    assert check["checked_files"] == []
+    assert check["findings"][0]["code"] == "explicit-path-missing"
+    assert receipt["quality_receipt_digest"] == quality.receipt_digest(receipt)
 
 
 def test_agent_regression_fixture_root_contains_only_ascii_files() -> None:
