@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import sys
 
+import pytest
+
 from scripts.triage import repo_config
 
 
@@ -130,6 +132,36 @@ def test_governance_boundary_checker_rejects_read_only_authorization() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_code"),
+    [
+        ("This read-only skill must set the issue milestone.", "authorized-tracker-mutation"),
+        ("The agent is required to assign labels.", "authorized-tracker-mutation"),
+        ("Set the Project item field from the skill.", "verb-first-tracker-mutation"),
+        ("Assign the issue to the release milestone.", "verb-first-tracker-mutation"),
+    ],
+)
+def test_governance_boundary_checker_rejects_required_set_assign_authorization(
+    text: str, expected_code: str
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+
+    violations = checker.scan_text(text, path="fixture.md")
+
+    assert {violation.code for violation in violations} >= {expected_code}
+
+
+def test_governance_boundary_checker_rejects_mixed_same_sentence_safe_and_unsafe() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    mixed = "Do not close issues, but set the milestone from this skill."
+
+    violations = checker.scan_text(mixed, path="fixture.md")
+
+    assert {violation.code for violation in violations} >= {
+        "verb-first-tracker-mutation"
+    }
+
+
 def test_governance_boundary_checker_allows_negated_read_only_sentence() -> None:
     checker = _load_codex_script("check_governance_boundary")
     safe = "This read-only skill must not close GitHub issues."
@@ -193,6 +225,68 @@ def test_governance_boundary_checker_allows_forbidden_operation_docs() -> None:
     assert checker.scan_text(safe, path="fixture.md") == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Run gh issue edit 1 --body 'unsafe' after review.",
+        "Run gh issue close 123 after review.",
+        "Run gh pr merge 456.",
+        "Run gh project item-edit --id PVTSSF_lADO.",
+        "Run gh workflow run ci.yml.",
+        "Set the repository secret with gh secret set TOKEN --body value.",
+        "Set the variable with gh variable set FEATURE_FLAG --body true.",
+        "Allowed command: python scripts/triage/triage.py apply --execute",
+        "$ pytest -q && gh issue edit 1 --body-file proposed-body.md",
+        "$ bash -lc 'gh issue close 1'",
+        "$ env GH_REPO=example/widgets gh project item-edit --id item",
+        "```bash\npython scripts/triage/triage.py apply --execute\n```",
+    ],
+)
+def test_governance_boundary_checker_rejects_command_shaped_guidance(
+    text: str,
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+
+    violations = checker.scan_text(text, path="fixture.md")
+
+    assert {violation.code for violation in violations} >= {
+        "forbidden-mutation-command"
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Do not close GitHub issues.",
+        "gh issue close is forbidden.",
+        "Unsupported operations: gh issue edit, gh pr merge, gh project item-edit.",
+        "The maintainer applies changes manually outside read-only artifacts.",
+        "Run rg -n 'gh issue edit' docs.",
+        "Use apply --dry-run for read-only preflight.",
+        (
+            "triage.py apply --execute requires explicit maintainer approval "
+            "and is not available from read-only skills."
+        ),
+        (
+            "A real writer session is deliberately gated.\n\n"
+            "```bash\npython scripts/triage/triage.py apply --execute\n```"
+        ),
+    ],
+)
+def test_governance_boundary_checker_allows_safe_command_documentation(
+    text: str,
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+
+    assert checker.scan_text(text, path="fixture.md") == []
+
+
+def test_governance_boundary_checker_uses_repo_config_for_operation_ids() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+
+    assert set(checker.FORBIDDEN_OPERATION_IDS) == repo_config.FORBIDDEN_OPERATION_IDS
+
+
 def test_default_governance_boundary_scan_includes_issue_contract() -> None:
     checker = _load_codex_script("check_governance_boundary")
 
@@ -200,6 +294,50 @@ def test_default_governance_boundary_scan_includes_issue_contract() -> None:
 
     assert "docs/ISSUE_CONTRACT_V1.md" in paths
     assert ".codex/README.md" in paths
+
+
+def test_governance_boundary_explicit_missing_path_fails_closed(tmp_path: Path) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+
+    result = checker.run_check([Path("missing.md")], root=tmp_path)
+
+    assert result.passed is False
+    assert result.checked_files == ()
+    assert [(violation.path, violation.line, violation.code) for violation in result.violations] == [
+        ("missing.md", 0, "explicit-path-missing")
+    ]
+
+
+def test_governance_boundary_explicit_ineligible_path_fails_closed(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    binary = tmp_path / "fixture.bin"
+    binary.write_bytes(b"\x00\x01")
+
+    result = checker.run_check([Path("fixture.bin")], root=tmp_path)
+
+    assert result.passed is False
+    assert result.checked_files == ()
+    assert [(violation.path, violation.line, violation.code) for violation in result.violations] == [
+        ("fixture.bin", 0, "explicit-path-ineligible")
+    ]
+
+
+def test_governance_boundary_explicit_empty_directory_fails_closed(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    result = checker.run_check([Path("empty")], root=tmp_path)
+
+    assert result.passed is False
+    assert result.checked_files == ()
+    assert [(violation.path, violation.line, violation.code) for violation in result.violations] == [
+        ("empty", 0, "explicit-path-empty")
+    ]
 
 
 def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
@@ -229,6 +367,25 @@ def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
     ]
     assert saved["freshness_bound_protected_paths"] == []
     assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)
+
+
+def test_codex_quality_missing_explicit_path_records_failed_receipt(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    receipt_path = tmp_path / "output" / "codex" / "quality-receipt.json"
+
+    receipt = quality.run_quality(
+        root=tmp_path,
+        receipt_path=receipt_path,
+        paths=[Path("missing.md")],
+    )
+
+    assert receipt["passed"] is False
+    check = receipt["checks"][0]
+    assert check["status"] == "failed"
+    assert check["checked_files"] == []
+    assert check["findings"][0]["code"] == "explicit-path-missing"
 
 
 def test_codex_quality_records_deterministic_freshness_bound_protected_paths(

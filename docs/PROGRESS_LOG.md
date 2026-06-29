@@ -2177,3 +2177,59 @@ End of session -- 2026-06-28 issue 102 bounded LLM governance workflow docs
   package/plugin publication, GitHub mutation, or apply integration.
 
 End of session -- 2026-06-28 issue 103 retrieval governance spike
+
+---
+
+## 2026-06-29 -- issue 107 governance-boundary hardening
+
+**What changed**
+- Started `fix/107-governance-boundary-hardening` from updated
+  `donkey-kong-sandbox` after the maintainer applied the standardized #107
+  issue body.
+- Hardened the existing governance-boundary scanner to use the shared
+  mutation-command classifier for executable-looking command guidance, fail
+  closed for missing or ineligible explicit paths, and keep safe forbidden
+  operation documentation passing.
+- Added shared classifier coverage for repo-local
+  `python scripts/triage/triage.py apply --execute` execution shapes across
+  policy validation, hooks, worker-packet validation, and semantic scanning.
+- Expanded focused Codex and triage tests for forbidden prose classes,
+  command-shaped guidance, safe negation, inert dangerous text, explicit path
+  diagnostics, and classifier parity.
+- Added a concise `.codex/README.md` note and `CHANGELOG.md` entry for the
+  visible hardening behavior.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed with 0 failures and 2 expected
+  warnings before branching.
+- `bash .codex/bin/action.sh context 107 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 107` passed with only the
+  existing missing-type-label warning.
+- Verified #107 is open, #105/#106/#103 are closed, PR #132 is merged, #93 is
+  closed, #134 tracks #107, and #118/#120/#121 remain separate downstream work.
+- `python -m pytest -q .codex/tests/test_codex_quality.py .codex/tests/test_codex_hooks.py scripts/triage/test_repo_config.py scripts/triage/test_frontier.py`
+  passed: 288 passed.
+- `python -m py_compile .codex/scripts/check_governance_boundary.py .codex/scripts/codex_quality.py .codex/hooks/hook_policy.py scripts/triage/repo_config.py scripts/triage/frontier.py`
+  passed.
+- `python -m json.tool .codex/hooks.json` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed.
+- `bash .codex/bin/action.sh check` passed before this progress-log update.
+
+**Current state**
+- Work is local on branch `fix/107-governance-boundary-hardening`.
+- No PR has been opened yet.
+- No GitHub mutation, new write path, production diagnostic runtime behavior,
+  LLM call, network call, or #118/#120/#121 extraction/distribution work was
+  added.
+
+**Next steps**
+- Rerun the final gates after this progress-log update, then review, commit,
+  push, and open a PR to `donkey-kong-sandbox` with `Closes #107` when PR
+  publication is approved.
+
+**Be careful**
+- Keep this PR limited to the existing governance-boundary checker, shared
+  mutation classifier, hook/worker consumers, docs, and tests. Do not expand it
+  into #108, #109, #110, #111, #112, #118, #120, #121, or #133.
+
+End of session -- 2026-06-29 issue 107 governance-boundary hardening

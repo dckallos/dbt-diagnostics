@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Harden governance-boundary checks
+
+- I hardened the existing `codex-quality` governance-boundary scanner so it
+  routes command-shaped guidance through the shared mutation classifier,
+  rejects repo-local `triage.py apply --execute` execution shapes, and fails
+  closed for missing or ineligible explicit `--path` inputs.
+- I expanded the shared classifier and tests across policy validation, hooks,
+  and the semantic scanner while preserving safe forbidden-operation
+  documentation, read-only GitHub commands, and inert dangerous text searches.
+
 ### Retrieval governance spike
 
 - I added a local research/evaluation harness and spike report for evaluating

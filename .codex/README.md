@@ -138,9 +138,11 @@ quality receipt. They do not run live Snowflake, call GitHub write endpoints,
 or inspect secrets. Hook failures emit valid JSON and fail closed for the
 operation being evaluated.
 
-GitHub mutation command classification is shared with repository policy
-validation for worker-packet verification commands, so read-only artifacts and
-hook denial use the same command-boundary rules.
+GitHub and tracker mutation command classification is shared with repository
+policy validation for worker-packet verification commands, so read-only
+artifacts and hook denial use the same command-boundary rules. The shared
+boundary also rejects repo-local tracker execution shapes such as
+`triage.py apply --execute` from read-only artifacts.
 
 The normal `codex-quality` action records two protected-path fields:
 
@@ -157,6 +159,11 @@ Semantic scanning and freshness binding are intentionally separate. A file being
 listed in `semantically_checked_protected_paths` never satisfies the Stop-hook
 freshness gate by itself; changed protected files still need
 `freshness_bound_protected_paths` coverage from a fresh passing receipt.
+
+When `codex-quality --path` is used, every explicit path must exist and expand
+to an eligible text file. Missing, outside-root, ineligible, or empty explicit
+paths fail the receipt instead of producing a passing scan with no checked
+files.
 
 ## Issue governance workflow
 

@@ -245,6 +245,8 @@ def test_pre_tool_use_blocks_direct_github_issue_mutation() -> None:
         "gh workflow enable ci.yml",
         "gh secret set TOKEN --body value",
         "gh variable set FEATURE_FLAG --body true",
+        "python scripts/triage/triage.py apply --execute",
+        "bash -lc 'python scripts/triage/triage.py apply --execute'",
     ],
 )
 def test_pre_tool_use_blocks_github_write_commands(command: str) -> None:
