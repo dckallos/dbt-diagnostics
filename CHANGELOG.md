@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Add artifact-contract checker
+
+- I added a manifest-backed `artifact-contracts` codex-quality check for stable
+  governance JSON artifacts, covering schema docs, machine JSON Schemas, Python
+  validators, digest rules, freshness semantics, diagnostic IDs, and verdict
+  reference validation.
+- I protected the artifact-contract manifest, added `jsonschema` to the Codex
+  development dependency surface, and kept the check local/read-only with no new
+  public CLI command or schema version bump.
+
 ### Harden governance-boundary checks
 
 - I hardened the existing `codex-quality` governance-boundary scanner so it

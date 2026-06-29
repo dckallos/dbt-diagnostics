@@ -179,6 +179,49 @@ def sign_packet(packet: dict) -> dict:
     return packet
 
 
+def finalize_packet(packet: dict) -> dict:
+    packet["synthesis_review_packet_digest"] = "0" * 64
+    for _ in range(10):
+        budget = dict(packet["budget"])
+        serialized_bytes = len(frontier.canonical_json(packet).encode("utf-8"))
+        budget["serialized_bytes"] = serialized_bytes
+        budget["estimated_tokens"] = (serialized_bytes + 3) // 4
+        warnings: list[str] = []
+        if serialized_bytes > int(budget.get("target_bytes") or 0):
+            warnings.append(frontier.SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES)
+        if int(budget["estimated_tokens"]) > int(
+            budget.get("target_estimated_tokens") or 0
+        ):
+            warnings.append(frontier.ESTIMATED_TOKENS_EXCEEDS_TARGET)
+        budget["budget_warnings"] = warnings
+        packet["budget"] = budget
+        digest = packet_digest(packet)
+        if (
+            packet.get("synthesis_review_packet_digest") == digest
+            and serialized_bytes == len(frontier.canonical_json(packet).encode("utf-8"))
+        ):
+            return packet
+        packet["synthesis_review_packet_digest"] = digest
+    return packet
+
+
+def refresh_packet_serialized_bytes(packet: dict) -> dict:
+    packet["synthesis_review_packet_digest"] = "0" * 64
+    for _ in range(10):
+        budget = dict(packet["budget"])
+        serialized_bytes = len(frontier.canonical_json(packet).encode("utf-8"))
+        budget["serialized_bytes"] = serialized_bytes
+        packet["budget"] = budget
+        digest = packet_digest(packet)
+        if (
+            packet.get("synthesis_review_packet_digest") == digest
+            and serialized_bytes == len(frontier.canonical_json(packet).encode("utf-8"))
+        ):
+            return packet
+        packet["synthesis_review_packet_digest"] = digest
+    return packet
+
+
 def sign_verdict(verdict: dict) -> dict:
     verdict["backlog_review_verdict_digest"] = verdict_digest(verdict)
     return verdict
@@ -239,7 +282,7 @@ def synthesis_review_packet(**overrides: object) -> dict:
         },
     }
     value.update(overrides)
-    return sign_packet(value)
+    return finalize_packet(value)
 
 
 def synthesis_review_packet_with_refs(**overrides: object) -> dict:
@@ -277,7 +320,7 @@ def synthesis_review_packet_with_refs(**overrides: object) -> dict:
         ],
     )
     value.update(overrides)
-    return sign_packet(value)
+    return finalize_packet(value)
 
 
 def backlog_review_verdict(
@@ -1662,15 +1705,21 @@ def test_synthesis_review_packet_validation_enforces_byte_not_token_limit() -> N
     advisory_tokens["budget"]["budget_warnings"] = [
         "estimated_tokens_exceeds_target"
     ]
-    advisory_tokens = sign_packet(advisory_tokens)
+    advisory_tokens = refresh_packet_serialized_bytes(advisory_tokens)
 
     too_large = synthesis_review_packet()
-    too_large["budget"]["serialized_bytes"] = 307201
+    too_large["evidence_items"] = [
+        {
+            "evidence_id": "larger-than-hard-budget",
+            "excerpt": "x" * 308000,
+        }
+    ]
+    too_large["budget"]["estimated_tokens"] = 80000
     too_large["budget"]["budget_warnings"] = [
         "serialized_bytes_exceeds_target_bytes",
         "estimated_tokens_exceeds_target",
     ]
-    too_large = sign_packet(too_large)
+    too_large = refresh_packet_serialized_bytes(too_large)
 
     assert frontier.validate_synthesis_review_packet(advisory_tokens) == []
     assert (
@@ -1688,20 +1737,25 @@ def test_synthesis_review_packet_budget_warnings_are_consistent() -> None:
             audit(entry(96)),
         ),
     )
-    over_target = synthesis_review_packet()
-    over_target["budget"]["serialized_bytes"] = 204801
+    over_target = synthesis_review_packet(
+        evidence_items=[
+            {
+                "evidence_id": "large-but-under-hard",
+                "excerpt": "x" * 205000,
+            }
+        ]
+    )
     over_target["budget"]["estimated_tokens"] = 50001
     over_target["budget"]["budget_warnings"] = [
         "serialized_bytes_exceeds_target_bytes",
         "estimated_tokens_exceeds_target",
     ]
-    over_target = sign_packet(over_target)
-    missing_warning = synthesis_review_packet()
-    missing_warning["budget"]["serialized_bytes"] = 204801
+    over_target = refresh_packet_serialized_bytes(over_target)
+    missing_warning = json.loads(json.dumps(over_target))
     missing_warning["budget"]["budget_warnings"] = [
         "estimated_tokens_exceeds_target"
     ]
-    missing_warning = sign_packet(missing_warning)
+    missing_warning = refresh_packet_serialized_bytes(missing_warning)
 
     assert under_target["budget"]["budget_warnings"] == []
     assert frontier.validate_synthesis_review_packet(over_target) == []
@@ -1724,7 +1778,7 @@ def test_synthesis_review_packet_actual_size_requires_target_warning() -> None:
             "excerpt": "x" * 205000,
         }
     ]
-    packet = sign_packet(packet)
+    packet = refresh_packet_serialized_bytes(packet)
 
     assert (
         "budget.budget_warnings must include "
@@ -1752,31 +1806,16 @@ def test_synthesis_review_packet_validation_enforces_actual_serialized_bytes() -
 
 
 def test_synthesis_review_packet_validation_rejects_stale_packets() -> None:
+    stale = frontier.build_synthesis_review_packet_staleness(
+        source_generated_at="2026-06-24T00:00:00Z",
+        evaluated_at="2026-07-02T00:00:01Z",
+        max_age_hours=168,
+    ).to_json()
     not_reviewable = synthesis_review_packet(
-        staleness={
-            "source_generated_at": "2026-06-24T00:00:00Z",
-            "evaluated_at": "2026-07-02T00:00:01Z",
-            "source_age_hours": 192.0,
-            "warning_age_hours": 24,
-            "max_age_hours": 168,
-            "freshness_status": "stale",
-            "freshness_warnings": ["source_age_exceeds_warning_age"],
-            "stale": True,
-            "llm_review_allowed": False,
-        }
+        staleness=stale
     )
     packet = synthesis_review_packet(
-        staleness={
-            "source_generated_at": "2026-06-24T00:00:00Z",
-            "evaluated_at": "2026-07-02T00:00:01Z",
-            "source_age_hours": 192.0,
-            "warning_age_hours": 24,
-            "max_age_hours": 168,
-            "freshness_status": "stale",
-            "freshness_warnings": ["source_age_exceeds_warning_age"],
-            "stale": True,
-            "llm_review_allowed": True,
-        }
+        staleness={**stale, "llm_review_allowed": True}
     )
 
     assert (

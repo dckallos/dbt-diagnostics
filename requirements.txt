@@ -4,3 +4,6 @@ tiktoken>=0.7.0
 
 # --- dbt-diagnostics Dependencies ---
 # (Paste the dependencies from your pyproject.toml [project.dependencies] here)
+
+# --- Codex development tooling ---
+jsonschema>=4.0

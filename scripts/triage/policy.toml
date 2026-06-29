@@ -34,6 +34,7 @@ reference_roots = [
 ]
 protected_surfaces = [
   ".agents/skills/**",
+  ".codex/artifact-contracts-v1.json",
   ".codex/bin/**",
   ".codex/scripts/**",
   ".codex/hooks/**",
@@ -206,6 +207,7 @@ required_modules = [
   "dbt_diagnostics",
   "pytest",
   "hypothesis",
+  "jsonschema",
   "sqlglot",
   "yaml",
   "jinja2",

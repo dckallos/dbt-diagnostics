@@ -2233,3 +2233,71 @@ End of session -- 2026-06-28 issue 103 retrieval governance spike
   into #108, #109, #110, #111, #112, #118, #120, #121, or #133.
 
 End of session -- 2026-06-29 issue 107 governance-boundary hardening
+
+---
+
+## 2026-06-29 -- issue 108 artifact-contract checker
+
+**What changed**
+- Started `test/108-artifact-contracts` from `donkey-kong-sandbox` after live
+  preflight confirmed #108 is open, #107/PR #140 and #103/PR #132 are merged,
+  #105/#106/#93/#98/#100 are closed, #134 remains open, and #118/#120/#121 are
+  separate downstream extraction/distribution work.
+- Added `.codex/artifact-contracts-v1.json` and
+  `.codex/scripts/check_artifact_contracts.py` to inventory stable
+  schema-versioned artifacts and validate active project-plan, backlog-synthesis,
+  synthesis-review-packet, and backlog-review-verdict contracts across docs,
+  machine schemas, Python validators, digests, forbidden shapes, freshness,
+  diagnostic IDs, and verdict refs.
+- Wired the new `artifact-contracts` check into `codex-quality`, protected the
+  manifest in policy, added `jsonschema` to the development dependency surface,
+  and added the user-requested `issue-work` prompt to ask before installing a
+  missing package and adding it to `requirements.txt`.
+- Tightened packet validation for recomputed `budget.serialized_bytes`,
+  recomputed `staleness.source_age_hours`, and max-age values that would loosen
+  the default hard stale threshold. Tightened the packet JSON Schema so all #96
+  staleness fields are required.
+- Added focused tests for manifest drift, active artifact fixtures, JSON Schema
+  enforcement, freshness semantics, diagnostic ID preservation, verdict paired
+  validation, codex-quality receipt integration, protected manifest freshness,
+  and existing hook quality-receipt consumers.
+
+**Validation**
+- `bash .codex/bin/action.sh doctor` passed before branching with 0 failures and
+  2 expected warnings.
+- `bash .codex/bin/action.sh context 108 --comments` passed.
+- `python scripts/triage/triage.py contract --issue 108` passed.
+- `python -m pytest -q .codex/tests/test_artifact_contracts.py` passed: 11
+  passed.
+- `python -m pytest -q .codex/tests/test_codex_quality.py` passed: 57 passed.
+- `python -m pytest -q .codex/tests/test_codex_hooks.py` passed: 51 passed.
+- `python -m pytest -q scripts/triage/test_repo_config.py` passed: 89 passed.
+- `python -m pytest -q scripts/triage/test_frontier.py` passed: 93 passed.
+- `python -m pytest -q scripts/triage/test_triage.py` passed: 84 passed.
+- `python -m py_compile .codex/scripts/check_artifact_contracts.py .codex/scripts/codex_quality.py .codex/tests/test_artifact_contracts.py .codex/tests/test_codex_quality.py .codex/tests/test_codex_hooks.py scripts/triage/frontier.py scripts/triage/test_frontier.py scripts/triage/test_repo_config.py`
+  passed.
+- `python -m json.tool` passed for the artifact-contract manifest and the four
+  active artifact JSON Schemas.
+- `python .codex/scripts/check_artifact_contracts.py --json` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed with
+  `governance-boundary` and `artifact-contracts` checks.
+- `bash .codex/bin/action.sh check` passed.
+
+**Current state**
+- Work is local on branch `test/108-artifact-contracts`.
+- No PR has been opened yet.
+- No GitHub mutation, LLM call, network call in the checker, public CLI command,
+  schema version bump, production diagnostic runtime change, or
+  #118/#120/#121 extraction/distribution work was added.
+
+**Next steps**
+- Do a final review of the branch diff, rerun `codex-quality` if any protected
+  files change after this entry, then commit, push, and open a PR to
+  `donkey-kong-sandbox` with `Closes #108` when PR publication is approved.
+
+**Be careful**
+- Keep this PR scoped to the artifact-contract checker and its direct
+  codex-quality/policy/test integration. Do not expand it into #109, #110,
+  #111, #112, #118, #120, #121, or #133.
+
+End of session -- 2026-06-29 issue 108 artifact-contract checker

@@ -1656,6 +1656,11 @@ class SynthesisReviewPacketStalenessShape:
         context.require_positive_int(
             self.value.get("max_age_hours"), name="staleness.max_age_hours"
         )
+        max_age = self.value.get("max_age_hours")
+        if _is_positive_int(max_age) and int(max_age) > DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS:
+            context.errors.append(
+                "staleness.max_age_hours must not exceed default hard threshold"
+            )
         status = self.value.get("freshness_status")
         if status not in self.FRESHNESS_STATUSES:
             context.errors.append(
@@ -1711,6 +1716,7 @@ class SynthesisReviewPacketStalenessShape:
         max_age = self.value.get("max_age_hours")
         stale = self.value.get("stale")
         review_allowed = self.value.get("llm_review_allowed")
+        self._validate_recomputed_source_age(context)
 
         if status == "fresh":
             if stale is not False:
@@ -1770,6 +1776,41 @@ class SynthesisReviewPacketStalenessShape:
         if status == "stale" and float(source_age) <= int(max_age):
             context.errors.append(
                 "staleness.stale source_age_hours must exceed max_age_hours"
+            )
+
+    def _validate_recomputed_source_age(self, context: ValidationContext) -> None:
+        source_generated_at = self.value.get("source_generated_at")
+        evaluated_at = self.value.get("evaluated_at")
+        source_age = self.value.get("source_age_hours")
+        if not (
+            isinstance(source_generated_at, str)
+            and isinstance(evaluated_at, str)
+            and isinstance(source_age, int | float)
+            and not isinstance(source_age, bool)
+        ):
+            return
+        try:
+            source_dt = _parse_utc_timestamp(
+                source_generated_at,
+                name="staleness.source_generated_at",
+            )
+            evaluated_dt = _parse_utc_timestamp(
+                evaluated_at,
+                name="staleness.evaluated_at",
+            )
+        except TriageError as exc:
+            context.errors.append(str(exc))
+            return
+        expected = round(int((evaluated_dt - source_dt).total_seconds()) / 3600, 6)
+        if expected < 0:
+            context.errors.append(
+                "staleness.source_generated_at must not be after evaluated_at"
+            )
+            return
+        if float(source_age) != expected:
+            context.errors.append(
+                "staleness.source_age_hours must match source_generated_at and "
+                "evaluated_at"
             )
 
 
@@ -1918,6 +1959,11 @@ class SynthesisReviewPacketValidator:
         if not _is_non_negative_int(hard):
             return
         serialized_bytes = len(canonical_json(self.value).encode("utf-8"))
+        reported = budget.get("serialized_bytes")
+        if _is_non_negative_int(reported) and int(reported) != serialized_bytes:
+            context.errors.append(
+                "budget.serialized_bytes must match actual serialized bytes"
+            )
         if _is_non_negative_int(target) and serialized_bytes > int(target):
             if SERIALIZED_BYTES_EXCEEDS_TARGET_BYTES not in warning_values:
                 context.errors.append(
@@ -3509,6 +3555,8 @@ def build_synthesis_review_packet_staleness(
         raise TriageError("warning_age_hours must be a positive integer")
     if not _is_positive_int(max_age_hours):
         raise TriageError("max_age_hours must be a positive integer")
+    if max_age_hours > DEFAULT_SYNTHESIS_REVIEW_MAX_AGE_HOURS:
+        raise TriageError("max_age_hours must not exceed default hard threshold")
     if warning_age_hours > max_age_hours:
         raise TriageError("warning_age_hours must not exceed max_age_hours")
 

@@ -20,6 +20,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import check_governance_boundary
+import check_artifact_contracts
 import codex_surface
 from scripts.triage import repo_config
 
@@ -131,6 +132,7 @@ def run_quality(
     governance_result = check_governance_boundary.run_check(
         paths, root=root, repo_policy=active_policy
     )
+    artifact_result = check_artifact_contracts.run_check(root=root)
     checks = [
         {
             "name": "governance-boundary",
@@ -139,11 +141,22 @@ def run_quality(
             "findings": [
                 violation.to_json() for violation in governance_result.violations
             ],
+        },
+        {
+            "name": "artifact-contracts",
+            "status": "passed" if artifact_result.passed else "failed",
+            "checked_files": list(artifact_result.checked_files),
+            "findings": [
+                finding.to_json() for finding in artifact_result.findings
+            ],
         }
     ]
     semantically_checked_paths = semantically_checked_protected_paths(
         root=root,
-        checked_files=governance_result.checked_files,
+        checked_files=(
+            tuple(governance_result.checked_files)
+            + tuple(artifact_result.checked_files)
+        ),
         repo_policy=active_policy,
     )
     freshness_bound_paths = freshness_bound_protected_paths(

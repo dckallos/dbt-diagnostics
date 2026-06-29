@@ -250,7 +250,13 @@
       "type": "object",
       "additionalProperties": true,
       "required": [
+        "source_generated_at",
+        "evaluated_at",
+        "source_age_hours",
+        "warning_age_hours",
         "max_age_hours",
+        "freshness_status",
+        "freshness_warnings",
         "stale",
         "llm_review_allowed"
       ],

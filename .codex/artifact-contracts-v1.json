@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "artifact": "approval",
+      "status": "excluded",
+      "reason": "Approval artifacts belong to the explicit apply/write path and are not read-only governance evidence."
+    },
+    {
+      "artifact": "backlog-review-validation",
+      "status": "pending",
+      "reason": "The backlog-review-validate result is schema-versioned but does not yet have a standalone human schema doc and machine schema.",
+      "schema_version": 1,
+      "producer": "scripts.triage.frontier:build_backlog_review_validation_result"
+    },
+    {
+      "artifact": "backlog-review-verdict",
+      "status": "active",
+      "schema_version": 1,
+      "human_doc": "docs/BACKLOG_REVIEW_VERDICT_SCHEMA_V1.md",
+      "machine_schema": "docs/backlog-review-verdict-schema-v1.json",
+      "validator": "scripts.triage.frontier:validate_backlog_review_verdict",
+      "paired_validator": "scripts.triage.frontier:validate_backlog_review_verdict_against_packet",
+      "digest_field": "backlog_review_verdict_digest",
+      "fixture": "backlog-review-verdict-minimal",
+      "required_fields": [
+        "schema_version",
+        "repository",
+        "generated_at",
+        "source_packet_digest",
+        "source_snapshot_digest",
+        "source_audit_digest",
+        "source_backlog_synthesis_digest",
+        "packet_reviewability",
+        "verdicts",
+        "future_apply_recommendations",
+        "uncertainty",
+        "required_maintainer_checks",
+        "safety",
+        "backlog_review_verdict_digest"
+      ],
+      "forbidden_shapes": [
+        "operations",
+        "github_request",
+        "github_requests",
+        "github_request_payload",
+        "request_payload",
+        "apply_operation",
+        "approved_operation_ids",
+        "body",
+        "state",
+        "comments",
+        "issue_comments",
+        "issues/pulls full snapshot"
+      ],
+      "authoritative_recomputed_fields": [
+        "canonical_digest"
+      ],
+      "invariant_enforcement": {
+        "schema_required_fields": "json_schema",
+        "schema_version_const": "json_schema",
+        "top_level_operations": "json_schema",
+        "canonical_digest": "python_validator",
+        "read_only_forbidden_shape": "python_validator",
+        "future_apply_recommendations_advisory": "python_validator",
+        "packet_ref_integrity": "python_validator",
+        "stale_reviewability": "python_validator",
+        "mutation_command_string": "shared_classifier"
+      }
+    },
+    {
+      "artifact": "backlog-synthesis",
+      "status": "active",
+      "schema_version": 1,
+      "human_doc": "docs/BACKLOG_SYNTHESIS_SIGNALS_SCHEMA_V1.md",
+      "machine_schema": "docs/backlog-synthesis-signals-schema-v1.json",
+      "validator": "scripts.triage.frontier:validate_backlog_synthesis_report",
+      "digest_field": "backlog_synthesis_digest",
+      "fixture": "backlog-synthesis-minimal",
+      "required_fields": [
+        "schema_version",
+        "repository",
+        "generated_at",
+        "snapshot_digest",
+        "audit_digest",
+        "issue_dispositions",
+        "signals",
+        "near_misses",
+        "omissions",
+        "safety",
+        "backlog_synthesis_digest"
+      ],
+      "forbidden_shapes": [
+        "operations",
+        "github_request",
+        "github_requests",
+        "github_request_payload",
+        "request_payload",
+        "body",
+        "state",
+        "comments",
+        "issue_comments",
+        "issues/pulls full snapshot"
+      ],
+      "authoritative_recomputed_fields": [
+        "canonical_digest"
+      ],
+      "invariant_enforcement": {
+        "schema_required_fields": "json_schema",
+        "schema_version_const": "json_schema",
+        "top_level_operations": "json_schema",
+        "canonical_digest": "python_validator",
+        "read_only_forbidden_shape": "python_validator",
+        "diagnostic_id_format": "python_validator",
+        "duplicate_diagnostic_ids": "python_validator",
+        "diagnostic_digest_change": "python_validator",
+        "mutation_command_string": "shared_classifier"
+      }
+    },
+    {
+      "artifact": "codex-quality-receipt",
+      "status": "pending",
+      "reason": "The receipt is stable Codex output, but this issue only adds a new check entry and keeps receipt self-contract coverage for a later dedicated manifest entry.",
+      "schema_version": 1,
+      "digest_field": "quality_receipt_digest"
+    },
+    {
+      "artifact": "coordinator-result",
+      "status": "pending",
+      "reason": "Frontier coordinator output has schema docs and a validator, but full active coverage is outside the minimum bounded backlog-review artifact set for this PR.",
+      "schema_version": 1,
+      "human_doc": "docs/FRONTIER_SCHEMA_V1.md",
+      "machine_schema": "docs/frontier-schema-v1.json",
+      "validator": "scripts.triage.frontier:validate_coordinator_result",
+      "digest_field": "coordinator_digest"
+    },
+    {
+      "artifact": "operation",
+      "status": "excluded",
+      "reason": "Operation artifacts are mutation-path internals behind explicit apply approval and are not read-only advisory governance evidence."
+    },
+    {
+      "artifact": "project-plan",
+      "status": "active",
+      "schema_version": 1,
+      "human_doc": "docs/PROJECT_PLAN_SCHEMA_V1.md",
+      "machine_schema": "docs/project-plan-schema-v1.json",
+      "validator": "scripts.triage.frontier:validate_project_plan",
+      "digest_field": "project_plan_digest",
+      "fixture": "project-plan-minimal",
+      "required_fields": [
+        "schema_version",
+        "repository",
+        "generated_at",
+        "snapshot_digest",
+        "audit_digest",
+        "project",
+        "columns",
+        "items",
+        "ordering_conflicts",
+        "safety",
+        "project_plan_digest"
+      ],
+      "forbidden_shapes": [
+        "operations",
+        "body",
+        "state"
+      ],
+      "authoritative_recomputed_fields": [
+        "canonical_digest"
+      ],
+      "invariant_enforcement": {
+        "schema_required_fields": "json_schema",
+        "schema_version_const": "json_schema",
+        "top_level_operations": "json_schema",
+        "canonical_digest": "python_validator",
+        "read_only_forbidden_shape": "python_validator"
+      }
+    },
+    {
+      "artifact": "readiness-audit",
+      "status": "pending",
+      "reason": "Readiness audit JSON is schema-versioned and digest-backed, but it does not yet have a standalone machine schema under docs."
+    },
+    {
+      "artifact": "retrieval-governance-spike-output",
+      "status": "excluded",
+      "reason": "The retrieval governance spike output is research/evaluation output, not a production stable governance artifact contract."
+    },
+    {
+      "artifact": "snapshot",
+      "status": "pending",
+      "reason": "Snapshot JSON is schema-versioned and digest-backed, but it is a source artifact rather than a first-class bounded review artifact for this PR."
+    },
+    {
+      "artifact": "synthesis-review-packet",
+      "status": "active",
+      "schema_version": 1,
+      "human_doc": "docs/SYNTHESIS_REVIEW_PACKET_SCHEMA_V1.md",
+      "machine_schema": "docs/synthesis-review-packet-schema-v1.json",
+      "validator": "scripts.triage.frontier:validate_synthesis_review_packet",
+      "digest_field": "synthesis_review_packet_digest",
+      "fixture": "synthesis-review-packet-minimal",
+      "required_fields": [
+        "schema_version",
+        "repository",
+        "generated_at",
+        "source_generated_at",
+        "source_artifacts",
+        "packet_scope",
+        "candidate_sets",
+        "evidence_items",
+        "near_misses",
+        "omissions",
+        "comments_included",
+        "comment_evidence_status",
+        "budget",
+        "staleness",
+        "safety",
+        "synthesis_review_packet_digest"
+      ],
+      "forbidden_shapes": [
+        "operations",
+        "github_request",
+        "github_requests",
+        "github_request_payload",
+        "request_payload",
+        "body",
+        "state",
+        "comments",
+        "issue_comments",
+        "issues/pulls full snapshot"
+      ],
+      "authoritative_recomputed_fields": [
+        "canonical_digest",
+        "serialized_bytes",
+        "source_age_hours"
+      ],
+      "invariant_enforcement": {
+        "schema_required_fields": "json_schema",
+        "schema_version_const": "json_schema",
+        "top_level_operations": "json_schema",
+        "canonical_digest": "python_validator",
+        "serialized_bytes": "python_validator",
+        "source_age_hours": "python_validator",
+        "read_only_forbidden_shape": "python_validator",
+        "freshness_status": "python_validator",
+        "stale_reviewability": "python_validator",
+        "diagnostic_id_preservation": "python_validator",
+        "mutation_command_string": "shared_classifier"
+      }
+    },
+    {
+      "artifact": "triage-plan",
+      "status": "excluded",
+      "reason": "Triage plan JSON intentionally contains apply-path operations and belongs to the explicit write-gated workflow, not the read-only artifact-contract checker."
+    },
+    {
+      "artifact": "worker-packet",
+      "status": "pending",
+      "reason": "Worker packets are schema-versioned issue-work handoff artifacts with a validator, but they are not part of the minimum stable bounded backlog-review artifact set for this PR.",
+      "schema_version": 1,
+      "validator": "scripts.triage.frontier:validate_worker_packet",
+      "digest_field": "packet_digest"
+    }
+  ]
+}

@@ -43,6 +43,34 @@ def configured_hook_command(event: str) -> str:
     return groups[0]["hooks"][0]["command"]
 
 
+def write_pending_artifact_contract_manifest(root: Path) -> None:
+    source = json.loads(
+        (ROOT / ".codex" / "artifact-contracts-v1.json").read_text(
+            encoding="ascii"
+        )
+    )
+    artifacts = source["artifacts"]
+    assert isinstance(artifacts, list)
+    pending = {
+        "schema_version": 1,
+        "artifacts": [
+            {
+                "artifact": item["artifact"],
+                "status": "pending",
+                "reason": "synthetic hook-test fixture",
+            }
+            for item in artifacts
+            if isinstance(item, dict)
+        ],
+    }
+    manifest = root / ".codex" / "artifact-contracts-v1.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps(pending, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+        encoding="ascii",
+    )
+
+
 def bash_payload(
     command: str,
     *,
@@ -435,6 +463,7 @@ def test_stop_blocks_policy_load_failure_without_fallback_surfaces(
 def test_stop_blocks_protected_change_not_covered_by_receipt(tmp_path: Path) -> None:
     hook_policy = load_codex_hook("hook_policy")
     quality = load_codex_script("codex_quality")
+    write_pending_artifact_contract_manifest(tmp_path)
     protected = tmp_path / "AGENTS.md"
     protected.write_text("changed\n", encoding="ascii")
     receipt_path = tmp_path / "output" / "codex" / "quality-receipt.json"
@@ -454,6 +483,7 @@ def test_stop_blocks_protected_change_not_covered_by_receipt(tmp_path: Path) -> 
 def test_stop_allows_protected_change_covered_by_receipt(tmp_path: Path) -> None:
     hook_policy = load_codex_hook("hook_policy")
     quality = load_codex_script("codex_quality")
+    write_pending_artifact_contract_manifest(tmp_path)
     protected = tmp_path / "AGENTS.md"
     protected.write_text(
         "Never create, edit, close, label, milestone, or move a GitHub item.\n",

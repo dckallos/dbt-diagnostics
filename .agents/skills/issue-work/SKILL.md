@@ -57,6 +57,10 @@ Input: exactly one GitHub issue number.
    - the issue contradicts the current source;
    - the work cannot fit one coherent PR.
 
+   If implementation would benefit from a package that is not already installed,
+   ask the user whether they approve installing it and adding it to
+   `requirements.txt` before editing dependency files or relying on the package.
+
 8. Add or update a failing test first where practical.
 
 Implement only the issue scope. Prefer modifying or replacing the existing
