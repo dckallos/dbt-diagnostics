@@ -2418,3 +2418,51 @@ End of session -- 2026-06-29 issue 109 agent-regression suite
   work, reusable extraction/distribution, or any writer path.
 
 End of session -- 2026-06-29 issue 112 issue-work risk contracts
+
+---
+
+## 2026-06-29 -- orphaned review-comment hygiene
+
+**What changed**
+- Started local branch `docs/orphaned-review-comment-hygiene` from the current
+  `docs/112-issue-work-risk-contracts` checkout because this prompt forbids
+  GitHub/network calls and the cleanup targets accepted review comments on that
+  skill/docs surface.
+- Clarified `$issue-work` so universal write boundaries remain universal, while
+  hook behavior, new `codex-quality` checks, production runtime changes,
+  codex-review work, and extraction/distribution work are issue-scoped unless
+  the live task explicitly brings them into scope.
+- Preserved the exact current-session implementation PR publication/update
+  carveout without authorizing issue edits, labels, milestones, Projects,
+  workflow dispatches, PR merges, comments/reviews, write payloads, or apply
+  payloads.
+- Tightened protected-path final-handoff wording so receipt coverage is tied to
+  worktree status, branch/base diff, explicit path list evidence, freshness-bound
+  paths, semantic paths, digest validation, and receipt timing.
+- Fixed `.codex/README.md` governance examples so `backlog-synthesis` and
+  `synthesis-review-packet` write the JSON artifacts before later commands
+  consume those paths.
+- Added/updated static tests for the skill and README command chain, and updated
+  `CHANGELOG.md`.
+
+**Validation**
+- Focused issue-work and README docs tests passed before this handoff entry.
+- `codex-quality --json` passed before this handoff entry with
+  `governance-boundary`, `artifact-contracts`, and `agent-regression` all green.
+
+**Current state**
+- Local implementation is not pushed and no PR has been created.
+- This is docs/skill/static-test only. It intentionally has no `Closes #...`
+  line because it is not tied to a GitHub issue.
+
+**Next steps**
+- Run the final full check after this handoff update, then review and publish an
+  orphaned PR only if explicitly authorized.
+
+**Be careful**
+- Keep deeper follow-ups under #134 separate: shared classifier edge cases,
+  artifact-contract fail-closed hardening, packet-only validation,
+  review-comment regression promotion, and retrieval invalid-lineage
+  contract/evaluation.
+
+End of session -- 2026-06-29 orphaned review-comment hygiene

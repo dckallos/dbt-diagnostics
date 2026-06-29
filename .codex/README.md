@@ -198,11 +198,13 @@ python scripts/triage/triage.py project-plan \
   --audit-file output/triage/audit.json --json
 python scripts/triage/triage.py backlog-synthesis \
   --snapshot output/triage/snapshot.json \
-  --audit-file output/triage/audit.json --json
+  --audit-file output/triage/audit.json \
+  --output output/triage/backlog-synthesis.json
 python scripts/triage/triage.py synthesis-review-packet \
   --snapshot output/triage/snapshot.json \
   --audit-file output/triage/audit.json \
-  --backlog-synthesis output/triage/backlog-synthesis.json --json
+  --backlog-synthesis output/triage/backlog-synthesis.json \
+  --output output/triage/synthesis-review-packet.json
 python scripts/triage/triage.py backlog-review-validate \
   --packet output/triage/synthesis-review-packet.json \
   --verdict output/triage/backlog-review-verdict.json --json

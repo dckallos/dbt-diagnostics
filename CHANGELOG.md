@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Clean up review-comment hygiene docs
+
+- I clarified `$issue-work` so issue-scoped non-goals come from the live issue
+  and current task, while universal write boundaries still block issue/tracker
+  mutation, apply payloads, and read-only artifact write payloads.
+- I tightened protected-path final-handoff wording so receipt coverage is
+  reported from explicit evidence rather than inferred from a clean worktree.
+- I fixed `.codex/README.md` governance workflow examples so backlog-synthesis
+  and synthesis-review-packet artifacts are written before later commands
+  consume them.
+
 ### Harden issue-work risk contracts
 
 - I added a required pre-edit risk contract to `$issue-work`, including

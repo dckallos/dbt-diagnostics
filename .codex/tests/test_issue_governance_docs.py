@@ -22,6 +22,12 @@ def _plain_compact(text: str) -> str:
     return _compact(text.replace("`", "")).casefold()
 
 
+def _command_slice(text: str, start: str, end: str) -> str:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index)
+    return text[start_index:end_index]
+
+
 def test_issue_governance_documents_bounded_backlog_review_workflow() -> None:
     text = _text(ISSUE_GOVERNANCE)
     plain = _plain_compact(text)
@@ -112,3 +118,37 @@ def test_codex_onboarding_points_to_bounded_review_docs() -> None:
     assert "retrieval" in getting_started_plain
     assert "mutate github" in getting_started_plain
     assert "docs/issue_governance.md" in getting_started_plain
+
+
+def test_codex_readme_writes_backlog_synthesis_before_consuming_it() -> None:
+    readme = _text(CODEX_README)
+    producer = "python scripts/triage/triage.py backlog-synthesis"
+    output_flag = "--output output/triage/backlog-synthesis.json"
+    consumer = "python scripts/triage/triage.py synthesis-review-packet"
+    consume_flag = "--backlog-synthesis output/triage/backlog-synthesis.json"
+
+    producer_index = readme.index(producer)
+    output_index = readme.index(output_flag, producer_index)
+    consumer_index = readme.index(consumer, output_index)
+    consume_index = readme.index(consume_flag, consumer_index)
+    producer_command = _command_slice(readme, producer, consumer)
+
+    assert producer_index < output_index < consumer_index < consume_index
+    assert "--json" not in producer_command
+
+
+def test_codex_readme_writes_synthesis_review_packet_before_consuming_it() -> None:
+    readme = _text(CODEX_README)
+    producer = "python scripts/triage/triage.py synthesis-review-packet"
+    output_flag = "--output output/triage/synthesis-review-packet.json"
+    consumer = "python scripts/triage/triage.py backlog-review-validate"
+    consume_flag = "--packet output/triage/synthesis-review-packet.json"
+
+    producer_index = readme.index(producer)
+    output_index = readme.index(output_flag, producer_index)
+    consumer_index = readme.index(consumer, output_index)
+    consume_index = readme.index(consume_flag, consumer_index)
+    producer_command = _command_slice(readme, producer, consumer)
+
+    assert producer_index < output_index < consumer_index < consume_index
+    assert "--json" not in producer_command
