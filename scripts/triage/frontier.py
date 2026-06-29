@@ -4242,7 +4242,7 @@ class WorkerPacketValidator:
         for index, command in enumerate(commands):
             if not isinstance(command, str):
                 continue
-            reason = repo_config.github_mutation_command_reason(command)
+            reason = repo_config.governance_mutation_command_reason(command)
             if reason is not None:
                 context.errors.append(
                     f"required_verification_commands[{index}] {reason}"

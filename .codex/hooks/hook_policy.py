@@ -89,7 +89,7 @@ def command_from_payload(payload: Mapping[str, object]) -> str:
 def github_mutation_reason(command: str) -> str | None:
     if not command:
         return None
-    if repo_config.github_mutation_command_reason(command) is not None:
+    if repo_config.governance_mutation_command_reason(command) is not None:
         return (
             "Blocked GitHub metadata mutation command. Continue only with exact "
             "maintainer approval for a one-off operator action outside read-only "

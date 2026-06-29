@@ -396,6 +396,32 @@ def test_worker_packet_commands_reject_compound_and_implicit_writes(
         repo_config.policy_from_mapping(data)
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python scripts/triage/triage.py apply --execute",
+        "python3 scripts/triage/triage.py apply --execute",
+        ".venv/bin/python scripts/triage/triage.py apply --execute",
+        "python -m scripts.triage.triage apply --execute",
+        "pytest -q && python scripts/triage/triage.py apply --execute",
+        "python -m pytest\npython scripts/triage/triage.py apply --execute",
+        "bash -lc 'python scripts/triage/triage.py apply --execute'",
+        "command python scripts/triage/triage.py apply --execute",
+        "env GH_REPO=example/widgets python scripts/triage/triage.py apply --execute",
+    ],
+)
+def test_worker_packet_commands_reject_repo_local_apply_execute(
+    command: str,
+) -> None:
+    data = _policy_data()
+    worker_packet = data["worker_packet"]
+    assert isinstance(worker_packet, dict)
+    worker_packet["required_verification_commands"] = [command]
+
+    with pytest.raises(repo_config.RepoConfigError, match="tracker mutation|apply --execute"):
+        repo_config.policy_from_mapping(data)
+
+
 def test_worker_packet_commands_allow_read_only_github_commands() -> None:
     data = _policy_data()
     worker_packet = data["worker_packet"]
@@ -403,6 +429,8 @@ def test_worker_packet_commands_allow_read_only_github_commands() -> None:
     worker_packet["required_verification_commands"] = [
         "python -m pytest",
         "python -m compileall -q scripts",
+        "python scripts/triage/triage.py apply --dry-run",
+        "python scripts/triage/triage.py backlog-review-validate --json",
         "gh issue view 119",
         "gh pr view 122",
         "gh api graphql -f query='query { viewer { login } }'",

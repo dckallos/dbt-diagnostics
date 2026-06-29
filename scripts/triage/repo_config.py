@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shlex
 import sys
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 try:
     import tomllib
@@ -311,6 +311,14 @@ SHELL_CONTROL_TOKENS = frozenset({";", "&&", "||", "|"})
 SHELL_COMMAND_WRAPPERS = frozenset({"bash", "sh", "zsh"})
 SHELL_COMMAND_OPTIONS = frozenset({"-c", "-lc", "-ic"})
 SHELL_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+PYTHON_COMMAND_NAMES = frozenset({"python", "python3"})
+TRIAGE_SCRIPT_PATHS = frozenset(
+    {
+        "scripts/triage/triage.py",
+        "./scripts/triage/triage.py",
+    }
+)
+TRIAGE_MODULE_NAME = "scripts.triage.triage"
 
 FORBIDDEN_MUTATION_KEYS = frozenset(
     {
@@ -965,27 +973,40 @@ def _validate_worker_packet_commands(
     commands: Sequence[str], errors: list[str], label: str
 ) -> None:
     for index, command in enumerate(commands):
-        reason = github_mutation_command_reason(command)
+        reason = governance_mutation_command_reason(command)
         if reason is not None:
             errors.append(f"{label}[{index}] {reason}")
+
+
+def governance_mutation_command_reason(command: str) -> str | None:
+    """Return a reason when command text is shaped like tracker mutation."""
+
+    return _mutation_command_reason(command, _governance_mutation_leaf_reason)
 
 
 def github_mutation_command_reason(command: str) -> str | None:
     """Return a reason when a command string is shaped like a GitHub write."""
 
+    return _mutation_command_reason(command, _github_mutation_leaf_reason)
+
+
+def _mutation_command_reason(
+    command: str,
+    leaf_reason: Callable[[Sequence[str]], str | None],
+) -> str | None:
     try:
         tokens = _shell_tokens(command)
     except ValueError as exc:
         return f"must be shell-tokenizable: {exc}"
     for segment in _shell_command_segments(tokens):
-        reason = _github_mutation_segment_reason(segment)
+        reason = _shell_segment_mutation_reason(segment, leaf_reason)
         if reason is not None:
             return reason
     return None
 
 
 def _shell_tokens(command: str) -> tuple[str, ...]:
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""
     return tuple(lexer)
@@ -1006,7 +1027,10 @@ def _shell_command_segments(tokens: Sequence[str]) -> tuple[tuple[str, ...], ...
     return tuple(segments)
 
 
-def _github_mutation_segment_reason(tokens: Sequence[str]) -> str | None:
+def _shell_segment_mutation_reason(
+    tokens: Sequence[str],
+    leaf_reason: Callable[[Sequence[str]], str | None],
+) -> str | None:
     if not tokens:
         return None
     index = 0
@@ -1029,18 +1053,50 @@ def _github_mutation_segment_reason(tokens: Sequence[str]) -> str | None:
                 index += 1
                 continue
             break
-        return _github_mutation_segment_reason(tokens[index:])
+        return _shell_segment_mutation_reason(tokens[index:], leaf_reason)
     if command == "command":
-        return _github_mutation_segment_reason(tokens[index + 1 :])
+        return _shell_segment_mutation_reason(tokens[index + 1 :], leaf_reason)
     if command in SHELL_COMMAND_WRAPPERS:
         for option_index, token in enumerate(tokens[index + 1 :], start=index + 1):
             if token in SHELL_COMMAND_OPTIONS and option_index + 1 < len(tokens):
-                return github_mutation_command_reason(tokens[option_index + 1])
+                return _mutation_command_reason(tokens[option_index + 1], leaf_reason)
         return None
-    if command != "gh":
+    return leaf_reason(tokens[index:])
+
+
+def _governance_mutation_leaf_reason(tokens: Sequence[str]) -> str | None:
+    tracker_reason = _repo_local_tracker_mutation_leaf_reason(tokens)
+    if tracker_reason is not None:
+        return tracker_reason
+    return _github_mutation_leaf_reason(tokens)
+
+
+def _repo_local_tracker_mutation_leaf_reason(tokens: Sequence[str]) -> str | None:
+    if not tokens:
+        return None
+    command_name = PurePosixPath(tokens[0]).name
+    if command_name not in PYTHON_COMMAND_NAMES:
         return None
 
-    gh_args = _gh_command_args(tokens[index:])
+    if len(tokens) >= 4 and tokens[1] in TRIAGE_SCRIPT_PATHS:
+        args = tokens[2:]
+    elif len(tokens) >= 5 and tokens[1] == "-m" and tokens[2] == TRIAGE_MODULE_NAME:
+        args = tokens[3:]
+    else:
+        return None
+
+    if args and args[0] == "apply" and "--execute" in args:
+        return (
+            "must not contain tracker mutation command: "
+            "triage.py apply --execute"
+        )
+    return None
+
+
+def _github_mutation_leaf_reason(tokens: Sequence[str]) -> str | None:
+    if not tokens or tokens[0] != "gh":
+        return None
+    gh_args = _gh_command_args(tokens)
     if not gh_args:
         return None
 
