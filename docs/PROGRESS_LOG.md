@@ -2334,15 +2334,16 @@ End of session -- 2026-06-29 issue 108 artifact-contract checker
   handoff.
 
 **Current state**
-- Work is local and uncommitted on branch `test/109-agent-regression-cases`.
-- No PR has been opened yet.
+- Draft PR #142 is open against `donkey-kong-sandbox` from branch
+  `test/109-agent-regression-cases`.
+- The implementation commit has been pushed; this progress-log update is the
+  only post-PR branch change.
 - No live Codex invocation, GitHub mutation, LLM call, network call in the
   checker, Snowflake access, public CLI command, production diagnostic runtime
   change, or #118/#120/#121 extraction/distribution work was added.
 
 **Next steps**
-- Review the local diff, then commit, push, and open a PR to
-  `donkey-kong-sandbox` with `Closes #109` when PR publication is approved.
+- Review PR #142, wait for CI, and address any review or check feedback.
 
 **Be careful**
 - Keep this PR scoped to the local regression suite and direct
