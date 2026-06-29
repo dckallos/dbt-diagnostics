@@ -155,6 +155,12 @@ The normal `codex-quality` action records two protected-path fields:
   to the receipt timestamp. This field proves `codex-quality` ran after those
   paths changed; it does not claim the files were semantically scanned.
 
+`codex-quality` runs the governance-boundary prose/command scan and the
+manifest-backed artifact-contract checker. The artifact-contract checker owns
+`.codex/artifact-contracts-v1.json`, schema/doc/validator drift checks, and
+read-only artifact invariant checks; the manifest is a protected surface but is
+not part of the prose semantic scan roots.
+
 Semantic scanning and freshness binding are intentionally separate. A file being
 listed in `semantically_checked_protected_paths` never satisfies the Stop-hook
 freshness gate by itself; changed protected files still need

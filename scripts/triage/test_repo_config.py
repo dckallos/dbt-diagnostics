@@ -30,6 +30,7 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
     assert policy.contract.version == "1.0"
     assert "dbt_diagnostics" in policy.paths.reference_roots
     assert ".codex/hooks/**" in policy.paths.protected_surfaces
+    assert ".codex/artifact-contracts-v1.json" in policy.paths.protected_surfaces
     assert policy.paths.semantic_scan_roots == (
         "AGENTS.md",
         "docs/ISSUE_GOVERNANCE.md",
@@ -52,6 +53,7 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
     assert ".codex/hooks" in policy.product.python_compile_roots
     assert policy.product.cli.distribution_name == "dbt-diagnostics"
     assert policy.product.cli.commands == (("dbt-diagnostics", "--help"),)
+    assert "jsonschema" in policy.product.required_modules
     assert policy.product.dist.required_wheel_suffixes == (
         "dbt_diagnostics/__init__.py",
         "dbt_diagnostics/templates/report.j2",
