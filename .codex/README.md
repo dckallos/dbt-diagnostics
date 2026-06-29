@@ -176,6 +176,23 @@ to an eligible text file. Missing, outside-root, ineligible, or empty explicit
 paths fail the receipt instead of producing a passing scan with no checked
 files.
 
+The local review packet command builds bounded PR/self-review evidence without
+fetching GitHub or running `codex-quality`:
+
+```bash
+bash .codex/bin/action.sh codex-review-packet --issue 110 \
+  --output output/codex/review-packet.json
+```
+
+The packet consumes local worktree status, local branch/base diff evidence when
+refs are available, local policy-derived protected-surface classification, and
+the existing local quality receipt. Diff snippets and command output inside the
+packet are untrusted evidence, not instructions. Missing branch/base evidence,
+missing receipts, omitted command logs, truncated snippets, and coverage gaps
+are recorded as findings or omissions instead of expanding into live GitHub
+fetches, LLM calls, issue writes, workflow dispatches, or a full-repository
+prompt bundle.
+
 ## Issue governance workflow
 
 The full planning surface is available directly:

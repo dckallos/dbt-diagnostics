@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dckallos/dbt-diagnostics/blob/donkey-kong-sandbox/docs/codex-review-packet-schema-v1.json",
+  "title": "dbt-diagnostics Codex review packet",
+  "type": "object",
+  "additionalProperties": true,
+  "allOf": [{"$ref": "#/$defs/safeObject"}],
+  "not": {
+    "anyOf": [
+      {"required": ["operations"]},
+      {"required": ["apply_operations"]},
+      {"required": ["github_request"]},
+      {"required": ["github_request_payload"]},
+      {"required": ["request_payload"]}
+    ]
+  },
+  "$defs": {
+    "safeValue": {
+      "anyOf": [
+        {"$ref": "#/$defs/safeObject"},
+        {
+          "type": "array",
+          "items": {"$ref": "#/$defs/safeValue"}
+        },
+        {"type": ["string", "number", "integer", "boolean", "null"]}
+      ]
+    },
+    "safeObject": {
+      "type": "object",
+      "allOf": [{"$ref": "#/$defs/forbiddenReadOnlyShape"}],
+      "additionalProperties": {"$ref": "#/$defs/safeValue"}
+    },
+    "forbiddenReadOnlyShape": {
+      "not": {
+        "anyOf": [
+          {"required": ["operations"]},
+          {"required": ["operation"]},
+          {"required": ["apply_operation"]},
+          {"required": ["apply_operations"]},
+          {"required": ["approved_operation_ids"]},
+          {"required": ["github_request"]},
+          {"required": ["github_requests"]},
+          {"required": ["github_request_payload"]},
+          {"required": ["github_request_payloads"]},
+          {"required": ["request_payload"]},
+          {"required": ["request_payloads"]},
+          {"required": ["rest_request"]},
+          {"required": ["rest_requests"]},
+          {"required": ["graphql_request"]},
+          {"required": ["graphql_requests"]},
+          {"required": ["mutation_request"]},
+          {"required": ["mutation_requests"]},
+          {"required": ["body"]},
+          {"required": ["state"]},
+          {"required": ["comment"]},
+          {"required": ["comments"]},
+          {"required": ["issue_comment"]},
+          {"required": ["issue_comments"]},
+          {"required": ["review_comment"]},
+          {"required": ["review_comments"]},
+          {"required": ["review_thread"]},
+          {"required": ["review_threads"]},
+          {"required": ["body_update"]},
+          {"required": ["body_updates"]},
+          {"required": ["title_update"]},
+          {"required": ["title_updates"]},
+          {"required": ["state_update"]},
+          {"required": ["state_updates"]},
+          {"required": ["label_update"]},
+          {"required": ["label_updates"]},
+          {"required": ["milestone_update"]},
+          {"required": ["milestone_updates"]},
+          {"required": ["project_update"]},
+          {"required": ["project_updates"]},
+          {"required": ["workflow_dispatch"]},
+          {"required": ["workflow_dispatches"]},
+          {"required": ["pr_merge"]},
+          {"required": ["pr_merges"]},
+          {"required": ["pull_request_merge"]},
+          {"required": ["pull_request_merges"]},
+          {"required": ["approval_batch"]},
+          {"required": ["approval_batches"]},
+          {"required": ["full_tracker_snapshot"]},
+          {"required": ["full_repository_bundle"]},
+          {"required": ["repository_bundle"]},
+          {"required": ["issues", "pulls"]},
+          {"required": ["issues", "pull_requests"]},
+          {"required": ["method", "path", "body"]},
+          {"required": ["request_method", "request_path"]}
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "repository",
+    "generated_at",
+    "issue",
+    "source_refs",
+    "evidence_sources",
+    "changed_files",
+    "protected_surfaces",
+    "contract_surfaces",
+    "quality_receipt",
+    "risk_findings",
+    "diff_snippets",
+    "commands",
+    "omissions",
+    "budget",
+    "safety",
+    "codex_review_packet_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "issue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["issue_number", "parent_epic"],
+      "properties": {
+        "issue_number": {"type": "integer", "minimum": 1},
+        "parent_epic": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "base_ref",
+        "head_ref",
+        "base_sha",
+        "head_sha",
+        "merge_base_sha"
+      ],
+      "properties": {
+        "base_ref": {"type": "string", "minLength": 1},
+        "head_ref": {"type": "string", "minLength": 1},
+        "base_sha": {"type": ["string", "null"]},
+        "head_sha": {"type": ["string", "null"]},
+        "merge_base_sha": {"type": ["string", "null"]}
+      }
+    },
+    "evidence_sources": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["worktree_status", "branch_base_diff", "explicit_paths"],
+      "properties": {
+        "worktree_status": {"type": "object"},
+        "branch_base_diff": {"type": "object"},
+        "explicit_paths": {"type": "object"}
+      }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
+        "required": [
+          "path",
+          "change_sources",
+          "status",
+          "protected",
+          "matched_protected_patterns",
+          "risk_classes",
+          "contract_surface",
+          "semantic_scan_applies",
+          "diff_snippet_included",
+          "diff_snippet_omitted",
+          "diff_snippet_truncated"
+        ],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "change_sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["worktree_status", "branch_base_diff", "explicit"]
+            }
+          },
+          "status": {"type": "object"},
+          "protected": {"type": "boolean"},
+          "matched_protected_patterns": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "risk_classes": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "contract_surface": {"type": "boolean"},
+          "semantic_scan_applies": {"type": "boolean"},
+          "diff_snippet_included": {"type": "boolean"},
+          "diff_snippet_omitted": {"type": "boolean"},
+          "diff_snippet_truncated": {"type": "boolean"}
+        }
+      }
+    },
+    "protected_surfaces": {
+      "type": "array",
+      "items": {"type": "object", "allOf": [{"$ref": "#/$defs/safeObject"}]}
+    },
+    "contract_surfaces": {
+      "type": "array",
+      "items": {"type": "object", "allOf": [{"$ref": "#/$defs/safeObject"}]}
+    },
+    "quality_receipt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "path",
+        "present",
+        "readable",
+        "digest_valid",
+        "generated_at",
+        "passed",
+        "check_statuses",
+        "findings_summary",
+        "freshness_bound_protected_paths",
+        "semantically_checked_protected_paths",
+        "changed_protected_paths",
+        "missing_freshness_bound_protected_paths",
+        "missing_semantically_checked_protected_paths",
+        "stale_protected_paths",
+        "usable_as_evidence",
+        "limitations",
+        "error"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "present": {"type": "boolean"},
+        "readable": {"type": "boolean"},
+        "digest_valid": {"type": "boolean"},
+        "generated_at": {"type": ["string", "null"]},
+        "passed": {"type": "boolean"},
+        "check_statuses": {"type": "object"},
+        "findings_summary": {"type": "array"},
+        "freshness_bound_protected_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "semantically_checked_protected_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "changed_protected_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "missing_freshness_bound_protected_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "missing_semantically_checked_protected_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "stale_protected_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "usable_as_evidence": {"type": "boolean"},
+        "limitations": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "error": {"type": ["string", "null"]}
+      }
+    },
+    "risk_findings": {
+      "type": "array",
+      "items": {"type": "object", "allOf": [{"$ref": "#/$defs/safeObject"}]}
+    },
+    "diff_snippets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
+        "required": [
+          "path",
+          "source",
+          "untrusted",
+          "byte_limit",
+          "serialized_bytes",
+          "truncated",
+          "secret_redacted",
+          "content"
+        ],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "minLength": 1},
+          "untrusted": {"const": true},
+          "byte_limit": {"type": "integer", "minimum": 1},
+          "serialized_bytes": {"type": "integer", "minimum": 0},
+          "truncated": {"type": "boolean"},
+          "secret_redacted": {"type": "boolean"},
+          "content": {"type": "string"}
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/safeObject"}],
+        "required": ["command", "untrusted"],
+        "properties": {
+          "command": {"type": "string", "minLength": 1},
+          "untrusted": {"const": true}
+        }
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "items": {"type": "object", "allOf": [{"$ref": "#/$defs/safeObject"}]}
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "serialized_bytes",
+        "target_bytes",
+        "hard_bytes",
+        "per_file_snippet_bytes",
+        "omitted_files_count",
+        "omitted_snippets_count",
+        "budget_warnings"
+      ],
+      "properties": {
+        "serialized_bytes": {"type": "integer", "minimum": 0},
+        "target_bytes": {"type": "integer", "minimum": 1},
+        "hard_bytes": {"type": "integer", "minimum": 1},
+        "per_file_snippet_bytes": {"type": "integer", "minimum": 1},
+        "omitted_files_count": {"type": "integer", "minimum": 0},
+        "omitted_snippets_count": {"type": "integer", "minimum": 0},
+        "budget_warnings": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "read_only",
+        "github_api_calls",
+        "github_mutations",
+        "llm_calls",
+        "contains_executable_operations",
+        "contains_github_request_payloads",
+        "contains_issue_write_payloads",
+        "contains_full_repository_bundle",
+        "contains_full_tracker_snapshot",
+        "diff_snippets_are_untrusted",
+        "command_output_is_untrusted",
+        "maintainer_decides",
+        "codex_review_is_advisory"
+      ],
+      "properties": {
+        "read_only": {"const": true},
+        "github_api_calls": {"const": false},
+        "github_mutations": {"const": false},
+        "llm_calls": {"const": false},
+        "contains_executable_operations": {"const": false},
+        "contains_github_request_payloads": {"const": false},
+        "contains_issue_write_payloads": {"const": false},
+        "contains_full_repository_bundle": {"const": false},
+        "contains_full_tracker_snapshot": {"const": false},
+        "diff_snippets_are_untrusted": {"const": true},
+        "command_output_is_untrusted": {"const": true},
+        "maintainer_decides": {"const": true},
+        "codex_review_is_advisory": {"const": true}
+      }
+    },
+    "codex_review_packet_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

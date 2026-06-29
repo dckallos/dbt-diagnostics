@@ -196,3 +196,31 @@ def test_project_plan_wrapper_requires_snapshot_and_audit() -> None:
     assert "the following arguments are required" in result.stderr
     assert "--snapshot" in result.stderr
     assert "--audit-file" in result.stderr
+
+
+def test_codex_review_packet_wrapper_is_exposed_and_dispatches() -> None:
+    action = (ROOT / ".codex" / "bin" / "action.sh").read_text(encoding="utf-8")
+    wrapper = (ROOT / ".codex" / "bin" / "codex-review-packet.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "codex-review-packet" in action
+    assert "\n  codex-review-packet)" in action
+    assert ".codex/scripts/codex_review_packet.py" in wrapper
+
+    result = _run(
+        "bash",
+        ".codex/bin/action.sh",
+        "codex-review-packet",
+        "--issue",
+        "110",
+        "--json",
+    )
+
+    assert result.returncode == 0, result.stderr
+    packet = json.loads(result.stdout)
+    assert packet["schema_version"] == 1
+    assert packet["issue"]["issue_number"] == 110
+    assert packet["safety"]["github_api_calls"] is False
+    assert packet["safety"]["github_mutations"] is False
+    assert "operations" not in packet
