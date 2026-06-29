@@ -2469,3 +2469,60 @@ End of session -- 2026-06-29 issue 112 issue-work risk contracts
   contract/evaluation.
 
 End of session -- 2026-06-29 orphaned review-comment hygiene
+
+---
+
+## 2026-06-29 -- issue 110 bounded Codex review packet
+
+**What changed**
+- Started `feat/codex-review-packet-110` from current
+  `donkey-kong-sandbox` after live preflight confirmed #110 is open; #112/PR
+  #143, #109/PR #142, #108/PR #141, and #107/PR #140 are merged; #105, #106,
+  #93, and #103 are closed; #134 remains open; and #111, #133, #118, #120, and
+  #121 remain separate follow-up work.
+- Added the local/offline `codex-review-packet` v1 artifact with a Python
+  builder/validator, human schema doc, machine JSON schema, deterministic
+  digest, hard byte budget validation, read-only safety flags, secret redaction,
+  forbidden-shape rejection, bounded untrusted diff snippets, and local
+  `codex-quality` receipt evidence reporting.
+- Added `bash .codex/bin/action.sh codex-review-packet --issue <n> --output
+  output/codex/review-packet.json` through a dedicated wrapper, and registered
+  the artifact in `.codex/artifact-contracts-v1.json` plus the artifact-contract
+  checker.
+- Updated focused packet, wrapper, artifact-contract, README, and changelog
+  coverage. No #111 review skill, #133 issue-work integration, #118/#120/#121
+  extraction/distribution work, production diagnostic runtime change, live
+  GitHub fetch, LLM call, or full-repository prompt bundle was added.
+
+**Validation**
+- Focused suites passed:
+  `.codex/tests/test_codex_review_packet.py`, `.codex/tests/test_environment.py`,
+  `.codex/tests/test_artifact_contracts.py`, `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_agent_regression.py`, `.codex/tests/test_issue_work_skill.py`,
+  and `scripts/triage/test_repo_config.py`.
+- Compile and JSON checks passed for the new packet module, updated artifact
+  checker, packet tests, packet schema, and artifact-contract manifest.
+- `python .codex/scripts/check_artifact_contracts.py --json`,
+  `python .codex/scripts/codex_review_packet.py --issue 110 --json`,
+  `bash .codex/bin/action.sh codex-review-packet --issue 110 --json`,
+  `bash .codex/bin/action.sh codex-quality --json`, and
+  `bash .codex/bin/action.sh check` passed before publishing PR #145.
+
+**Current state**
+- PR #145 is open, non-draft, and clean against `donkey-kong-sandbox` from
+  branch `feat/codex-review-packet-110`.
+- The implementation commit is pushed on that branch and the PR body includes
+  exactly one auto-close line for #110.
+- The progress log entry was added after PR publication because the initial
+  handoff missed the wrap-up update required by `AGENTS.md`.
+
+**Next steps**
+- Review PR #145, wait for CI, and address any review or check feedback.
+
+**Be careful**
+- Keep this PR scoped to the bounded local review packet surface. Do not expand
+  it into #111 review execution, #133 issue-work integration, #118/#120/#121
+  reusable extraction/distribution work, existing backlog schema changes, or
+  any GitHub issue/PR mutation path beyond normal PR branch updates.
+
+End of session -- 2026-06-29 issue 110 bounded Codex review packet
