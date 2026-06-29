@@ -1,0 +1,2 @@
+python -m pytest -q
+gh issue edit 1 --body unsafe

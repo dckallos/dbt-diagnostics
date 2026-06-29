@@ -34,6 +34,8 @@ reference_roots = [
 ]
 protected_surfaces = [
   ".agents/skills/**",
+  ".codex/agent-regression-cases-v1.json",
+  ".codex/agent-regression/**",
   ".codex/artifact-contracts-v1.json",
   ".codex/bin/**",
   ".codex/scripts/**",

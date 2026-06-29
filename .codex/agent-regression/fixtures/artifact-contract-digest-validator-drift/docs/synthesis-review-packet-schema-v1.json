@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "generated_at",
+    "source_generated_at",
+    "source_artifacts",
+    "packet_scope",
+    "candidate_sets",
+    "evidence_items",
+    "near_misses",
+    "omissions",
+    "comments_included",
+    "comment_evidence_status",
+    "budget",
+    "staleness",
+    "safety",
+    "synthesis_review_packet_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "repository": {},
+    "generated_at": {},
+    "source_generated_at": {},
+    "source_artifacts": {},
+    "packet_scope": {},
+    "candidate_sets": {},
+    "evidence_items": {},
+    "near_misses": {},
+    "omissions": {},
+    "comments_included": {},
+    "comment_evidence_status": {},
+    "budget": {},
+    "staleness": {
+      "type": "object",
+      "required": [
+        "source_generated_at",
+        "evaluated_at",
+        "source_age_hours",
+        "warning_age_hours",
+        "max_age_hours",
+        "freshness_status",
+        "freshness_warnings",
+        "stale",
+        "llm_review_allowed"
+      ],
+      "properties": {}
+    },
+    "safety": {},
+    "synthesis_review_packet_digest": {}
+  }
+}

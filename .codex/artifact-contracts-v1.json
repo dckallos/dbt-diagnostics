@@ -2,6 +2,13 @@
   "schema_version": 1,
   "artifacts": [
     {
+      "artifact": "agent-regression-cases",
+      "status": "pending",
+      "reason": "Local codex-quality regression case manifest validated by check_agent_regression; standalone artifact contract coverage is deferred.",
+      "schema_version": 1,
+      "validator": ".codex.scripts.check_agent_regression:run_check"
+    },
+    {
       "artifact": "approval",
       "status": "excluded",
       "reason": "Approval artifacts belong to the explicit apply/write path and are not read-only governance evidence."

@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "artifact": "approval",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "backlog-review-validation",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "backlog-review-verdict",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "backlog-synthesis",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "codex-quality-receipt",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "coordinator-result",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "operation",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "project-plan",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "readiness-audit",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "retrieval-governance-spike-output",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "snapshot",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "synthesis-review-packet",
+      "status": "active",
+      "schema_version": 1,
+      "human_doc": "docs/SYNTHESIS_REVIEW_PACKET_SCHEMA_V1.md",
+      "machine_schema": "docs/synthesis-review-packet-schema-v1.json",
+      "validator": "scripts.triage.frontier:validate_synthesis_review_packet",
+      "digest_field": "synthesis_review_packet_digest",
+      "fixture": "synthesis-review-packet-minimal",
+      "required_fields": [
+        "schema_version",
+        "repository",
+        "generated_at",
+        "source_generated_at",
+        "source_artifacts",
+        "packet_scope",
+        "candidate_sets",
+        "evidence_items",
+        "near_misses",
+        "omissions",
+        "comments_included",
+        "comment_evidence_status",
+        "budget",
+        "staleness",
+        "safety",
+        "synthesis_review_packet_digest"
+      ],
+      "forbidden_shapes": [
+        "operations",
+        "github_request",
+        "comments",
+        "body",
+        "state",
+        "issues/pulls full snapshot"
+      ],
+      "authoritative_recomputed_fields": [
+        "canonical_digest",
+        "serialized_bytes",
+        "source_age_hours"
+      ],
+      "invariant_enforcement": {
+        "schema_required_fields": "json_schema",
+        "schema_version_const": "json_schema",
+        "top_level_operations": "json_schema",
+        "canonical_digest": "python_validator",
+        "serialized_bytes": "python_validator",
+        "source_age_hours": "python_validator",
+        "read_only_forbidden_shape": "python_validator",
+        "freshness_status": "python_validator",
+        "stale_reviewability": "python_validator",
+        "diagnostic_id_preservation": "python_validator",
+        "mutation_command_string": "shared_classifier"
+      }
+    },
+    {
+      "artifact": "triage-plan",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    },
+    {
+      "artifact": "worker-packet",
+      "status": "pending",
+      "reason": "fixture inventory placeholder"
+    }
+  ]
+}

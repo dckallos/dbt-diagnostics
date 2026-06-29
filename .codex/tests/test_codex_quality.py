@@ -13,6 +13,16 @@ from scripts.triage import repo_config
 
 ROOT = Path(__file__).resolve().parents[2]
 WIDGETS_POLICY = ROOT / "scripts" / "triage" / "fixtures" / "widgets_policy.toml"
+SYNTHETIC_AGENT_PATHS = [
+    ".codex/agent-regression-cases-v1.json",
+    ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing/rationale.md",
+    ".codex/agent-regression/fixtures/synthetic-backlog-fabricated-evidence-ref/case.json",
+    ".codex/agent-regression/fixtures/synthetic-governance-safe/SKILL.md",
+    ".codex/agent-regression/fixtures/synthetic-hook-gh-issue-close/command.txt",
+    ".codex/agent-regression/fixtures/synthetic-limitation/rationale.md",
+    ".codex/agent-regression/fixtures/synthetic-shared-inert/command.txt",
+    ".codex/agent-regression/fixtures/synthetic-synthesis-packet-serialized-bytes-lie/case.json",
+]
 
 
 def _load_codex_script(name: str):
@@ -51,6 +61,158 @@ def _write_pending_artifact_contract_manifest(root: Path) -> None:
     manifest.write_text(
         json.dumps(pending, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="ascii",
+    )
+    _write_minimal_agent_regression_manifest(root)
+
+
+def _write_text(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="ascii")
+
+
+def _write_json(root: Path, relative: str, payload: object) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+        encoding="ascii",
+    )
+
+
+def _write_minimal_agent_regression_manifest(root: Path) -> None:
+    cases = [
+        {
+            "case_id": "synthetic-artifact-manifest-missing",
+            "risk_class": "artifact_contract_drift",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing/rationale.md"
+            ],
+            "expected_checker": "artifact-contracts",
+            "expected_status": "failed",
+            "expected_finding_code": "manifest-missing",
+            "repair_guidance": "Synthetic quality fixture.",
+            "case_data": {
+                "fixture_root": ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing",
+                "manifest_path": ".codex/artifact-contracts-v1.json",
+            },
+        },
+        {
+            "case_id": "synthetic-backlog-fabricated-evidence-ref",
+            "risk_class": "bounded_artifact_reference_integrity",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-backlog-fabricated-evidence-ref/case.json"
+            ],
+            "expected_checker": "backlog-review-validate",
+            "expected_status": "failed",
+            "expected_finding_code": "unknown_packet_reference",
+            "repair_guidance": "Synthetic quality fixture.",
+            "case_data": {"variant": "fabricated-evidence-ref"},
+        },
+        {
+            "case_id": "synthetic-governance-safe",
+            "risk_class": "read_only_write_boundary",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-governance-safe/SKILL.md"
+            ],
+            "expected_checker": "governance-boundary",
+            "expected_status": "passed",
+            "expected_finding_code": "no_findings",
+            "repair_guidance": "Synthetic quality fixture.",
+        },
+        {
+            "case_id": "synthetic-hook-gh-issue-close",
+            "risk_class": "hook_mutation_blocking",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-hook-gh-issue-close/command.txt"
+            ],
+            "expected_checker": "hook-policy",
+            "expected_status": "failed",
+            "expected_finding_code": "hook_denied_github_mutation",
+            "repair_guidance": "Synthetic quality fixture.",
+        },
+        {
+            "case_id": "synthetic-limitation",
+            "risk_class": "quality_receipt_limitation",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-limitation/rationale.md"
+            ],
+            "expected_checker": "limitation-record",
+            "expected_status": "omission",
+            "expected_omission_code": "synthetic_limitation",
+            "expectation_rationale": "Synthetic quality fixture.",
+            "case_data": {"omission_code": "synthetic_limitation"},
+        },
+        {
+            "case_id": "synthetic-shared-inert",
+            "risk_class": "shared_mutation_classifier",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-shared-inert/command.txt"
+            ],
+            "expected_checker": "shared-command-classifier",
+            "expected_status": "passed",
+            "expected_finding_code": "no_findings",
+            "repair_guidance": "Synthetic quality fixture.",
+        },
+        {
+            "case_id": "synthetic-synthesis-packet-serialized-bytes-lie",
+            "risk_class": "bounded_packet_safety",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-synthesis-packet-serialized-bytes-lie/case.json"
+            ],
+            "expected_checker": "synthesis-review-packet-validator",
+            "expected_status": "failed",
+            "expected_finding_code": "packet_serialized_bytes_mismatch",
+            "repair_guidance": "Synthetic quality fixture.",
+            "case_data": {"variant": "serialized-bytes-lie"},
+        },
+    ]
+    agent_manifest = root / ".codex" / "agent-regression-cases-v1.json"
+    agent_manifest.parent.mkdir(parents=True, exist_ok=True)
+    agent_manifest.write_text(
+        json.dumps(
+            {"schema_version": 1, "cases": cases},
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="ascii",
+    )
+    _write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing/rationale.md",
+        "Synthetic missing artifact-contract manifest fixture.\n",
+    )
+    _write_json(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-backlog-fabricated-evidence-ref/case.json",
+        {"variant": "fabricated-evidence-ref"},
+    )
+    _write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-governance-safe/SKILL.md",
+        "Do not close GitHub issues.\n",
+    )
+    _write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-hook-gh-issue-close/command.txt",
+        "gh issue close 1\n",
+    )
+    _write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-limitation/rationale.md",
+        "Synthetic limitation fixture.\n",
+    )
+    _write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-shared-inert/command.txt",
+        "rg -n 'gh issue edit' docs\n",
+    )
+    _write_json(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-synthesis-packet-serialized-bytes-lie/case.json",
+        {"variant": "serialized-bytes-lie"},
     )
 
 
@@ -399,11 +561,17 @@ def test_codex_quality_writes_receipt(tmp_path: Path) -> None:
     saved = json.loads(receipt_path.read_text(encoding="ascii"))
     assert saved["schema_version"] == 1
     checks = _checks_by_name(saved)
-    assert set(checks) == {"governance-boundary", "artifact-contracts"}
+    assert set(checks) == {
+        "governance-boundary",
+        "artifact-contracts",
+        "agent-regression",
+    }
     assert checks["governance-boundary"]["status"] == "passed"
     assert checks["artifact-contracts"]["status"] == "passed"
+    assert checks["agent-regression"]["status"] == "passed"
     assert saved["semantically_checked_protected_paths"] == [
         ".agents/skills/issue-work/SKILL.md",
+        *SYNTHETIC_AGENT_PATHS,
         ".codex/artifact-contracts-v1.json",
         "AGENTS.md",
     ]
@@ -445,6 +613,7 @@ def test_codex_quality_records_artifact_contract_failures_in_receipt(
     assert receipt["passed"] is False
     assert checks["governance-boundary"]["status"] == "passed"
     assert checks["artifact-contracts"]["status"] == "failed"
+    assert checks["agent-regression"]["status"] == "failed"
     assert checks["artifact-contracts"]["findings"][0]["code"] == "manifest-missing"
 
 
@@ -479,6 +648,39 @@ def test_codex_quality_digest_covers_artifact_contract_findings() -> None:
     assert quality.receipt_digest(receipt) != quality.receipt_digest(changed)
 
 
+def test_codex_quality_digest_covers_agent_regression_case_results() -> None:
+    quality = _load_codex_script("codex_quality")
+    receipt = {
+        "schema_version": 1,
+        "generated_at": "2026-06-29T00:00:00Z",
+        "tool": "codex-quality",
+        "passed": True,
+        "freshness_bound_protected_paths": [],
+        "semantically_checked_protected_paths": [],
+        "checks": [
+            {
+                "name": "agent-regression",
+                "status": "passed",
+                "checked_files": [],
+                "case_results": [{"case_id": "fixture", "matched": True}],
+                "findings": [],
+            }
+        ],
+    }
+    changed = dict(receipt)
+    changed["checks"] = [
+        {
+            "name": "agent-regression",
+            "status": "failed",
+            "checked_files": [],
+            "case_results": [{"case_id": "fixture", "matched": False}],
+            "findings": [{"code": "case-mismatch"}],
+        }
+    ]
+
+    assert quality.receipt_digest(receipt) != quality.receipt_digest(changed)
+
+
 def test_codex_quality_records_deterministic_freshness_bound_protected_paths(
     tmp_path: Path,
 ) -> None:
@@ -502,15 +704,52 @@ def test_codex_quality_records_deterministic_freshness_bound_protected_paths(
     )
 
     assert receipt["semantically_checked_protected_paths"] == [
-        ".codex/artifact-contracts-v1.json"
+        *SYNTHETIC_AGENT_PATHS,
+        ".codex/artifact-contracts-v1.json",
     ]
     assert receipt["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     saved = json.loads(receipt_path.read_text(encoding="ascii"))
     assert saved["semantically_checked_protected_paths"] == [
-        ".codex/artifact-contracts-v1.json"
+        *SYNTHETIC_AGENT_PATHS,
+        ".codex/artifact-contracts-v1.json",
     ]
     assert saved["freshness_bound_protected_paths"] == [".codex/hooks/stop.py"]
     assert saved["quality_receipt_digest"] == quality.receipt_digest(saved)
+
+
+def test_codex_quality_freshness_binds_agent_regression_paths(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    fixture = tmp_path / ".codex" / "agent-regression" / "fixtures" / "case.md"
+    fixture.parent.mkdir(parents=True, exist_ok=True)
+    fixture.write_text("fixture\n", encoding="ascii")
+    policy = repo_config.load_repo_policy()
+
+    assert quality.freshness_bound_protected_paths(
+        root=tmp_path,
+        requested_paths=[
+            Path(".codex/agent-regression-cases-v1.json"),
+            Path(".codex/agent-regression/fixtures/case.md"),
+        ],
+        repo_policy=policy,
+    ) == (
+        ".codex/agent-regression-cases-v1.json",
+        ".codex/agent-regression/fixtures/case.md",
+    )
+
+    receipt = quality.run_quality(
+        root=tmp_path,
+        paths=[
+            Path(".codex/agent-regression/fixtures/case.md"),
+        ],
+    )
+
+    assert receipt["passed"] is True
+    assert receipt["freshness_bound_protected_paths"] == [
+        ".codex/agent-regression/fixtures/case.md",
+    ]
 
 
 def test_codex_quality_uses_configured_receipt_and_protected_surfaces(
@@ -557,6 +796,7 @@ def test_codex_quality_default_scan_uses_policy_semantic_scan_roots(
         "custom/governance/rules.md"
     ]
     assert checks["artifact-contracts"]["status"] == "passed"
+    assert checks["agent-regression"]["status"] == "passed"
     assert receipt["semantically_checked_protected_paths"] == [
         "custom/governance/rules.md"
     ]
@@ -661,7 +901,8 @@ def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(
     )
 
     assert receipt["semantically_checked_protected_paths"] == [
-        ".codex/artifact-contracts-v1.json"
+        *SYNTHETIC_AGENT_PATHS,
+        ".codex/artifact-contracts-v1.json",
     ]
     assert receipt["freshness_bound_protected_paths"] == [
         ".codex/hooks/run_hook.sh",

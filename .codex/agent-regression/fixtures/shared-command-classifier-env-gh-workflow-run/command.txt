@@ -1,0 +1,1 @@
+env GH_REPO=example/widgets gh workflow run ci.yml

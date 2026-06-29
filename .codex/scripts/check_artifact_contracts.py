@@ -42,6 +42,7 @@ INVARIANT_OWNERS = frozenset(
 )
 KNOWN_SCHEMA_VERSION_ARTIFACTS = frozenset(
     {
+        "agent-regression-cases",
         "approval",
         "backlog-review-validation",
         "backlog-review-verdict",

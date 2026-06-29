@@ -69,6 +69,158 @@ def write_pending_artifact_contract_manifest(root: Path) -> None:
         json.dumps(pending, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="ascii",
     )
+    write_minimal_agent_regression_manifest(root)
+
+
+def write_text(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="ascii")
+
+
+def write_json(root: Path, relative: str, payload: object) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+        encoding="ascii",
+    )
+
+
+def write_minimal_agent_regression_manifest(root: Path) -> None:
+    cases = [
+        {
+            "case_id": "synthetic-artifact-manifest-missing",
+            "risk_class": "artifact_contract_drift",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing/rationale.md"
+            ],
+            "expected_checker": "artifact-contracts",
+            "expected_status": "failed",
+            "expected_finding_code": "manifest-missing",
+            "repair_guidance": "Synthetic hook fixture.",
+            "case_data": {
+                "fixture_root": ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing",
+                "manifest_path": ".codex/artifact-contracts-v1.json",
+            },
+        },
+        {
+            "case_id": "synthetic-backlog-fabricated-evidence-ref",
+            "risk_class": "bounded_artifact_reference_integrity",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-backlog-fabricated-evidence-ref/case.json"
+            ],
+            "expected_checker": "backlog-review-validate",
+            "expected_status": "failed",
+            "expected_finding_code": "unknown_packet_reference",
+            "repair_guidance": "Synthetic hook fixture.",
+            "case_data": {"variant": "fabricated-evidence-ref"},
+        },
+        {
+            "case_id": "synthetic-governance-safe",
+            "risk_class": "read_only_write_boundary",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-governance-safe/SKILL.md"
+            ],
+            "expected_checker": "governance-boundary",
+            "expected_status": "passed",
+            "expected_finding_code": "no_findings",
+            "repair_guidance": "Synthetic hook fixture.",
+        },
+        {
+            "case_id": "synthetic-hook-gh-issue-close",
+            "risk_class": "hook_mutation_blocking",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-hook-gh-issue-close/command.txt"
+            ],
+            "expected_checker": "hook-policy",
+            "expected_status": "failed",
+            "expected_finding_code": "hook_denied_github_mutation",
+            "repair_guidance": "Synthetic hook fixture.",
+        },
+        {
+            "case_id": "synthetic-limitation",
+            "risk_class": "quality_receipt_limitation",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-limitation/rationale.md"
+            ],
+            "expected_checker": "limitation-record",
+            "expected_status": "omission",
+            "expected_omission_code": "synthetic_limitation",
+            "expectation_rationale": "Synthetic hook fixture.",
+            "case_data": {"omission_code": "synthetic_limitation"},
+        },
+        {
+            "case_id": "synthetic-shared-inert",
+            "risk_class": "shared_mutation_classifier",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-shared-inert/command.txt"
+            ],
+            "expected_checker": "shared-command-classifier",
+            "expected_status": "passed",
+            "expected_finding_code": "no_findings",
+            "repair_guidance": "Synthetic hook fixture.",
+        },
+        {
+            "case_id": "synthetic-synthesis-packet-serialized-bytes-lie",
+            "risk_class": "bounded_packet_safety",
+            "fixture_files": [
+                ".codex/agent-regression/fixtures/synthetic-synthesis-packet-serialized-bytes-lie/case.json"
+            ],
+            "expected_checker": "synthesis-review-packet-validator",
+            "expected_status": "failed",
+            "expected_finding_code": "packet_serialized_bytes_mismatch",
+            "repair_guidance": "Synthetic hook fixture.",
+            "case_data": {"variant": "serialized-bytes-lie"},
+        },
+    ]
+    agent_manifest = root / ".codex" / "agent-regression-cases-v1.json"
+    agent_manifest.parent.mkdir(parents=True, exist_ok=True)
+    agent_manifest.write_text(
+        json.dumps(
+            {"schema_version": 1, "cases": cases},
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="ascii",
+    )
+    write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-artifact-manifest-missing/rationale.md",
+        "Synthetic missing artifact-contract manifest fixture.\n",
+    )
+    write_json(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-backlog-fabricated-evidence-ref/case.json",
+        {"variant": "fabricated-evidence-ref"},
+    )
+    write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-governance-safe/SKILL.md",
+        "Do not close GitHub issues.\n",
+    )
+    write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-hook-gh-issue-close/command.txt",
+        "gh issue close 1\n",
+    )
+    write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-limitation/rationale.md",
+        "Synthetic limitation fixture.\n",
+    )
+    write_text(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-shared-inert/command.txt",
+        "rg -n 'gh issue edit' docs\n",
+    )
+    write_json(
+        root,
+        ".codex/agent-regression/fixtures/synthetic-synthesis-packet-serialized-bytes-lie/case.json",
+        {"variant": "serialized-bytes-lie"},
+    )
 
 
 def bash_payload(

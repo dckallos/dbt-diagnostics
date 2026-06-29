@@ -30,6 +30,10 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
     assert policy.contract.version == "1.0"
     assert "dbt_diagnostics" in policy.paths.reference_roots
     assert ".codex/hooks/**" in policy.paths.protected_surfaces
+    assert ".codex/agent-regression-cases-v1.json" in (
+        policy.paths.protected_surfaces
+    )
+    assert ".codex/agent-regression/**" in policy.paths.protected_surfaces
     assert ".codex/artifact-contracts-v1.json" in policy.paths.protected_surfaces
     assert policy.paths.semantic_scan_roots == (
         "AGENTS.md",
