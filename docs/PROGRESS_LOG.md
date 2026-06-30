@@ -2469,3 +2469,101 @@ End of session -- 2026-06-29 issue 112 issue-work risk contracts
   contract/evaluation.
 
 End of session -- 2026-06-29 orphaned review-comment hygiene
+
+---
+
+## 2026-06-29 -- issue 110 bounded Codex review packet
+
+**What changed**
+- Started `feat/codex-review-packet-110` from current
+  `donkey-kong-sandbox` after live preflight confirmed #110 is open; #112/PR
+  #143, #109/PR #142, #108/PR #141, and #107/PR #140 are merged; #105, #106,
+  #93, and #103 are closed; #134 remains open; and #111, #133, #118, #120, and
+  #121 remain separate follow-up work.
+- Added the local/offline `codex-review-packet` v1 artifact with a Python
+  builder/validator, human schema doc, machine JSON schema, deterministic
+  digest, hard byte budget validation, read-only safety flags, secret redaction,
+  forbidden-shape rejection, bounded untrusted diff snippets, and local
+  `codex-quality` receipt evidence reporting.
+- Added `bash .codex/bin/action.sh codex-review-packet --issue <n> --output
+  output/codex/review-packet.json` through a dedicated wrapper, and registered
+  the artifact in `.codex/artifact-contracts-v1.json` plus the artifact-contract
+  checker.
+- Updated focused packet, wrapper, artifact-contract, README, and changelog
+  coverage. No #111 review skill, #133 issue-work integration, #118/#120/#121
+  extraction/distribution work, production diagnostic runtime change, live
+  GitHub fetch, LLM call, or full-repository prompt bundle was added.
+- Revised PR #145 after review feedback so usable quality-receipt evidence now
+  requires a present, valid, timezone-bearing `generated_at` timestamp, and
+  mutation-shaped `--command-log` input now fails closed through packet
+  validation without executing command-log entries.
+- Addressed the remaining automated PR review comments locally by rejecting
+  unsafe explicit paths before fallback reads, redacting all command-log string
+  fields, requiring required receipt checks to pass, recomputing protected
+  classification and receipt coverage in validation, keeping hard-budget snippet
+  omissions consistent, allowing forbidden-operation names as inert evidence,
+  and covering current GitHub token prefixes.
+
+**Validation**
+- Focused suites passed:
+  `.codex/tests/test_codex_review_packet.py`, `.codex/tests/test_environment.py`,
+  `.codex/tests/test_artifact_contracts.py`, `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_agent_regression.py`, `.codex/tests/test_issue_work_skill.py`,
+  and `scripts/triage/test_repo_config.py`.
+- Compile and JSON checks passed for the new packet module, updated artifact
+  checker, packet tests, packet schema, and artifact-contract manifest.
+- `python .codex/scripts/check_artifact_contracts.py --json`,
+  `python .codex/scripts/codex_review_packet.py --issue 110 --json`,
+  `bash .codex/bin/action.sh codex-review-packet --issue 110 --json`,
+  `bash .codex/bin/action.sh codex-quality --json`, and
+  `bash .codex/bin/action.sh check` passed before publishing PR #145.
+- After the review revision, focused packet tests passed with 18 cases, the
+  requested focused suites and artifact checks passed, `codex-quality --json`
+  passed with a digest-valid receipt generated at `2026-06-29T23:46:32Z`, and
+  `bash .codex/bin/action.sh check` passed with `.codex/tests` at 208 tests and
+  the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
+- After the automated-review hardening pass, focused packet tests passed with
+  25 cases, artifact/environment/codex-quality/repo-config checks passed,
+  packet direct and wrapper commands validated, `codex-quality --json` passed
+  with a digest-valid receipt generated at `2026-06-30T00:11:12Z`, and
+  `bash .codex/bin/action.sh check` passed with `.codex/tests` at 215 tests and
+  the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
+- After the final PR-thread hardening pass, focused packet tests passed with
+  29 cases, full PEM private-key redaction, protected deletion staleness,
+  non-finite receipt rejection, staged-only cached diffs, and missing
+  branch/base findings were covered, and `bash .codex/bin/action.sh check`
+  passed with `.codex/tests` at 219 tests and the normal offline gate at 828
+  passed, 2 skipped, 20 deselected, and 1 existing warning.
+
+**Current state**
+- PR #145 is open, non-draft, and clean against `donkey-kong-sandbox` from
+  branch `feat/codex-review-packet-110`.
+- The implementation, progress-log, and review-revision commits are pushed on
+  that branch, and the PR body includes exactly one auto-close line for #110.
+- The latest automated-review hardening changes are included in the pushed PR
+  #145 branch revision.
+- GitHub review-thread metadata for PR #145 reported 13 total threads, 13
+  outdated, and 0 current after the final anchor-refresh push. No review
+  threads were resolved or commented on by automation.
+- The progress log entry was added after PR publication because the initial
+  handoff missed the wrap-up update required by `AGENTS.md`.
+- The latest normal `codex-quality --json` receipt covers the review revision's
+  worktree protected paths: `.codex/artifact-contracts-v1.json`,
+  `.codex/scripts/codex_review_packet.py`, and
+  `docs/CODEX_REVIEW_PACKET_SCHEMA_V1.md`. It does not freshness-bind all
+  committed branch/base protected paths in PR #145, so packet receipt evidence
+  still reports that branch/base coverage limitation.
+
+**Next steps**
+- Review the revised PR #145, wait for CI, and address any remaining review or
+  check feedback.
+
+**Be careful**
+- Keep this PR scoped to the bounded local review packet surface. Do not expand
+  it into #111 review execution, #133 issue-work integration, #118/#120/#121
+  reusable extraction/distribution work, existing backlog schema changes, or
+  any GitHub issue/PR mutation path beyond normal PR branch updates.
+
+End of session -- 2026-06-29 issue 110 bounded Codex review packet

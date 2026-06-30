@@ -25,6 +25,8 @@ Actions:
   project-plan   Emit the read-only advisory Project plan
   package        Build, inspect, install, and smoke-test wheel and sdist
   codex-quality  Run repository-specific Codex semantic quality gates
+  codex-review-packet
+                 Build a local bounded Codex review packet
   help           Show this message
 USAGE
 }
@@ -73,6 +75,9 @@ case "$action" in
     ;;
   codex-quality)
     exec bash .codex/bin/codex-quality.sh "$@"
+    ;;
+  codex-review-packet)
+    exec bash .codex/bin/codex-review-packet.sh "$@"
     ;;
   help|-h|--help)
     usage

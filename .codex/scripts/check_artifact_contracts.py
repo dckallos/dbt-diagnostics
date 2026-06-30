@@ -19,6 +19,8 @@ from jsonschema.exceptions import SchemaError
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -47,6 +49,7 @@ KNOWN_SCHEMA_VERSION_ARTIFACTS = frozenset(
         "backlog-review-validation",
         "backlog-review-verdict",
         "backlog-synthesis",
+        "codex-review-packet",
         "codex-quality-receipt",
         "coordinator-result",
         "operation",
@@ -624,11 +627,129 @@ def _fixture_backlog_review_verdict() -> dict[str, Any]:
     return _sign_verdict(verdict)
 
 
+def _fixture_codex_review_packet() -> dict[str, Any]:
+    import codex_review_packet
+
+    packet: dict[str, Any] = {
+        "schema_version": 1,
+        "repository": "dckallos/dbt-diagnostics",
+        "generated_at": "2026-06-29T00:00:00Z",
+        "issue": {
+            "issue_number": 110,
+            "parent_epic": None,
+        },
+        "source_refs": {
+            "base_ref": "donkey-kong-sandbox",
+            "head_ref": "HEAD",
+            "base_sha": None,
+            "head_sha": None,
+            "merge_base_sha": None,
+        },
+        "evidence_sources": {
+            "worktree_status": {
+                "available": True,
+                "command": "git status --porcelain --untracked-files=all",
+                "changed_paths": [],
+                "error": None,
+            },
+            "branch_base_diff": {
+                "available": False,
+                "command": "git diff --name-status donkey-kong-sandbox...HEAD",
+                "base_ref": "donkey-kong-sandbox",
+                "head_ref": "HEAD",
+                "changed_paths": [],
+                "error": "synthetic fixture",
+            },
+            "explicit_paths": {
+                "available": False,
+                "changed_paths": [],
+                "error": None,
+            },
+        },
+        "changed_files": [],
+        "protected_surfaces": [],
+        "contract_surfaces": [],
+        "quality_receipt": {
+            "path": "output/codex/quality-receipt.json",
+            "present": False,
+            "readable": False,
+            "digest_valid": False,
+            "generated_at": None,
+            "passed": False,
+            "check_statuses": {},
+            "findings_summary": [],
+            "freshness_bound_protected_paths": [],
+            "semantically_checked_protected_paths": [],
+            "changed_protected_paths": [],
+            "missing_freshness_bound_protected_paths": [],
+            "missing_semantically_checked_protected_paths": [],
+            "stale_protected_paths": [],
+            "usable_as_evidence": False,
+            "limitations": [
+                "codex-quality is local evidence for named checks and covered paths only."
+            ],
+            "error": "missing output/codex/quality-receipt.json",
+        },
+        "risk_findings": [
+            {
+                "code": "missing-quality-receipt",
+                "severity": "warning",
+                "message": "No local codex-quality receipt is available.",
+                "repair_guidance": "Run codex-quality separately, then rebuild the packet.",
+                "evidence_source": "quality_receipt",
+            }
+        ],
+        "diff_snippets": [],
+        "commands": [],
+        "omissions": [
+            {
+                "code": "parent-epic-unknown",
+                "reason": "No parent epic was supplied; the command does not fetch GitHub.",
+                "evidence_source": "issue",
+            }
+        ],
+        "budget": {
+            "serialized_bytes": 0,
+            "target_bytes": 204800,
+            "hard_bytes": 307200,
+            "per_file_snippet_bytes": 12000,
+            "omitted_files_count": 0,
+            "omitted_snippets_count": 0,
+            "budget_warnings": [],
+        },
+        "safety": {
+            "read_only": True,
+            "github_api_calls": False,
+            "github_mutations": False,
+            "llm_calls": False,
+            "contains_executable_operations": False,
+            "contains_github_request_payloads": False,
+            "contains_issue_write_payloads": False,
+            "contains_full_repository_bundle": False,
+            "contains_full_tracker_snapshot": False,
+            "diff_snippets_are_untrusted": True,
+            "command_output_is_untrusted": True,
+            "maintainer_decides": True,
+            "codex_review_is_advisory": True,
+        },
+        "codex_review_packet_digest": "0" * 64,
+    }
+    for _ in range(10):
+        packet["budget"]["serialized_bytes"] = len(
+            codex_review_packet.canonical_json(packet).encode("utf-8")
+        )
+        packet["codex_review_packet_digest"] = codex_review_packet.sha256_json(
+            codex_review_packet.codex_review_packet_without_digest(packet)
+        )
+    return packet
+
+
 FIXTURES: Mapping[str, Callable[[], dict[str, Any]]] = {
     "project-plan": _fixture_project_plan,
     "backlog-synthesis": _fixture_backlog_synthesis,
     "synthesis-review-packet": _fixture_synthesis_review_packet,
     "backlog-review-verdict": _fixture_backlog_review_verdict,
+    "codex-review-packet": _fixture_codex_review_packet,
 }
 
 

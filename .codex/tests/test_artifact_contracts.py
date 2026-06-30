@@ -70,6 +70,7 @@ def test_manifest_self_validation_passes() -> None:
         "backlog-synthesis",
         "synthesis-review-packet",
         "backlog-review-verdict",
+        "codex-review-packet",
     }
     for item in artifacts:
         assert isinstance(item, dict)
@@ -203,6 +204,17 @@ def test_required_fields_and_schema_invariants_match_manifest() -> None:
         unsafe = deepcopy(fixture)
         unsafe["operations"] = []
         assert checker._schema_validation_errors(schema, unsafe)
+
+
+def test_codex_review_packet_artifact_contract_imports_and_validates() -> None:
+    checker = _load_checker()
+    entry = _entries_by_artifact(checker)["codex-review-packet"]
+    fixture = checker._fixture_for(entry.artifact)
+
+    assert entry.validator == "codex_review_packet:validate_codex_review_packet"
+    assert checker._validator_errors(entry, fixture) == []
+    assert checker._validator_errors(entry, checker._tamper_digest(entry, fixture))
+    assert checker._validator_errors(entry, checker._unsafe_shape(entry, fixture))
 
 
 def test_synthesis_review_packet_freshness_semantics_are_enforced() -> None:
