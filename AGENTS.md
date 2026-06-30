@@ -119,6 +119,30 @@ own work. Do not add automated-authorship markers of any kind (no "Generated
 with ...", no `Co-Authored-By` trailers, no third-party attribution). Write
 plainly and directly.
 
+## Review guidelines
+
+For Codex/GitHub reviews of protected Codex or governance changes, treat these
+as high-priority review risks:
+
+- packet-only and bounded-review input boundary drift;
+- `.agents/skills/**` and `.codex/agents/**` instruction drift;
+- `.codex/config.toml`, `.codex/agents/**`, hooks, wrappers, and policy
+  semantic-scan coverage;
+- forbidden GitHub comments/reviews/mutation paths from repo-local tooling;
+- forbidden issue body/title/state writes, labels, milestones, Projects, workflow
+  dispatches, PR merges, apply payloads, operation lists, request payloads, or
+  anything consumable by `triage.py apply`;
+- reviewer independence erosion, including
+  same-context self-review being described as independent review;
+- GitHub Codex review being treated as guaranteed per PR or commit instead of
+  best-effort, quota/availability-dependent advisory evidence;
+- stale Codex GitHub review evidence that does not match the current PR head;
+- live GitHub Codex review threads being disregarded because the reviewed commit
+  is older, rather than triaged from GitHub `is_outdated` thread metadata;
+- path containment, non-UTF-8 filenames, JSON non-finite numbers, timestamp
+  freshness, secret redaction around truncation boundaries, command execution,
+  and read-only artifact integrity.
+
 ## Execution environments and agent notes
 
 ### Local Codex app (preferred for implementation)

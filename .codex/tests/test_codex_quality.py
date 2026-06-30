@@ -487,6 +487,67 @@ def test_governance_boundary_checker_uses_repo_config_for_operation_ids() -> Non
     assert set(checker.FORBIDDEN_OPERATION_IDS) == repo_config.FORBIDDEN_OPERATION_IDS
 
 
+def test_governance_boundary_exposes_public_scan_eligibility_helper(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text_file = tmp_path / "config.toml"
+    text_file.write_text("[tool]\n", encoding="ascii")
+    python_file = tmp_path / "tool.py"
+    python_file.write_text("# not a semantic text surface\n", encoding="ascii")
+
+    assert checker.is_eligible_scan_path(text_file, tmp_path) is True
+    assert checker.is_eligible_scan_path(python_file, tmp_path) is False
+
+
+def test_governance_boundary_checker_rejects_toml_command_values() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text = (
+        "[hooks]\n"
+        "command = \"gh issue edit 133 --body unsafe\"\n"
+        "safe_command = \"rg -n 'gh issue edit' docs\"\n"
+    )
+
+    violations = checker.scan_text(text, path=".codex/config.toml")
+
+    assert [(violation.line, violation.code) for violation in violations] == [
+        (2, "forbidden-mutation-command")
+    ]
+    assert violations[0].excerpt.startswith("hooks.command = gh issue edit")
+
+
+def test_governance_boundary_checker_rejects_toml_command_tables() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text = (
+        "[hooks]\n"
+        "commands = [\n"
+        "  { command = \"python scripts/triage/triage.py apply --execute\" },\n"
+        "  { command = \"rg -n 'gh issue edit' docs\" },\n"
+        "]\n"
+        "[[tasks.commands]]\n"
+        "command = \"gh pr merge 148\"\n"
+    )
+
+    violations = checker.scan_text(text, path=".codex/config.toml")
+
+    assert [(violation.line, violation.code) for violation in violations] == [
+        (3, "forbidden-mutation-command"),
+        (7, "forbidden-mutation-command"),
+    ]
+    assert (
+        "hooks.commands.command = python scripts/triage/triage.py apply --execute"
+        in violations[0].excerpt
+    )
+    assert "tasks.commands.command = gh pr merge 148" in violations[1].excerpt
+
+
+def test_governance_boundary_checker_allows_safe_toml_command_values() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text = "[hooks]\ncommand = \"rg -n 'gh issue edit' docs\"\n"
+
+    assert checker.scan_text(text, path=".codex/config.toml") == []
+
+
 def test_default_governance_boundary_scan_includes_issue_contract() -> None:
     checker = _load_codex_script("check_governance_boundary")
 
@@ -596,6 +657,44 @@ def test_codex_quality_missing_explicit_path_records_failed_receipt(
     assert check["status"] == "failed"
     assert check["checked_files"] == []
     assert check["findings"][0]["code"] == "explicit-path-missing"
+
+
+def test_codex_quality_nonprotected_ineligible_explicit_path_fails_closed(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    binary = tmp_path / "fixture.bin"
+    binary.write_bytes(b"\x00\x01")
+
+    receipt = quality.run_quality(root=tmp_path, paths=[Path("fixture.bin")])
+
+    assert receipt["passed"] is False
+    check = _checks_by_name(receipt)["governance-boundary"]
+    assert check["status"] == "failed"
+    assert check["checked_files"] == []
+    assert check["findings"][0]["code"] == "explicit-path-ineligible"
+
+
+def test_codex_quality_protected_symlink_outside_root_fails_closed(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write_pending_artifact_contract_manifest(root)
+    outside = tmp_path / "outside.py"
+    outside.write_text("# outside\n", encoding="ascii")
+    protected = root / ".codex" / "hooks" / "stop.py"
+    protected.parent.mkdir(parents=True)
+    protected.symlink_to(outside)
+
+    receipt = quality.run_quality(root=root, paths=[Path(".codex/hooks/stop.py")])
+
+    assert receipt["passed"] is False
+    check = _checks_by_name(receipt)["governance-boundary"]
+    assert check["status"] == "failed"
+    assert check["checked_files"] == []
+    assert check["findings"][0]["code"] == "explicit-path-outside-root"
 
 
 def test_codex_quality_records_artifact_contract_failures_in_receipt(
@@ -803,6 +902,91 @@ def test_codex_quality_default_scan_uses_policy_semantic_scan_roots(
     assert receipt["freshness_bound_protected_paths"] == []
 
 
+def test_codex_quality_semantically_scans_configured_codex_agents_root(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [".codex/agents"]  # type: ignore[index]
+    paths["protected_surfaces"] = [".codex/agents/**"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    agent = tmp_path / ".codex" / "agents" / "codex-reviewer.toml"
+    agent.parent.mkdir(parents=True)
+    agent.write_text(
+        "developer_instructions = '''\n"
+        "This read-only agent must not close GitHub issues.\n"
+        "'''\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is True
+    assert _checks_by_name(receipt)["governance-boundary"]["checked_files"] == [
+        ".codex/agents/codex-reviewer.toml"
+    ]
+    assert receipt["semantically_checked_protected_paths"] == [
+        ".codex/agents/codex-reviewer.toml"
+    ]
+
+
+def test_codex_quality_semantically_scans_configured_codex_config_file(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [".codex/config.toml"]  # type: ignore[index]
+    paths["protected_surfaces"] = [".codex/config.toml"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    config = tmp_path / ".codex" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[agents]\n"
+        "max_depth = 1\n"
+        "# This read-only config must not close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is True
+    assert _checks_by_name(receipt)["governance-boundary"]["checked_files"] == [
+        ".codex/config.toml"
+    ]
+    assert receipt["semantically_checked_protected_paths"] == [".codex/config.toml"]
+
+
+def test_codex_quality_semantic_scan_catches_mutating_codex_config_text(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [".codex/config.toml"]  # type: ignore[index]
+    paths["protected_surfaces"] = [".codex/config.toml"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    config = tmp_path / ".codex" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[agents]\n"
+        "max_depth = 1\n"
+        "# This read-only config may close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is False
+    check = _checks_by_name(receipt)["governance-boundary"]
+    assert check["checked_files"] == [".codex/config.toml"]
+    assert check["findings"]
+
+
 def test_codex_quality_default_scan_reports_policy_semantic_violations(
     tmp_path: Path,
 ) -> None:
@@ -900,6 +1084,10 @@ def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(
         ],
     )
 
+    checks = _checks_by_name(receipt)
+    assert receipt["passed"] is True
+    assert checks["governance-boundary"]["status"] == "passed"
+    assert checks["governance-boundary"]["checked_files"] == []
     assert receipt["semantically_checked_protected_paths"] == [
         *SYNTHETIC_AGENT_PATHS,
         ".codex/artifact-contracts-v1.json",

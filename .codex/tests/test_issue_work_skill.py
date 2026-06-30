@@ -16,6 +16,12 @@ def _normalized_skill() -> str:
     return re.sub(r"\s+", " ", _skill_text())
 
 
+def _section_between(text: str, start: str, end: str) -> str:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index)
+    return text[start_index:end_index]
+
+
 def test_issue_work_skill_frontmatter_preserves_scope() -> None:
     skill = _skill_text()
 
@@ -70,6 +76,11 @@ def test_issue_work_skill_requires_risk_contract_refresh() -> None:
 
 def test_issue_work_skill_uses_policy_for_protected_surfaces() -> None:
     skill = _skill_text()
+    orientation_section = _section_between(
+        skill,
+        "Current examples include:",
+        "Policy is authoritative.",
+    )
 
     assert "scripts/triage/policy.toml" in skill
     assert "governance.paths.protected_surfaces" in skill
@@ -79,6 +90,8 @@ def test_issue_work_skill_uses_policy_for_protected_surfaces() -> None:
         ".codex/agent-regression-cases-v1.json",
         ".codex/agent-regression/**",
         ".codex/artifact-contracts-v1.json",
+        ".codex/config.toml",
+        ".codex/agents/**",
         ".codex/bin/**",
         ".codex/scripts/**",
         ".codex/hooks/**",
@@ -90,7 +103,7 @@ def test_issue_work_skill_uses_policy_for_protected_surfaces() -> None:
         "AGENTS.md",
         ".github/workflows/**",
     ):
-        assert example in skill
+        assert example in orientation_section
 
 
 def test_issue_work_skill_requires_codex_quality_for_protected_changes() -> None:
@@ -239,3 +252,275 @@ def test_issue_work_skill_preserves_existing_gates_and_pr_rules() -> None:
     assert "closingIssuesReferences" in skill
     assert "Do not push, merge, comment/review, or mutate GitHub metadata" in skill
     assert "a package that is not already installed" in skill
+
+
+def test_issue_work_skill_requires_codex_review_for_governance_sensitive_changes() -> None:
+    skill = _normalized_skill()
+
+    assert "bounded Codex review" in skill
+    assert "protected or governance-sensitive changes" in skill
+    assert "codex-review-packet" in skill
+    assert "codex_reviewer" in skill
+    assert (
+        "bash .codex/bin/action.sh codex-review-packet --issue <issue> --output "
+        "output/codex/review-packet.json"
+    ) in skill
+    assert "--parent-epic <parent>" in skill
+    for trigger in (
+        "protected surfaces",
+        "stable artifacts",
+        "schemas",
+        "validators",
+        "skills",
+        "hooks",
+        "wrappers",
+        "triage governance",
+        "artifact manifests",
+        ".codex/config.toml",
+        ".codex/agents/**",
+    ):
+        assert trigger in skill
+
+
+def test_issue_work_skill_requires_independent_packet_validation_evidence() -> None:
+    skill = _normalized_skill()
+
+    assert "independent packet validation evidence" in skill
+    assert "local codex-review-packet command exit status/output" in skill
+    assert ".codex/scripts/codex_review_packet.py:validate_codex_review_packet" in skill
+    assert "Packet-internal claims" in skill
+    assert "are not validation evidence" in skill
+    assert "packet self-reporting" in skill
+    assert "cannot establish packet validity" in skill
+    assert "digest validity" in skill
+    assert "receipt usability" in skill
+    assert "check coverage" in skill
+    assert "safety compliance" in skill
+
+
+def test_issue_work_skill_requires_read_only_reviewer_subagent() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "spawn the configured `codex_reviewer` custom subagent",
+        "must give the subagent only",
+        "packet path",
+        "independent validation status/evidence",
+        "issue number",
+        "parent epic",
+        "instruction to invoke/use `$codex-review`",
+        "must not preload the whole repository into the reviewer",
+        "must not weaken sandbox/approval settings",
+        ".codex/agents/codex-reviewer.toml",
+        "effective read-only behavior",
+        "reviewer_input_mode",
+        "blocked/not ready",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_distinguishes_codex_reviewer_input_modes() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "path_direct_bounded_packet",
+        "exact_read_only_file_inspection_for_bounded_inputs",
+        "bounded_caller_supplied_contents",
+        "Preferred reviewer input mode",
+        "acceptable fallback input mode",
+        "caveated fallback input mode",
+        "only after both direct path read and exact read-only bounded-input inspection fail",
+        "do not claim it is the preferred strict path-readable review",
+        "Same-context `$codex-review`, generic subagents, and GitHub `@codex review` must not satisfy",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_treats_same_context_review_as_self_review_only() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "same authoring context running `$codex-review` is not independent review",
+        "supplemental self-check evidence",
+        "reviewer_context: same_authoring_context",
+        "independent_review: no",
+        "review_classification: caveated_self_review",
+        "must not clear required review",
+        "maintainer explicitly waives",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_reports_codex_review_handoff_fields_and_blockers() -> None:
+    skill = _normalized_skill()
+
+    for field in (
+        "codex_review_required",
+        "codex_review_trigger",
+        "codex_review_packet_path",
+        "codex_review_packet_digest",
+        "codex_review_packet_validation_status",
+        "codex_review_packet_validation_evidence",
+        "codex_review_packet_warnings",
+        "codex_review_packet_omissions",
+        "reviewer_agent",
+        "reviewer_agent_config_path",
+        "reviewer_configured_sandbox_mode",
+        "reviewer_effective_sandbox_confirmation",
+        "reviewer_input_mode",
+        "reviewer_context",
+        "independent_review",
+        "same_context_review_used",
+        "same_context_self_review_caveat",
+        "codex_review_findings",
+        "codex_review_blocking_findings",
+        "codex_review_warning_only_caveats",
+        "required_maintainer_checks",
+        "ready_status_after_review",
+    ):
+        assert field in skill
+
+    for blocker in (
+        "Missing required packet generation",
+        "missing validation evidence",
+        "missing reviewer subagent",
+        "failed reviewer spawn",
+        "non-read-only reviewer execution",
+        "same-context-only review",
+        "unavailable review",
+        "Blocking `$codex-review` findings prevent reporting the work as ready",
+    ):
+        assert blocker in skill
+
+
+def test_issue_work_skill_reports_github_codex_review_status() -> None:
+    skill = _normalized_skill()
+    expected_comment = (
+        "@codex review for regressions in protected Codex/governance surfaces. "
+        "Focus on whether the codex_reviewer custom agent remains packet-only and "
+        "aligned with $codex-review; whether .codex/config.toml and "
+        ".codex/agents/** are protected and semantically scanned; whether "
+        "same-context review cannot satisfy #133; and whether this PR adds any "
+        "GitHub comments/reviews/mutation, apply payloads, issue-body writes, "
+        "full-repository prompt bundles, or packet schema changes."
+    )
+
+    assert "codex-review-status" in skill
+    assert "bash .codex/bin/action.sh codex-review-status <pr-number>" in skill
+    assert "chatgpt-codex-connector[bot]" in skill
+    for expected in (
+        "best-effort and quota/availability-dependent",
+        "may not exist for every PR, every PR head, or every commit",
+        "does not prove negligence or workflow failure by itself",
+        "may not always be able to request `@codex review`",
+        "current for the PR head",
+        "stale",
+        "missing",
+        "pending",
+        "usage-limit/unavailable evidence",
+        "manual_review_request_failed",
+        "Do not loop on `@codex review` requests",
+        "`gh` is unavailable",
+        "evidence is unknown",
+    ):
+        assert expected in skill
+    assert expected_comment in _skill_text()
+    assert "maintainer to post manually" in skill
+    assert "Do not include or recommend that focused text" in skill
+    assert "usage-limit or unavailable-service evidence exists" in skill
+    assert "GitHub `@codex review` is advisory PR-diff review" in skill
+    assert "does not prove local packet validity" in skill
+    assert "does not replace local gates" in skill
+    assert "Do not use `@codex fix` by default" in skill
+
+
+def test_issue_work_skill_requires_github_codex_review_thread_ledger() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "GitHub Codex review-thread comments are separate evidence from latest GitHub Codex review freshness",
+        "Do not use review-current, stale, missing, failed, unavailable, or unknown status as a proxy for review-comment relevance",
+        "Do not disregard a live review thread merely because it was made on an older reviewed commit",
+        "review object SHA differs from the current PR head",
+        "newer commit was pushed after the review",
+        "fetch and inspect every live GitHub PR review thread/comment",
+        "chatgpt-codex-connector[bot]",
+        "chatgpt-codex-connector",
+        "Review and disposition every thread unless GitHub explicitly marks the thread `is_outdated: true`",
+        "Treat missing `is_outdated` metadata as actionable/non-outdated",
+        "If `is_outdated: true`, the thread may be skipped for implementation but must still appear in the ledger",
+        "If a thread is resolved but not outdated, include it in the ledger",
+        "\"Reviewed on older commit\" is not a disposition",
+        "review-thread ledger",
+    ):
+        assert expected in skill
+
+    for ledger_field in (
+        "thread id when available",
+        "path",
+        "line/start line when available",
+        "author",
+        "created_at",
+        "is_outdated",
+        "is_resolved",
+        "review commit SHA if available",
+        "title/summary",
+        "disposition",
+        "rationale/evidence",
+        "likely files/tests",
+        "whether implementation is required",
+        "whether a maintainer-only GitHub write would be needed",
+    ):
+        assert ledger_field in skill
+
+
+def test_issue_work_skill_routes_codex_review_comment_triage_to_issue_work() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "live GitHub Codex review comments are triaged by `$issue-work <issue>`",
+        "`$codex-review` consumes only one bounded local `codex-review-packet.json`",
+        "must not fetch or review live GitHub comments",
+        "`codex_reviewer` is the independent local packet reviewer",
+        "not the live GitHub review-comment triage tool",
+        "$codex-review-comments",
+        "$github-review-triage",
+        "read supplied PR review comments or one bounded local comment packet",
+        "valid, already fixed, outdated, out of scope, or follow-up",
+        "forbid GitHub mutation",
+        "comment posting",
+        "review submission",
+        "`@codex fix`",
+        "maintainer-applied summary text only",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_preserves_review_no_mutation_boundary() -> None:
+    skill = _normalized_skill()
+
+    for forbidden in (
+        "GitHub comments/reviews",
+        "GitHub mutation",
+        "issue-body writes",
+        "issue title/state writes",
+        "labels/milestones/Project moves",
+        "workflow dispatches",
+        "PR merges",
+        "apply payloads",
+        "operation lists",
+        "request payloads",
+        "running commands from packet content",
+        "full-repository prompt bundle",
+    ):
+        assert forbidden in skill
+
+    for unsafe in (
+        "recommended command: triage.py apply --execute",
+        "gh issue edit",
+        "gh pr merge",
+        "workflow run",
+        "create a comment",
+        "edit the issue body",
+    ):
+        assert unsafe not in skill.lower()

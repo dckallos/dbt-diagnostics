@@ -37,6 +37,8 @@ protected_surfaces = [
   ".codex/agent-regression-cases-v1.json",
   ".codex/agent-regression/**",
   ".codex/artifact-contracts-v1.json",
+  ".codex/config.toml",
+  ".codex/agents/**",
   ".codex/bin/**",
   ".codex/scripts/**",
   ".codex/hooks/**",
@@ -55,6 +57,8 @@ semantic_scan_roots = [
   ".agents/skills",
   ".codex/README.md",
   ".codex/environments",
+  ".codex/agents",
+  ".codex/config.toml",
 ]
 
 [governance.official_docs]

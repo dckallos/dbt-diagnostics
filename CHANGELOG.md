@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Wire codex-review into issue-work
+
+- I wired `$issue-work` to require an independent read-only `codex_reviewer`
+  subagent for protected or governance-sensitive changes.
+- The workflow now requires one validated `codex-review-packet`, independent
+  validation evidence, bounded reviewer inputs, and explicit final-handoff
+  review fields.
+- I added the read-only `codex-review-status` local diagnostic so maintainers
+  can see whether the GitHub Codex review is current for a PR head and get the
+  exact focused `@codex review` text to post manually when it is stale,
+  missing, or failed because of bot usage-limit/unavailable evidence.
+- I added protected/governance Codex GitHub review guidance and made
+  `.codex/config.toml` part of the policy-driven semantic scan roots.
+- I kept the `codex_reviewer` agent read-only while allowing exact read-only
+  inspection of the bounded packet inputs when the runtime requires shell/exec
+  for local file reads.
+- I registered `codex-review-status` as a pending schema-versioned artifact,
+  made manual `@codex review` pending status require maintainer-owned or
+  bot-acknowledged request evidence tied to the current PR head SHA, and
+  broadened GitHub-token redaction for sanitized `gh` errors.
+- I clarified that GitHub Codex review is best-effort,
+  quota/availability-dependent advisory evidence, not guaranteed per PR or
+  commit, and that usage-limit or unavailable evidence should be reported as a
+  limitation rather than prompting an immediate request loop.
+- I added a mandatory `$issue-work` review-thread ledger rule: live
+  `chatgpt-codex-connector` review threads must be triaged from GitHub
+  `is_outdated` metadata, not discarded because they were authored on an older
+  reviewed commit.
+- I made the governance-boundary scanner parse structured TOML `command` values
+  through the shared mutation-command classifier so protected project config
+  semantic scans catch command-bearing mutation paths.
+- I added protected project-agent config for the reviewer path and kept the
+  workflow local/offline with no GitHub mutation, issue or comment creation,
+  automated `@codex review` posting, `@codex fix`, Codex Security CI
+  automation, deep scan automation, packet schema changes, structured verdict
+  output, full-repository prompt bundle, production runtime change, or
+  extraction/distribution work.
+
 ### Harden Codex review packet evidence bounds
 
 - I hardened `codex-review-packet` command-log parsing so non-finite JSON is

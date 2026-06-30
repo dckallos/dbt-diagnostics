@@ -35,6 +35,8 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
     )
     assert ".codex/agent-regression/**" in policy.paths.protected_surfaces
     assert ".codex/artifact-contracts-v1.json" in policy.paths.protected_surfaces
+    assert ".codex/config.toml" in policy.paths.protected_surfaces
+    assert ".codex/agents/**" in policy.paths.protected_surfaces
     assert policy.paths.semantic_scan_roots == (
         "AGENTS.md",
         "docs/ISSUE_GOVERNANCE.md",
@@ -42,6 +44,8 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
         ".agents/skills",
         ".codex/README.md",
         ".codex/environments",
+        ".codex/agents",
+        ".codex/config.toml",
     )
     assert policy.codex.environment_name == "dbt-diagnostics"
     assert policy.codex.venv_dir == ".venv"

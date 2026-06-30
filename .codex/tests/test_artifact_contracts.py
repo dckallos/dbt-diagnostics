@@ -65,6 +65,11 @@ def test_manifest_self_validation_passes() -> None:
         for item in artifacts
         if isinstance(item, dict) and item.get("status") == "active"
     }
+    pending = {
+        item["artifact"]
+        for item in artifacts
+        if isinstance(item, dict) and item.get("status") == "pending"
+    }
     assert active == {
         "project-plan",
         "backlog-synthesis",
@@ -72,6 +77,7 @@ def test_manifest_self_validation_passes() -> None:
         "backlog-review-verdict",
         "codex-review-packet",
     }
+    assert "codex-review-status" in pending
     for item in artifacts:
         assert isinstance(item, dict)
         if item["status"] in {"pending", "excluded"}:

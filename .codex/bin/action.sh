@@ -27,6 +27,8 @@ Actions:
   codex-quality  Run repository-specific Codex semantic quality gates
   codex-review-packet
                  Build a local bounded Codex review packet
+  codex-review-status
+                 Report whether GitHub Codex reviewed the PR head
   help           Show this message
 USAGE
 }
@@ -78,6 +80,9 @@ case "$action" in
     ;;
   codex-review-packet)
     exec bash .codex/bin/codex-review-packet.sh "$@"
+    ;;
+  codex-review-status)
+    exec bash .codex/bin/codex-review-status.sh "$@"
     ;;
   help|-h|--help)
     usage

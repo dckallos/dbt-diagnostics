@@ -2716,3 +2716,109 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
   milestone/Project/workflow/merge path.
 
 End of session -- 2026-06-30 orphaned codex-review-packet hardening
+
+---
+
+## 2026-06-30 -- issue 133 codex-review issue-work wiring
+
+**What changed**
+- PR #148 branch `feat/133-codex-review-issue-work-wiring` now has a pushed
+  remote continuation at `b7b34816fc092f16e318c837104a1eab8477a7bb` and a
+  final local continuation that is not pushed at session end.
+- Implemented the #133 local review wiring: bounded `codex_reviewer` remains
+  `sandbox_mode = "read-only"`; `$codex-review` and `$issue-work` distinguish
+  direct packet path input, exact read-only bounded-input inspection, and the
+  caveated caller-supplied-content fallback.
+- Clarified GitHub Codex review as best-effort, quota/availability-dependent
+  advisory PR-diff evidence. Missing, stale, unavailable, or usage-limited
+  GitHub Codex review is reportable but is not proof of negligence by itself.
+- Added the mandatory `$issue-work` live GitHub Codex review-thread ledger:
+  every `chatgpt-codex-connector` thread is listed, non-outdated threads must
+  be dispositioned, missing `is_outdated` metadata fails closed, and reviewed
+  commit SHA mismatch is never a disposition.
+- Revised `codex-review-status` so it reports observable review freshness and
+  visible Codex comment counts, not thread-level `is_outdated` triage. It now
+  says `review_thread_relevance_basis:
+  separate_live_thread_metadata_required` and `review_thread_sha_mismatch_is_disposition:
+  false`.
+- Tightened manual `@codex review` handling: emitted focused text includes the
+  current PR head SHA; pending-request recognition requires that SHA; old
+  usage-limit/unavailable evidence is still reported but only current-head
+  usage-limit evidence suppresses a new focused request.
+- Kept the narrow `codex-quality --path` freshness-only fix for existing
+  protected paths that are not governance text-scan eligible; this does not
+  implement #149 freshness semantics and does not falsely claim semantic
+  coverage.
+- Kept the earlier in-scope hardening for protected outside-root symlinks,
+  command-bearing `.codex/config.toml` TOML scanning, pending/dismissed Codex
+  review filtering, indented-code false positives, maintainer-owned request
+  detection, broader token redaction, and pending `codex-review-status` artifact
+  registration.
+
+**Validation**
+- Live verification at start: PR #148 open, non-draft, mergeable, targeting
+  `donkey-kong-sandbox`; #133 and #134 open; #110, #111, and #112 closed; PR
+  #147 merged; CI green for remote head `b7b34816fc092f16e318c837104a1eab8477a7bb`.
+- Focused tests passed: `test_codex_github_review_status.py` 32, `test_issue_work_skill.py` 22,
+  `test_codex_reviewer_agent.py` 7, `test_codex_review_skill.py` 18,
+  `test_codex_quality.py` 68, `test_codex_review_packet.py` 35,
+  `test_agent_regression.py` 21, `test_codex_hooks.py` 51,
+  `scripts/triage/test_repo_config.py` 89, and `test_artifact_contracts.py` 12.
+- `py_compile` passed for the changed scripts and tests.
+- Final scoped `codex-quality --path ... --json` passed at
+  `2026-06-30T22:30:15Z`, receipt digest
+  `aa9799c41fc3435a612a538126ca5793f5c90893c47b4b2b9574f21dd1b83a15`, no
+  findings, and all branch/base protected paths freshness-bound.
+- Final `codex-review-packet --issue 133 --parent-epic 134 --output
+  output/codex/review-packet.json --path
+  .codex/scripts/codex_github_review_status.py --snippet-bytes 50000` passed
+  at `2026-06-30T22:30:21Z`, packet digest
+  `3cb0caeb3a41beab9783ff6912110d1da4f728a4b6ff248859ebaa64cf56141c`.
+  `quality_receipt.usable_as_evidence` is `true`; missing freshness and
+  missing semantic protected paths are both empty. The status-script snippet is
+  not truncated; the only packet warning is secret-shaped token-pattern text
+  redaction in that script.
+- Final `codex-review-status 148 --json` and human mode both report remote PR
+  head `b7b34816fc092f16e318c837104a1eab8477a7bb` as
+  `current_with_findings`: latest Codex review is current, 10 visible inline
+  findings on current head, 15 total visible Codex inline findings, usage-limit
+  evidence present but not tied to the current head, and separate live thread
+  metadata required for comment relevance.
+- Final `bash .codex/bin/action.sh check` passed: `.codex/tests` 302 passed;
+  normal offline gate 828 passed, 2 skipped, 20 deselected, with 1 existing
+  PytestCollectionWarning; compatibility schema gate skipped as in current CI.
+- Final local `codex_reviewer` review used
+  `exact_read_only_file_inspection_for_bounded_inputs`, found no blocking
+  findings, and marked the packet ready for maintainer decision with
+  warning-only caveats for omitted command logs, token-pattern redaction, and
+  the separate live-thread ledger requirement.
+
+**Current state**
+- PR #148 is open and non-draft against `donkey-kong-sandbox`; the branch
+  remote head is `b7b34816fc092f16e318c837104a1eab8477a7bb`. The final local
+  continuation is not committed or pushed.
+- Live PR review-thread ledger at this session: 15 Codex connector threads.
+  Five are explicitly outdated and skipped for implementation only for that
+  reason; nine non-outdated threads are fixed or already addressed by current
+  local code/evidence; one non-outdated packet-classification thread is a
+  follow-up because it would broaden beyond #133.
+- No GitHub comment, review, PR-body update, issue write, label/milestone/Project
+  move, workflow dispatch, merge, branch operation, push, or other GitHub
+  mutation was performed after this final local continuation. Existing remote
+  review threads remain unresolved until a maintainer performs GitHub writes.
+
+**Next steps**
+- Commit and push the local continuation to PR #148 only if explicitly
+  authorized again. Then wait for CI, rerun `codex-review-status 148`, refresh
+  the live review-thread ledger, and update the PR body only with explicit
+  GitHub-write authorization.
+
+**Be careful**
+- Keep #133 scoped to `$issue-work` review wiring, the custom reviewer agent,
+  the read-only GitHub Codex review-status diagnostic, and the mandatory live
+  review-thread ledger requirement. Do not expand into packet builder/schema
+  changes, automated GitHub comments or reviews, issue-body writes, retrieval
+  work, extraction/distribution work, Codex Security automation, #149, #154, or
+  production runtime changes.
+
+End of session -- 2026-06-30 issue 133 codex-review issue-work wiring
