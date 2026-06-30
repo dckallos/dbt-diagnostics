@@ -120,12 +120,12 @@ FORBIDDEN_KEYS = frozenset(
     }
 )
 SECRET_PATTERNS = (
-    re.compile(r"ghp_[A-Za-z0-9_]{20,}"),
-    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
-    re.compile(r"gh[our]_[A-Za-z0-9_]{20,}"),
-    re.compile(r"ghs_[A-Za-z0-9_]{8,}"),
+    re.compile(
+        r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----"
+    ),
+    re.compile(r"-----(?:BEGIN|END) [A-Z0-9 ]*PRIVATE KEY-----"),
+    re.compile(r"(?:github_pat_|gh[opurs]_)[A-Za-z0-9_]{8,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(
         r"(?i)\b(password|token|secret|api_key)\s*=\s*([^\s\"']+|\"[^\"]*\"|'[^']*')"
     ),
@@ -196,6 +196,17 @@ def _safe_repo_relative_path(path: str, *, root: Path) -> str | None:
     except (OSError, ValueError):
         return None
     return normalized
+
+
+def _reject_non_finite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
+def _load_json_object_or_array(path: Path) -> Any:
+    return json.loads(
+        path.read_text(encoding="ascii"),
+        parse_constant=_reject_non_finite_json_constant,
+    )
 
 
 def _normalize_explicit_paths(
@@ -646,6 +657,20 @@ def _collect_branch_base_evidence(
                 evidence_source="branch_base_diff",
             )
         )
+        if not any(
+            item.get("code") == "missing-branch-base-diff"
+            for item in findings
+            if isinstance(item, Mapping)
+        ):
+            findings.append(
+                _finding(
+                    "missing-branch-base-diff",
+                    "warning",
+                    "Branch/base diff evidence is unavailable.",
+                    "Fetch or provide a resolvable base ref, then rebuild the packet.",
+                    evidence_source="branch_base_diff",
+                )
+            )
         return (
             {
                 "available": False,
@@ -807,9 +832,13 @@ def _diff_for_path(
             parts.append(result.stdout)
             sources.append(f"git diff {base_ref}...{head_ref} -- {path}")
     if "worktree_status" in change_sources:
-        result = recorder.git(["diff", "--", path])
-        if result.returncode == 0 and result.stdout:
-            parts.append(result.stdout)
+        cached = recorder.git(["diff", "--cached", "--", path])
+        if cached.returncode == 0 and cached.stdout:
+            parts.append(cached.stdout)
+            sources.append(f"git diff --cached -- {path}")
+        unstaged = recorder.git(["diff", "--", path])
+        if unstaged.returncode == 0 and unstaged.stdout:
+            parts.append(unstaged.stdout)
             sources.append(f"git diff -- {path}")
     if not parts and ("worktree_status" in change_sources or "explicit" in change_sources):
         safe_path = _safe_repo_relative_path(path, root=recorder.root)
@@ -983,8 +1012,8 @@ def _load_quality_receipt(
         return summary
     summary["present"] = True
     try:
-        raw = json.loads(path.read_text(encoding="ascii"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raw = _load_json_object_or_array(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         summary["error"] = f"cannot read receipt: {type(exc).__name__}"
         omissions.append(
             _omission(
@@ -1017,7 +1046,11 @@ def _load_quality_receipt(
         return summary
     summary["readable"] = True
     expected = raw.get("quality_receipt_digest")
-    summary["digest_valid"] = isinstance(expected, str) and expected == codex_quality.receipt_digest(raw)
+    try:
+        actual_digest = codex_quality.receipt_digest(raw)
+    except (TypeError, ValueError):
+        actual_digest = None
+    summary["digest_valid"] = isinstance(expected, str) and expected == actual_digest
     raw_generated_at = raw.get("generated_at")
     summary["generated_at"] = (
         raw_generated_at
@@ -1072,10 +1105,14 @@ def _load_quality_receipt(
         for protected_path in protected_paths:
             local_path = root / protected_path
             try:
-                if local_path.exists() and local_path.stat().st_mtime_ns > receipt_mtime:
-                    stale_paths.append(protected_path)
+                path_stat = local_path.stat()
+            except FileNotFoundError:
+                stale_paths.append(protected_path)
             except OSError:
                 stale_paths.append(protected_path)
+            else:
+                if path_stat.st_mtime_ns > receipt_mtime:
+                    stale_paths.append(protected_path)
     summary["missing_freshness_bound_protected_paths"] = missing_freshness
     summary["missing_semantically_checked_protected_paths"] = missing_semantic
     summary["stale_protected_paths"] = stale_paths
@@ -1085,13 +1122,13 @@ def _load_quality_receipt(
         for name in REQUIRED_QUALITY_CHECKS
         if name in check_statuses and check_statuses.get(name) != "passed"
     )
+    required_checks_passed = not required_missing and not required_failed
     usable = (
         summary["readable"] is True
         and summary["digest_valid"] is True
         and summary["passed"] is True
         and generated_at_valid
-        and not required_missing
-        and not required_failed
+        and required_checks_passed
         and not missing_freshness
         and not missing_semantic
         and not stale_paths
@@ -1307,7 +1344,7 @@ def _finalize_packet(packet: dict[str, Any]) -> dict[str, Any]:
     return packet
 
 
-def _recompute_budget_counts(packet: dict[str, Any]) -> None:
+def _recompute_budget_counts(packet: dict[str, Any]) -> dict[str, Any]:
     packet["budget"]["omitted_files_count"] = sum(
         1
         for item in packet["changed_files"]
@@ -1316,6 +1353,7 @@ def _recompute_budget_counts(packet: dict[str, Any]) -> None:
     packet["budget"]["omitted_snippets_count"] = sum(
         1 for item in packet["omissions"] if "snippet" in str(item.get("code", ""))
     )
+    return packet
 
 
 def _enforce_hard_budget(packet: dict[str, Any]) -> dict[str, Any]:
@@ -1351,8 +1389,7 @@ def _enforce_hard_budget(packet: dict[str, Any]) -> dict[str, Any]:
                     item["diff_snippet_omitted"] = True
                     item["diff_snippet_truncated"] = False
         packet["diff_snippets"] = snippets
-        _recompute_budget_counts(packet)
-        packet = _finalize_packet(packet)
+        packet = _finalize_packet(_recompute_budget_counts(packet))
     return packet
 
 
@@ -1661,11 +1698,12 @@ class CodexReviewPacketValidator:
                 context.errors.append(
                     "quality_receipt.usable_as_evidence requires valid generated_at"
                 )
-            for field_name in (
+            blocking_coverage_fields = (
                 "missing_freshness_bound_protected_paths",
                 "missing_semantically_checked_protected_paths",
                 "stale_protected_paths",
-            ):
+            )
+            for field_name in blocking_coverage_fields:
                 if receipt.get(field_name) != []:
                     context.errors.append(
                         f"quality_receipt.usable_as_evidence requires empty {field_name}"
@@ -1702,6 +1740,7 @@ class CodexReviewPacketValidator:
                 context.errors.append(f"quality_receipt.{field_name} must be an array")
 
     def _validate_changed_files(self, context: PacketValidationContext) -> None:
+        allowed_sources = {"worktree_status", "branch_base_diff", "explicit"}
         for item in self.packet.get("changed_files", []):
             if not isinstance(item, Mapping):
                 context.errors.append("changed_files entries must be objects")
@@ -1710,8 +1749,7 @@ class CodexReviewPacketValidator:
                 context.errors.append("changed_files entries require path")
             sources = item.get("change_sources")
             if not isinstance(sources, list) or not all(
-                source in {"worktree_status", "branch_base_diff", "explicit"}
-                for source in sources
+                source in allowed_sources for source in sources
             ):
                 context.errors.append(
                     f"changed_files change_sources invalid for {item.get('path')}"

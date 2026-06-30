@@ -100,10 +100,11 @@ The packet reads a local receipt from `output/codex/quality-receipt.json` unless
 - `freshness_bound_protected_paths`;
 - `semantically_checked_protected_paths`;
 - changed protected paths absent from either coverage field;
-- changed protected paths newer than the receipt;
+- changed protected paths newer than the receipt or deleted after the covered
+  baseline;
 - whether the receipt is usable as evidence.
 
-Missing, malformed, failed, digest-invalid, stale, non-covering, or
+Missing, malformed, non-finite, failed, digest-invalid, stale, non-covering, or
 timestamp-invalid receipts are not usable evidence. `generated_at` may be null
 only for non-usable summaries, such as missing or unreadable receipts. A receipt
 with `usable_as_evidence: true` must have a present, non-empty,
@@ -175,8 +176,9 @@ The safety object is part of the contract and must keep these exact values:
 The builder redacts known secret-shaped text with `[REDACTED_SECRET]` and emits
 a finding. The validator rejects raw known secret shapes in diff snippets and
 command output, including GitHub token prefixes `ghp_`, `github_pat_`, `gho_`,
-`ghu_`, `ghs_`, and `ghr_`, AWS access key IDs, private key block markers, and
-`password=`, `token=`, `secret=`, or `api_key=` assignments.
+`ghu_`, `ghs_`, and `ghr_`, AWS access key IDs, full private key blocks or
+private key block markers, and `password=`, `token=`, `secret=`, or `api_key=`
+assignments.
 
 ## Forbidden Shape
 

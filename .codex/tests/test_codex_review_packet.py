@@ -497,6 +497,65 @@ def test_receipt_missing_malformed_digest_invalid_failed_noncovering_and_stale(
     assert stale["quality_receipt"]["usable_as_evidence"] is False
 
 
+def test_non_finite_receipt_json_is_malformed_without_traceback(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+    receipt_path = repo / "output" / "codex" / "quality-receipt.json"
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path.write_text(
+        (
+            '{"schema_version":1,"tool":"codex-quality","passed":true,'
+            '"generated_at":"2026-06-29T00:00:00Z","checks":[],'
+            '"freshness_bound_protected_paths":[],"semantically_checked_protected_paths":[],'
+            '"quality_receipt_digest":"'
+            + ("0" * 64)
+            + '","non_finite":NaN}'
+        ),
+        encoding="ascii",
+    )
+    script = ROOT / ".codex" / "scripts" / "codex_review_packet.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--issue", "110", "--json"],
+        cwd=repo,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    packet = json.loads(result.stdout)
+    assert packet["quality_receipt"]["usable_as_evidence"] is False
+    assert "malformed-quality-receipt" in {
+        item["code"] for item in packet["risk_findings"]
+    }
+
+
+def test_deleted_protected_path_makes_receipt_stale_even_when_covered(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/deleted.py"
+    _git(repo, "checkout", "donkey-kong-sandbox")
+    _commit(repo, path, "print('base')\n")
+    _git(repo, "checkout", "-B", "delete-feature")
+    _git(repo, "rm", path)
+    _git(repo, "commit", "-m", "delete protected path")
+    _write_receipt(repo, _receipt(review_packet, protected_paths=[path]))
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    assert packet["quality_receipt"]["missing_freshness_bound_protected_paths"] == []
+    assert packet["quality_receipt"]["stale_protected_paths"] == [path]
+    assert packet["quality_receipt"]["usable_as_evidence"] is False
+    assert "stale-quality-receipt" in {
+        item["code"] for item in packet["risk_findings"]
+    }
+
+
 def test_semantic_coverage_caveat_for_semantic_protected_paths(tmp_path: Path) -> None:
     review_packet = _load_codex_script("codex_review_packet")
     repo = _init_repo(tmp_path)
@@ -620,6 +679,27 @@ def test_missing_branch_base_diff_records_omission_and_finding(tmp_path: Path) -
     assert "branch-base-diff-unavailable" in {
         item["code"] for item in packet["omissions"]
     }
+    assert "missing-branch-base-diff" in {
+        item["code"] for item in packet["risk_findings"]
+    }
+
+
+def test_staged_only_worktree_diff_uses_cached_diff(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/staged_delete.py"
+    _git(repo, "checkout", "donkey-kong-sandbox")
+    _commit(repo, path, "print('base')\n")
+    _git(repo, "checkout", "-B", "staged-feature")
+    _git(repo, "rm", path)
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    changed = {item["path"]: item for item in packet["changed_files"]}[path]
+    snippet = {item["path"]: item for item in packet["diff_snippets"]}[path]
+    assert changed["change_sources"] == ["worktree_status"]
+    assert "git diff --cached --" in snippet["source"]
+    assert "deleted file mode" in snippet["content"]
+    assert "-print('base')" in snippet["content"]
 
 
 def test_diff_snippet_budget_truncates_and_validator_recomputes_size(
@@ -718,6 +798,35 @@ def test_secret_shaped_text_is_redacted_and_raw_secret_fails_validation(
 
     unsafe = deepcopy(packet)
     unsafe["diff_snippets"][0]["content"] = raw_secret
+    unsafe = _resign(unsafe)
+    assert any(
+        "unredacted secret-shaped text" in error
+        for error in review_packet.validate_codex_review_packet(unsafe)
+    )
+
+
+def test_private_key_blocks_are_fully_redacted_and_rejected(tmp_path: Path) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/private_key.py"
+    private_key = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n"
+        "still-secret-material\n"
+        "-----END PRIVATE KEY-----"
+    )
+    _commit(repo, path, f"KEY = '''{private_key}'''\n")
+
+    packet = _build_packet(repo, parent_epic=134)
+    serialized = review_packet.canonical_json(packet)
+
+    assert "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC" not in serialized
+    assert "still-secret-material" not in serialized
+    assert "-----END PRIVATE KEY-----" not in serialized
+    assert review_packet.REDACTED_SECRET in serialized
+
+    unsafe = deepcopy(packet)
+    unsafe["diff_snippets"][0]["content"] = private_key
     unsafe = _resign(unsafe)
     assert any(
         "unredacted secret-shaped text" in error

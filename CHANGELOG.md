@@ -13,7 +13,9 @@
   required receipt checks must pass, protected-surface and receipt-coverage
   fields are recomputed, hard-budget snippet omissions stay consistent, command
   logs redact every string field, inert forbidden-operation text remains
-  allowed as evidence, and current GitHub token prefixes are redacted.
+  allowed as evidence, full private key blocks and current GitHub token prefixes
+  are redacted, staged-only diffs are included, deleted protected paths make
+  receipts stale, and non-finite receipt JSON is treated as malformed.
 - The command is local/offline and adds no GitHub mutation, LLM call,
   full-repository prompt bundle, production diagnostic runtime change, or
   codex-review skill.
