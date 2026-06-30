@@ -152,17 +152,21 @@ Input: exactly one GitHub issue number.
     - receipt limitations and omissions;
     - protected-change evidence source: worktree status, branch/base diff,
       explicit path list, both, or not available;
+    - whether `generated_at` is present, valid, and from a
+      digest-validated receipt before using it as freshness evidence;
     - whether every changed protected path appears in
       `freshness_bound_protected_paths`;
     - whether every semantically relevant protected path appears in
       `semantically_checked_protected_paths`, when semantic scanning applies;
-    - whether the receipt was generated after the protected changes it is meant
-      to cover.
+    - whether the signed `generated_at`, not the receipt file mtime, is after
+      the protected changes the receipt is meant to cover.
 
     The receipt proves named local checks and freshness-bound path coverage for
     the paths it actually covered. It does not prove all committed branch/base
     protected files were checked unless those paths appear in the receipt
-    coverage evidence.
+    coverage evidence. A receipt with missing, null, non-string, empty, or
+    malformed `generated_at` is not usable freshness evidence, even when the
+    receipt file itself has a newer filesystem mtime.
 
 15. Report protected-change evidence precisely:
     - a clean worktree is not proof that committed protected changes were not

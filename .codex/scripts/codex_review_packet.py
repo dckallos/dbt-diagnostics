@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 from typing import Any, Iterable, Mapping, Sequence
@@ -380,6 +381,14 @@ def _bounded_text(text: str, *, byte_limit: int) -> tuple[str, bool]:
     return bounded, True
 
 
+def _read_bounded_text(path: Path, *, byte_limit: int) -> tuple[str, bool]:
+    with path.open("rb") as handle:
+        data = handle.read(byte_limit + 1)
+    truncated = len(data) > byte_limit
+    bounded = data[:byte_limit].decode("utf-8", errors="replace")
+    return bounded, truncated
+
+
 def _sanitize_command_log_value(value: object) -> tuple[object, bool, bool]:
     if isinstance(value, str):
         redacted, changed = _redact_secrets(value)
@@ -451,9 +460,16 @@ class CommandRecorder:
     commands: list[dict[str, Any]] = field(default_factory=list)
     findings: list[dict[str, Any]] = field(default_factory=list)
 
-    def git(self, args: Sequence[str], *, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+    def git(
+        self,
+        args: Sequence[str],
+        *,
+        timeout: int = 10,
+        record_stdout: bool = True,
+        stdout_omission_reason: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         command = ["git", *args]
-        command_text = " ".join(command)
+        command_text = shlex.join(command)
         result = subprocess.run(
             command,
             cwd=self.root,
@@ -463,9 +479,14 @@ class CommandRecorder:
             timeout=timeout,
             check=False,
         )
-        stdout, stdout_redacted = _redact_secrets(result.stdout)
+        stdout_redacted = False
+        if record_stdout:
+            stdout, stdout_redacted = _redact_secrets(result.stdout)
+            stdout, stdout_truncated = _bounded_text(stdout, byte_limit=COMMAND_OUTPUT_BYTES)
+        else:
+            stdout = ""
+            stdout_truncated = False
         stderr, stderr_redacted = _redact_secrets(result.stderr)
-        stdout, stdout_truncated = _bounded_text(stdout, byte_limit=COMMAND_OUTPUT_BYTES)
         stderr, stderr_truncated = _bounded_text(stderr, byte_limit=COMMAND_OUTPUT_BYTES)
         if stdout_redacted or stderr_redacted:
             self.findings.append(
@@ -477,24 +498,50 @@ class CommandRecorder:
                     evidence_source="command",
                 )
             )
-        self.commands.append(
-            {
-                "command": command_text,
-                "generated_by_packet_builder": True,
-                "returncode": result.returncode,
-                "stdout": stdout,
-                "stderr": stderr,
-                "stdout_truncated": stdout_truncated,
-                "stderr_truncated": stderr_truncated,
-                "untrusted": True,
-            }
-        )
+        record: dict[str, Any] = {
+            "command": command_text,
+            "generated_by_packet_builder": True,
+            "returncode": result.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+            "untrusted": True,
+        }
+        if not record_stdout:
+            record["stdout_omitted"] = True
+            record["stdout_omission_reason"] = (
+                stdout_omission_reason
+                or "stdout is represented only through bounded packet evidence."
+            )
+        self.commands.append(record)
         return result
 
 
 def _parse_status_paths(stdout: str) -> tuple[dict[str, str], tuple[str, ...]]:
     statuses: dict[str, str] = {}
     paths: list[str] = []
+    if "\0" in stdout:
+        records = [record for record in stdout.split("\0") if record]
+        index = 0
+        while index < len(records):
+            record = records[index]
+            if len(record) <= 3:
+                index += 1
+                continue
+            status = record[:2].strip() or "changed"
+            raw_path = record[3:]
+            for raw_value in (raw_path,):
+                path = _normalize_path(raw_value)
+                statuses[path] = status
+                paths.append(path)
+            if any(marker in status for marker in ("R", "C")) and index + 1 < len(records):
+                index += 1
+                original_path = _normalize_path(records[index])
+                statuses[original_path] = status
+                paths.append(original_path)
+            index += 1
+        return statuses, tuple(sorted(set(paths)))
     for line in stdout.splitlines():
         if not line:
             continue
@@ -597,8 +644,8 @@ def _collect_worktree_evidence(
     findings: list[dict[str, Any]],
     omissions: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, str], tuple[str, ...]]:
-    command = "git status --porcelain --untracked-files=all"
-    result = recorder.git(["status", "--porcelain", "--untracked-files=all"])
+    command = "git status --porcelain=v1 -z --untracked-files=all"
+    result = recorder.git(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
     if result.returncode != 0:
         omissions.append(
             _omission(
@@ -820,41 +867,59 @@ def _diff_for_path(
     source_refs: Mapping[str, Any],
     branch_available: bool,
     change_sources: Sequence[str],
-) -> tuple[str, str]:
+    snippet_bytes: int,
+) -> tuple[str, str, bool]:
     parts: list[str] = []
     sources: list[str] = []
+    prebounded_truncated = False
     if branch_available and "branch_base_diff" in change_sources:
         base_ref = str(source_refs["base_ref"])
         head_ref = str(source_refs["head_ref"])
-        result = recorder.git(["diff", f"{base_ref}...{head_ref}", "--", path])
+        command = ["git", "diff", f"{base_ref}...{head_ref}", "--", path]
+        result = recorder.git(
+            command[1:],
+            record_stdout=False,
+            stdout_omission_reason="diff stdout is represented only through bounded diff_snippets.",
+        )
         if result.returncode == 0 and result.stdout:
             parts.append(result.stdout)
-            sources.append(f"git diff {base_ref}...{head_ref} -- {path}")
+            sources.append(shlex.join(command))
     if "worktree_status" in change_sources:
-        cached = recorder.git(["diff", "--cached", "--", path])
+        cached_command = ["git", "diff", "--cached", "--", path]
+        cached = recorder.git(
+            cached_command[1:],
+            record_stdout=False,
+            stdout_omission_reason="diff stdout is represented only through bounded diff_snippets.",
+        )
         if cached.returncode == 0 and cached.stdout:
             parts.append(cached.stdout)
-            sources.append(f"git diff --cached -- {path}")
-        unstaged = recorder.git(["diff", "--", path])
+            sources.append(shlex.join(cached_command))
+        unstaged_command = ["git", "diff", "--", path]
+        unstaged = recorder.git(
+            unstaged_command[1:],
+            record_stdout=False,
+            stdout_omission_reason="diff stdout is represented only through bounded diff_snippets.",
+        )
         if unstaged.returncode == 0 and unstaged.stdout:
             parts.append(unstaged.stdout)
-            sources.append(f"git diff -- {path}")
+            sources.append(shlex.join(unstaged_command))
     if not parts and ("worktree_status" in change_sources or "explicit" in change_sources):
         safe_path = _safe_repo_relative_path(path, root=recorder.root)
         if safe_path is None:
-            return "", f"local file path rejected: {path}"
+            return "", f"local file path rejected: {path}", False
         path_obj = recorder.root / safe_path
         if path_obj.is_file():
             try:
-                with path_obj.open(encoding="utf-8", errors="replace") as handle:
-                    text = handle.read()
+                text, prebounded_truncated = _read_bounded_text(
+                    path_obj, byte_limit=snippet_bytes
+                )
             except OSError:
-                return "", f"local file read failed: {path}"
+                return "", f"local file read failed: {path}", False
             parts.append(text)
             sources.append(f"bounded local file excerpt: {safe_path}")
     if parts:
-        return "\n".join(parts), " + ".join(sources)
-    return "", f"diff unavailable: {path}"
+        return "\n".join(parts), " + ".join(sources), prebounded_truncated
+    return "", f"diff unavailable: {path}", False
 
 
 def _build_diff_snippets(
@@ -873,12 +938,13 @@ def _build_diff_snippets(
         if not _snippet_needed(item):
             item["diff_snippet_omitted"] = True
             continue
-        text, source_command = _diff_for_path(
+        text, source_command, prebounded_truncated = _diff_for_path(
             recorder,
             path=path,
             source_refs=source_refs,
             branch_available=branch_available,
             change_sources=[str(source) for source in item["change_sources"]],
+            snippet_bytes=snippet_bytes,
         )
         if not text:
             item["diff_snippet_omitted"] = True
@@ -903,6 +969,7 @@ def _build_diff_snippets(
             continue
         redacted, secret_redacted = _redact_secrets(text)
         bounded, truncated = _bounded_text(redacted, byte_limit=snippet_bytes)
+        truncated = truncated or prebounded_truncated
         if secret_redacted:
             findings.append(
                 _finding(
@@ -1097,11 +1164,9 @@ def _load_quality_receipt(
         set(semantic_paths) - set(summary["semantically_checked_protected_paths"])
     )
     stale_paths: list[str] = []
-    try:
-        receipt_mtime = path.stat().st_mtime_ns
-    except OSError:
-        receipt_mtime = None
-    if receipt_mtime is not None:
+    receipt_generated_at = _parse_timestamp(summary["generated_at"])
+    if receipt_generated_at is not None:
+        receipt_timestamp = receipt_generated_at.timestamp()
         for protected_path in protected_paths:
             local_path = root / protected_path
             try:
@@ -1111,7 +1176,7 @@ def _load_quality_receipt(
             except OSError:
                 stale_paths.append(protected_path)
             else:
-                if path_stat.st_mtime_ns > receipt_mtime:
+                if path_stat.st_mtime > receipt_timestamp:
                     stale_paths.append(protected_path)
     summary["missing_freshness_bound_protected_paths"] = missing_freshness
     summary["missing_semantically_checked_protected_paths"] = missing_semantic
@@ -1253,8 +1318,8 @@ def _load_command_log(
         return []
     path = command_log if command_log.is_absolute() else root / command_log
     try:
-        value = json.loads(path.read_text(encoding="ascii"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        value = _load_json_object_or_array(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         findings.append(
             _finding(
                 "command-log-malformed",
@@ -1622,6 +1687,30 @@ class CodexReviewPacketValidator:
             context.errors.append("packet exceeds budget.hard_bytes")
         if not isinstance(budget.get("budget_warnings"), list):
             context.errors.append("budget.budget_warnings must be an array")
+        changed_files = self.packet.get("changed_files")
+        if isinstance(changed_files, list):
+            expected_omitted_files = sum(
+                1
+                for item in changed_files
+                if isinstance(item, Mapping)
+                and item.get("diff_snippet_omitted") is True
+                and _snippet_needed(item)
+            )
+            if budget.get("omitted_files_count") != expected_omitted_files:
+                context.errors.append(
+                    "budget.omitted_files_count does not match changed_files"
+                )
+        omissions = self.packet.get("omissions")
+        if isinstance(omissions, list):
+            expected_omitted_snippets = sum(
+                1
+                for item in omissions
+                if isinstance(item, Mapping) and "snippet" in str(item.get("code", ""))
+            )
+            if budget.get("omitted_snippets_count") != expected_omitted_snippets:
+                context.errors.append(
+                    "budget.omitted_snippets_count does not match omissions"
+                )
 
     def _validate_digest(self, context: PacketValidationContext) -> None:
         digest = self.packet.get(DIGEST_FIELD)
@@ -1798,6 +1887,11 @@ class CodexReviewPacketValidator:
         expected_protected_surfaces = _protected_surfaces(normalized_changed)
         if self.packet.get("protected_surfaces") != expected_protected_surfaces:
             context.errors.append("protected_surfaces does not match changed_files classification")
+        expected_contract_surfaces = _contract_surfaces(normalized_changed)
+        if self.packet.get("contract_surfaces") != expected_contract_surfaces:
+            context.errors.append(
+                "contract_surfaces does not match changed_files classification"
+            )
         self._validate_receipt_coverage(
             context,
             changed_files=normalized_changed,

@@ -122,15 +122,18 @@ def test_issue_work_skill_requires_quality_receipt_reporting() -> None:
         "limitations",
         "omissions",
         "protected-change evidence source",
+        "present, valid, and from a digest-validated receipt",
         "every changed protected path appears",
         "every semantically relevant protected path appears",
-        "generated after the protected changes",
+        "signed `generated_at`, not the receipt file mtime",
     ):
         assert expected in skill
 
     assert "The receipt proves named local checks and freshness-bound path coverage" in skill
     assert "paths it actually covered" in skill
     assert "unless those paths appear in the receipt coverage evidence" in skill
+    assert "missing, null, non-string, empty, or malformed `generated_at`" in skill
+    assert "not usable freshness evidence" in skill
 
 
 def test_issue_work_skill_reports_worktree_vs_branch_base_diff_limits() -> None:

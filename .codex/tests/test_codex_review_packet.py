@@ -75,7 +75,7 @@ def _receipt(
     semantic_paths: list[str] | None = None,
     passed: bool = True,
     digest_valid: bool = True,
-    generated_at: object = "2026-06-29T00:00:00Z",
+    generated_at: object = "2999-01-01T00:00:00Z",
     check_statuses: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     quality = _load_codex_script("codex_quality")
@@ -322,6 +322,43 @@ def test_command_log_redacts_all_string_fields(tmp_path: Path) -> None:
     assert review_packet.validate_codex_review_packet(packet) == []
 
 
+def test_non_finite_command_log_is_malformed_without_traceback(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    command_log = repo / "command-log.json"
+    command_log.write_text(
+        '[{"command":"python scripts/triage/triage.py contract","output":NaN}]',
+        encoding="ascii",
+    )
+    script = ROOT / ".codex" / "scripts" / "codex_review_packet.py"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--issue",
+            "110",
+            "--json",
+            "--command-log",
+            str(command_log),
+        ],
+        cwd=repo,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    packet = json.loads(result.stdout)
+    assert "command-log-malformed" in {
+        item["code"] for item in packet["risk_findings"]
+    }
+    assert all(
+        command.get("generated_by_packet_builder") is True
+        for command in packet["commands"]
+    )
+
+
 def test_valid_receipt_is_usable_evidence(tmp_path: Path) -> None:
     review_packet = _load_codex_script("codex_review_packet")
     repo = _init_repo(tmp_path)
@@ -489,12 +526,42 @@ def test_receipt_missing_malformed_digest_invalid_failed_noncovering_and_stale(
     ]
     assert noncovering["quality_receipt"]["usable_as_evidence"] is False
 
-    _write_receipt(repo, _receipt(review_packet, protected_paths=[path]))
+    _write_receipt(
+        repo,
+        _receipt(
+            review_packet,
+            protected_paths=[path],
+            generated_at="2000-01-01T00:00:00Z",
+        ),
+    )
     time.sleep(0.01)
     os.utime(repo / path)
     stale = _build_packet(repo, parent_epic=134)
     assert stale["quality_receipt"]["stale_protected_paths"] == [path]
     assert stale["quality_receipt"]["usable_as_evidence"] is False
+
+
+def test_receipt_freshness_uses_signed_generated_at_not_file_mtime(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+    receipt_path = _write_receipt(
+        repo,
+        _receipt(
+            review_packet,
+            protected_paths=[path],
+            generated_at="2000-01-01T00:00:00Z",
+        ),
+    )
+    os.utime(receipt_path)
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    assert packet["quality_receipt"]["stale_protected_paths"] == [path]
+    assert packet["quality_receipt"]["usable_as_evidence"] is False
 
 
 def test_non_finite_receipt_json_is_malformed_without_traceback(tmp_path: Path) -> None:
@@ -639,6 +706,40 @@ def test_worktree_and_branch_base_evidence_are_reported_separately(
     assert by_path[worktree_path]["change_sources"] == ["worktree_status"]
 
 
+def test_worktree_status_paths_are_parsed_without_git_quotes(tmp_path: Path) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/foo bar.py"
+    _write(repo, path, "print('quoted path')\n")
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    changed = {item["path"]: item for item in packet["changed_files"]}[path]
+    assert path in packet["evidence_sources"]["worktree_status"]["changed_paths"]
+    assert changed["protected"] is True
+    assert changed["change_sources"] == ["worktree_status"]
+    assert changed["diff_snippet_included"] is True
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
+def test_recorded_git_argv_quotes_inert_shell_syntax_in_paths(tmp_path: Path) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/x; gh issue close 1.py"
+    _write(repo, path, "print('safe path')\n")
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    assert any(
+        command["command"].endswith(
+            "-- '.codex/scripts/x; gh issue close 1.py'"
+        )
+        for command in packet["commands"]
+        if command["command"].startswith("git diff")
+    )
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
 def test_diff_snippet_combines_branch_base_and_worktree_sources(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     path = ".codex/scripts/both.py"
@@ -700,6 +801,77 @@ def test_staged_only_worktree_diff_uses_cached_diff(tmp_path: Path) -> None:
     assert "git diff --cached --" in snippet["source"]
     assert "deleted file mode" in snippet["content"]
     assert "-print('base')" in snippet["content"]
+
+
+def test_diff_stdout_is_not_duplicated_outside_snippet_budget(tmp_path: Path) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/large_diff.py"
+    tail = "UNBOUNDED_DIFF_TAIL_SHOULD_NOT_APPEAR"
+    _commit(repo, path, "value = '" + ("a" * 500) + tail + "'\n")
+
+    packet = _build_packet(repo, parent_epic=134, snippet_bytes=80)
+    serialized = review_packet.canonical_json(packet)
+    diff_commands = [
+        command
+        for command in packet["commands"]
+        if command["command"].startswith("git diff")
+        and ".codex/scripts/large_diff.py" in command["command"]
+    ]
+
+    assert tail not in serialized
+    assert packet["diff_snippets"][0]["truncated"] is True
+    assert diff_commands
+    assert all(command["stdout"] == "" for command in diff_commands)
+    assert all(command["stdout_omitted"] is True for command in diff_commands)
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
+def test_fallback_file_excerpt_reads_only_bounded_prefix(
+    tmp_path: Path, monkeypatch
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/huge_untracked.py"
+    target = _write(repo, path, "a" * 500 + "UNREAD_TAIL\n")
+    original_open = Path.open
+
+    class GuardedReader:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return self._handle.__exit__(exc_type, exc, traceback)
+
+        def read(self, size: int = -1):
+            assert size != -1
+            return self._handle.read(size)
+
+    def guarded_open(self, *args, **kwargs):
+        handle = original_open(self, *args, **kwargs)
+        if self == target:
+            return GuardedReader(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+    text, source, truncated = review_packet._diff_for_path(
+        review_packet.CommandRecorder(root=repo),
+        path=path,
+        source_refs={},
+        branch_available=False,
+        change_sources=["explicit"],
+        snippet_bytes=32,
+    )
+
+    assert source == f"bounded local file excerpt: {path}"
+    assert truncated is True
+    assert len(text.encode("utf-8")) <= 32
+    assert "UNREAD_TAIL" not in text
 
 
 def test_diff_snippet_budget_truncates_and_validator_recomputes_size(
@@ -778,6 +950,14 @@ def test_hard_budget_omissions_update_changed_file_flags_and_counts(
         1 for item in packet["omissions"] if "snippet" in item["code"]
     )
     assert review_packet.validate_codex_review_packet(packet) == []
+
+    forged_counts = _resign(deepcopy(packet))
+    forged_counts["budget"]["omitted_files_count"] = 0
+    forged_counts["budget"]["omitted_snippets_count"] = 0
+    forged_counts = _resign(forged_counts)
+    errors = review_packet.validate_codex_review_packet(forged_counts)
+    assert "budget.omitted_files_count does not match changed_files" in errors
+    assert "budget.omitted_snippets_count does not match omissions" in errors
 
 
 def test_secret_shaped_text_is_redacted_and_raw_secret_fails_validation(
@@ -889,6 +1069,13 @@ def test_validator_recomputes_protected_classification_and_receipt_coverage(
     assert any(
         "protected classification mismatch" in error
         for error in review_packet.validate_codex_review_packet(forged_classification)
+    )
+
+    forged_contracts = deepcopy(packet)
+    forged_contracts["contract_surfaces"] = []
+    forged_contracts = _resign(forged_contracts)
+    assert "contract_surfaces does not match changed_files classification" in (
+        review_packet.validate_codex_review_packet(forged_contracts)
     )
 
     forged_coverage = deepcopy(packet)
