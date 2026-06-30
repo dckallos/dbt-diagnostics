@@ -2530,6 +2530,12 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   `bash .codex/bin/action.sh check` passed with `.codex/tests` at 215 tests and
   the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
   existing warning.
+- After the final PR-thread hardening pass, focused packet tests passed with
+  29 cases, full PEM private-key redaction, protected deletion staleness,
+  non-finite receipt rejection, staged-only cached diffs, and missing
+  branch/base findings were covered, and `bash .codex/bin/action.sh check`
+  passed with `.codex/tests` at 219 tests and the normal offline gate at 828
+  passed, 2 skipped, 20 deselected, and 1 existing warning.
 
 **Current state**
 - PR #145 is open, non-draft, and clean against `donkey-kong-sandbox` from
@@ -2538,6 +2544,9 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   that branch, and the PR body includes exactly one auto-close line for #110.
 - The latest automated-review hardening changes are included in the pushed PR
   #145 branch revision.
+- GitHub review-thread metadata for PR #145 reported 13 total threads, 13
+  outdated, and 0 current after the final anchor-refresh push. No review
+  threads were resolved or commented on by automation.
 - The progress log entry was added after PR publication because the initial
   handoff missed the wrap-up update required by `AGENTS.md`.
 - The latest normal `codex-quality --json` receipt covers the review revision's
