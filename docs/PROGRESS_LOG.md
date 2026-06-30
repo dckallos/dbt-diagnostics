@@ -2716,3 +2716,62 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
   milestone/Project/workflow/merge path.
 
 End of session -- 2026-06-30 orphaned codex-review-packet hardening
+
+---
+
+## 2026-06-30 -- issue 133 codex-review issue-work wiring
+
+**What changed**
+- Started `feat/133-codex-review-issue-work-wiring` from current
+  `donkey-kong-sandbox` after PR #147 had merged.
+- Added bounded project subagent config and the read-only
+  `codex_reviewer` custom agent for validated `codex-review-packet`
+  artifacts.
+- Updated `$issue-work` so protected or governance-sensitive changes require a
+  validated review packet, independent validation evidence, and independent
+  `codex_reviewer` review before ready status.
+- Protected `.codex/config.toml` and `.codex/agents/**` in policy and made
+  `.codex/agents` semantically scanned.
+- Added static regression coverage for reviewer config, issue-work review
+  gating, policy protection, and codex-quality semantic coverage.
+
+**Validation**
+- Focused suites passed:
+  `.codex/tests/test_codex_reviewer_agent.py`,
+  `.codex/tests/test_issue_work_skill.py`,
+  `scripts/triage/test_repo_config.py`, and
+  `.codex/tests/test_codex_quality.py`.
+- Adjacent suites passed:
+  `.codex/tests/test_codex_review_skill.py`,
+  `.codex/tests/test_environment.py`,
+  `.codex/tests/test_agent_regression.py`, and
+  `.codex/tests/test_artifact_contracts.py`.
+- `bash .codex/bin/action.sh codex-quality --json` passed with a digest-valid
+  receipt; the protected changed paths were freshness-bound, and
+  `.agents/skills/issue-work/SKILL.md` plus
+  `.codex/agents/codex-reviewer.toml` were semantically checked.
+- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 256 tests
+  and the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
+- `bash .codex/bin/action.sh codex-review-packet --issue 133 --parent-epic 134
+  --output output/codex/review-packet.json` passed and wrote a valid local
+  packet.
+
+**Current state**
+- The local branch contains only #133 workflow/config/policy/test/changelog
+  work plus this progress-log entry.
+- The live issue does not authorize passing a bounded issue-work scope excerpt
+  to the reviewer, so this implementation keeps reviewer inputs aligned with
+  the accepted live issue contract.
+
+**Next steps**
+- Review the implementation PR once created, wait for CI, and address any
+  review or check feedback.
+
+**Be careful**
+- Keep #133 scoped to `$issue-work` review wiring and the custom reviewer
+  agent. Do not expand into packet schema/builder changes, GitHub comments or
+  reviews, issue-body writes, retrieval work, extraction/distribution work, or
+  production runtime changes.
+
+End of session -- 2026-06-30 issue 133 codex-review issue-work wiring

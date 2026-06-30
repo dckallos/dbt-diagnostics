@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Wire codex-review into issue-work
+
+- I wired `$issue-work` to require an independent read-only `codex_reviewer`
+  subagent for protected or governance-sensitive changes.
+- The workflow now requires one validated `codex-review-packet`, independent
+  validation evidence, bounded reviewer inputs, and explicit final-handoff
+  review fields.
+- I added protected project-agent config for the reviewer path and kept the
+  workflow local/offline with no GitHub mutation, GitHub comments/reviews,
+  packet schema changes, structured verdict output, full-repository prompt
+  bundle, production runtime change, or extraction/distribution work.
+
 ### Harden Codex review packet evidence bounds
 
 - I hardened `codex-review-packet` command-log parsing so non-finite JSON is

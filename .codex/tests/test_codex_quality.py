@@ -803,6 +803,36 @@ def test_codex_quality_default_scan_uses_policy_semantic_scan_roots(
     assert receipt["freshness_bound_protected_paths"] == []
 
 
+def test_codex_quality_semantically_scans_configured_codex_agents_root(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [".codex/agents"]  # type: ignore[index]
+    paths["protected_surfaces"] = [".codex/agents/**"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    agent = tmp_path / ".codex" / "agents" / "codex-reviewer.toml"
+    agent.parent.mkdir(parents=True)
+    agent.write_text(
+        "developer_instructions = '''\n"
+        "This read-only agent must not close GitHub issues.\n"
+        "'''\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is True
+    assert _checks_by_name(receipt)["governance-boundary"]["checked_files"] == [
+        ".codex/agents/codex-reviewer.toml"
+    ]
+    assert receipt["semantically_checked_protected_paths"] == [
+        ".codex/agents/codex-reviewer.toml"
+    ]
+
+
 def test_codex_quality_default_scan_reports_policy_semantic_violations(
     tmp_path: Path,
 ) -> None:

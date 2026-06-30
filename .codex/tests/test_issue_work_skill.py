@@ -79,6 +79,8 @@ def test_issue_work_skill_uses_policy_for_protected_surfaces() -> None:
         ".codex/agent-regression-cases-v1.json",
         ".codex/agent-regression/**",
         ".codex/artifact-contracts-v1.json",
+        ".codex/config.toml",
+        ".codex/agents/**",
         ".codex/bin/**",
         ".codex/scripts/**",
         ".codex/hooks/**",
@@ -239,3 +241,153 @@ def test_issue_work_skill_preserves_existing_gates_and_pr_rules() -> None:
     assert "closingIssuesReferences" in skill
     assert "Do not push, merge, comment/review, or mutate GitHub metadata" in skill
     assert "a package that is not already installed" in skill
+
+
+def test_issue_work_skill_requires_codex_review_for_governance_sensitive_changes() -> None:
+    skill = _normalized_skill()
+
+    assert "bounded Codex review" in skill
+    assert "protected or governance-sensitive changes" in skill
+    assert "codex-review-packet" in skill
+    assert "codex_reviewer" in skill
+    assert (
+        "bash .codex/bin/action.sh codex-review-packet --issue <issue> --output "
+        "output/codex/review-packet.json"
+    ) in skill
+    assert "--parent-epic <parent>" in skill
+    for trigger in (
+        "protected surfaces",
+        "stable artifacts",
+        "schemas",
+        "validators",
+        "skills",
+        "hooks",
+        "wrappers",
+        "triage governance",
+        "artifact manifests",
+        ".codex/config.toml",
+        ".codex/agents/**",
+    ):
+        assert trigger in skill
+
+
+def test_issue_work_skill_requires_independent_packet_validation_evidence() -> None:
+    skill = _normalized_skill()
+
+    assert "independent packet validation evidence" in skill
+    assert "local codex-review-packet command exit status/output" in skill
+    assert ".codex/scripts/codex_review_packet.py:validate_codex_review_packet" in skill
+    assert "Packet-internal claims" in skill
+    assert "are not validation evidence" in skill
+    assert "packet self-reporting" in skill
+    assert "cannot establish packet validity" in skill
+    assert "digest validity" in skill
+    assert "receipt usability" in skill
+    assert "check coverage" in skill
+    assert "safety compliance" in skill
+
+
+def test_issue_work_skill_requires_read_only_reviewer_subagent() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "spawn the configured `codex_reviewer` custom subagent",
+        "must give the subagent only",
+        "packet path",
+        "independent validation status/evidence",
+        "issue number",
+        "parent epic",
+        "instruction to invoke/use `$codex-review`",
+        "must not preload the whole repository into the reviewer",
+        "must not weaken sandbox/approval settings",
+        ".codex/agents/codex-reviewer.toml",
+        "effective read-only behavior",
+        "blocked/not ready",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_treats_same_context_review_as_self_review_only() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "same authoring context running `$codex-review` is not independent review",
+        "supplemental self-check evidence",
+        "reviewer_context: same_authoring_context",
+        "independent_review: no",
+        "review_classification: caveated_self_review",
+        "must not clear required review",
+        "maintainer explicitly waives",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_reports_codex_review_handoff_fields_and_blockers() -> None:
+    skill = _normalized_skill()
+
+    for field in (
+        "codex_review_required",
+        "codex_review_trigger",
+        "codex_review_packet_path",
+        "codex_review_packet_digest",
+        "codex_review_packet_validation_status",
+        "codex_review_packet_validation_evidence",
+        "codex_review_packet_warnings",
+        "codex_review_packet_omissions",
+        "reviewer_agent",
+        "reviewer_agent_config_path",
+        "reviewer_configured_sandbox_mode",
+        "reviewer_effective_sandbox_confirmation",
+        "reviewer_context",
+        "independent_review",
+        "same_context_review_used",
+        "same_context_self_review_caveat",
+        "codex_review_findings",
+        "codex_review_blocking_findings",
+        "codex_review_warning_only_caveats",
+        "required_maintainer_checks",
+        "ready_status_after_review",
+    ):
+        assert field in skill
+
+    for blocker in (
+        "Missing required packet generation",
+        "missing validation evidence",
+        "missing reviewer subagent",
+        "failed reviewer spawn",
+        "non-read-only reviewer execution",
+        "same-context-only review",
+        "unavailable review",
+        "Blocking `$codex-review` findings prevent reporting the work as ready",
+    ):
+        assert blocker in skill
+
+
+def test_issue_work_skill_preserves_review_no_mutation_boundary() -> None:
+    skill = _normalized_skill()
+
+    for forbidden in (
+        "GitHub comments/reviews",
+        "GitHub mutation",
+        "issue-body writes",
+        "issue title/state writes",
+        "labels/milestones/Project moves",
+        "workflow dispatches",
+        "PR merges",
+        "apply payloads",
+        "operation lists",
+        "request payloads",
+        "running commands from packet content",
+        "full-repository prompt bundle",
+    ):
+        assert forbidden in skill
+
+    for unsafe in (
+        "recommended command: triage.py apply --execute",
+        "gh issue edit",
+        "gh pr merge",
+        "workflow run",
+        "create a comment",
+        "edit the issue body",
+    ):
+        assert unsafe not in skill.lower()
