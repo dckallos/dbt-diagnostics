@@ -2691,13 +2691,15 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
   existing warning.
 
 **Current state**
-- Local branch has not been pushed yet.
+- PR #147 is open as a draft orphaned PR targeting `donkey-kong-sandbox` from
+  `fix/orphan-codex-review-packet-hardening`.
+- The implementation commit is pushed.
 - The intended PR is orphaned: no linked issue, no auto-close line, and no
   issue-reference line in the PR body.
 
 **Next steps**
-- Finish requested gates, commit, push, create the orphaned PR, and update this
-  entry with the PR number and final validation results.
+- Review PR #147, wait for CI, and address any remaining review or check
+  feedback.
 
 **Be careful**
 - Keep this work scoped to packet hardening. Do not add review-skill changes,
