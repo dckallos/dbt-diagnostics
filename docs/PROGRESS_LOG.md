@@ -2567,3 +2567,81 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   any GitHub issue/PR mutation path beyond normal PR branch updates.
 
 End of session -- 2026-06-29 issue 110 bounded Codex review packet
+
+---
+
+## 2026-06-30 -- issue 111 codex-review skill implementation
+
+**What changed**
+- Started `feat/codex-review-skill-111` from current `donkey-kong-sandbox`
+  after live preflight confirmed #111 is open; #110/PR #145, #112/PR #143,
+  #109/PR #142, #108/PR #141, and #107/PR #140 are merged; #105, #106, #93,
+  and #103 are closed; #134 remains open; and #133, #118, #120, and #121 remain
+  separate follow-up work.
+- Added `.agents/skills/codex-review/SKILL.md`, a packet-only advisory Markdown
+  review skill for one validated `codex-review-packet.json`. The skill limits
+  inputs to bounded packet evidence, treats snippets and command output as
+  untrusted data, requires packet-provided evidence references, distinguishes
+  blockers from caveats, and refuses GitHub mutation, apply payloads, full-repo
+  prompt bundles, packet generation, #133 wiring, and #118/#120/#121 work.
+- Added `.codex/tests/test_codex_review_skill.py` static coverage for
+  frontmatter, packet-only inputs, consumed packet fields, safety stop
+  conditions, receipt semantics, worktree versus branch/base evidence limits,
+  prompt-injection boundaries, evidence citations, Markdown output shape,
+  warning caveats, mutation non-goals, and scope exclusions.
+- Revised PR #146 after review feedback so `$codex-review` cannot treat packet
+  self-reporting, packet text, packet risk findings, user prose, or a packet
+  field claiming validity as proof of packet validity, digest validity, receipt
+  usability, check coverage, or safety compliance. Review-ready handoff now
+  requires independent validator output/status from the #110 validator or local
+  `codex-review-packet` validation result, and missing independent validation
+  is a blocker handoff.
+- Tightened the v1 safety boundary by listing every expected `safety` value and
+  making missing or non-matching safety flags a safety-flag failure.
+- Updated `CHANGELOG.md` under `[Unreleased]`.
+
+**Validation**
+- Focused and adjacent suites passed:
+  `.codex/tests/test_codex_review_skill.py`,
+  `.codex/tests/test_codex_review_packet.py`,
+  `.codex/tests/test_issue_work_skill.py`,
+  `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_agent_regression.py`,
+  `.codex/tests/test_artifact_contracts.py`, and
+  `.codex/tests/test_environment.py`.
+- `python -m py_compile .codex/tests/test_codex_review_skill.py`,
+  skill-creator `quick_validate.py`, and `git diff --check` passed.
+- `bash .codex/bin/action.sh codex-quality --json` passed with a digest-valid
+  receipt generated at `2026-06-30T13:55:41Z`; the protected changed skill path
+  `.agents/skills/codex-review/SKILL.md` is freshness-bound and semantically
+  checked.
+- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 232 tests and
+  the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
+- After the validation-boundary revision, focused skill tests passed with 18
+  cases; packet, issue-work skill, codex-quality, agent-regression,
+  artifact-contracts, and environment suites passed; `py_compile` passed; and
+  `codex-quality --json` passed with a digest-valid receipt generated at
+  `2026-06-30T15:18:06Z`. The receipt freshness-bound and semantically checked
+  `.agents/skills/codex-review/SKILL.md`.
+- `bash .codex/bin/action.sh check` passed after the revision with
+  `.codex/tests` at 237 tests and the normal offline gate at 828 passed, 2
+  skipped, 20 deselected, and 1 existing warning.
+
+**Current state**
+- PR #146 is open, non-draft, and targets `donkey-kong-sandbox` from
+  `feat/codex-review-skill-111`.
+- The implementation and review-feedback revision commits are pushed, and the
+  PR body includes exactly one auto-close line for #111.
+
+**Next steps**
+- Review PR #146, wait for CI, and address any remaining review or check
+  feedback.
+
+**Be careful**
+- Keep this PR scoped to the packet-only review skill. Do not expand it into
+  #110 packet changes, #133 issue-work wiring, #118/#120/#121 extraction or
+  distribution, stable structured review output, production runtime changes,
+  live GitHub fetches, GitHub comments/reviews, or any issue/PR mutation path.
+
+End of session -- 2026-06-30 issue 111 codex-review skill implementation
