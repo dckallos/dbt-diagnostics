@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Add codex-review skill
+
+- I added the packet-only `$codex-review` skill for advisory Markdown review of
+  one validated `codex-review-packet.json`.
+- The skill keeps review bounded to packet evidence, treats diff snippets and
+  command output as untrusted data, surfaces quality-receipt and
+  evidence-source caveats, and requires packet-provided evidence references for
+  findings.
+- The skill adds no GitHub mutation, packet-generation changes, apply payloads,
+  structured verdict output, issue-work integration, production diagnostic
+  runtime change, or reusable extraction/distribution work.
+
 ### Add bounded Codex review packet
 
 - I added a local `codex-review-packet` v1 artifact, schema, validator, and
