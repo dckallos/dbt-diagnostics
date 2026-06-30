@@ -134,7 +134,10 @@ command text through the shared governance mutation classifier. Mutation-shaped
 command-log input is recorded as an error-severity finding and the packet is not
 a clean valid artifact; the builder never executes command-log entries. All
 string values in supplied command-log entries are treated as untrusted command
-evidence and are redacted and bounded before inclusion.
+evidence and are redacted and bounded before inclusion. Builder-generated diff
+commands may omit stdout from `commands` when the same output is represented by
+bounded `diff_snippets`; command records are provenance, not a second channel
+for unbounded diff evidence.
 
 ## Budget
 
@@ -148,10 +151,11 @@ The byte budget is authoritative:
 - `omitted_snippets_count`
 - `budget_warnings`
 
-The validator recomputes `serialized_bytes` and rejects packets that under-report
-their size or exceed `hard_bytes`. When hard-budget enforcement drops snippets,
-the builder updates the matching changed-file flags and omitted-count fields
-before signing the packet.
+The validator recomputes `serialized_bytes`, `contract_surfaces`, and omitted
+snippet counts, and rejects packets that under-report their size, exceed
+`hard_bytes`, or hide omitted evidence. When hard-budget enforcement drops
+snippets, the builder updates the matching changed-file flags and omitted-count
+fields before signing the packet.
 
 ## Safety
 

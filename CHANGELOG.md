@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Harden Codex review packet evidence bounds
+
+- I hardened `codex-review-packet` command-log parsing so non-finite JSON is
+  reported as malformed local evidence instead of crashing during canonical
+  signing.
+- I tightened packet validation so contract surfaces and omitted snippet counts
+  are recomputed from packet evidence instead of trusted from self-reporting.
+- I kept diff evidence within snippet budgets by parsing quoted worktree paths
+  safely, quoting recorded git argv, omitting duplicated diff stdout from
+  command records, binding receipt freshness to signed `generated_at`, and
+  reading fallback file excerpts through bounded prefixes.
+
 ### Add codex-review skill
 
 - I added the packet-only `$codex-review` skill for advisory Markdown review of

@@ -2645,3 +2645,64 @@ End of session -- 2026-06-29 issue 110 bounded Codex review packet
   live GitHub fetches, GitHub comments/reviews, or any issue/PR mutation path.
 
 End of session -- 2026-06-30 issue 111 codex-review skill implementation
+
+---
+
+## 2026-06-30 -- orphaned codex-review-packet hardening
+
+**What changed**
+- Started `fix/orphan-codex-review-packet-hardening` from current
+  `origin/donkey-kong-sandbox` after maintainer direction to create an
+  orphaned PR without an attached issue.
+- Hardened `codex-review-packet` so malformed non-finite command logs become
+  bounded warning evidence instead of tracebacks, worktree status paths are
+  parsed without Git quoting, recorded git argv is shell-quoted before shared
+  mutation classification, fallback file excerpts are read through bounded
+  prefixes, and diff stdout is not duplicated outside snippet budgets.
+- Tightened validator-owned invariants so `contract_surfaces` and omitted
+  snippet counts are recomputed from packet evidence, and quality receipt
+  freshness is bound to signed `generated_at` rather than mutable receipt file
+  mtime.
+- Updated the packet schema doc and changelog for the tightened evidence
+  boundaries.
+
+**Validation**
+- Focused and adjacent suites passed:
+  `.codex/tests/test_codex_review_packet.py` at 35 tests,
+  `.codex/tests/test_artifact_contracts.py`,
+  `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_agent_regression.py`, and
+  `.codex/tests/test_environment.py`.
+- `python -m py_compile .codex/scripts/codex_review_packet.py
+  .codex/tests/test_codex_review_packet.py`, JSON checks for the packet schema
+  and artifact-contract manifest, and
+  `python .codex/scripts/check_artifact_contracts.py --json` passed.
+- `python .codex/scripts/codex_review_packet.py --issue 110 --json` passed
+  after the local `donkey-kong-sandbox` ref was fast-forwarded to the fetched
+  origin tip; the packet covered only this orphaned branch's changed files and
+  reported the refreshed quality receipt as usable evidence.
+- `bash .codex/bin/action.sh codex-quality --json` passed with a digest-valid
+  receipt generated at `2026-06-30T15:58:01Z`; the protected changed paths
+  `.codex/scripts/codex_review_packet.py` and
+  `docs/CODEX_REVIEW_PACKET_SCHEMA_V1.md` are freshness-bound and semantically
+  checked.
+- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 243 tests and
+  the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
+
+**Current state**
+- Local branch has not been pushed yet.
+- The intended PR is orphaned: no linked issue, no auto-close line, and no
+  issue-reference line in the PR body.
+
+**Next steps**
+- Finish requested gates, commit, push, create the orphaned PR, and update this
+  entry with the PR number and final validation results.
+
+**Be careful**
+- Keep this work scoped to packet hardening. Do not add review-skill changes,
+  issue-work wiring, extraction/distribution work, production runtime changes,
+  live GitHub fetches, or any GitHub issue/comment/review/label/milestone/
+  Project/workflow/merge path.
+
+End of session -- 2026-06-30 orphaned codex-review-packet hardening
