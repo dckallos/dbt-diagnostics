@@ -22,6 +22,7 @@ from scripts.triage import repo_config
 
 SCHEMA_VERSION = 1
 CODEX_BOT_LOGIN = "chatgpt-codex-connector[bot]"
+CODEX_BOT_LOGINS = frozenset({CODEX_BOT_LOGIN, "chatgpt-codex-connector"})
 FOCUSED_REVIEW_COMMENT = (
     "@codex review for regressions in protected Codex/governance surfaces. "
     "Focus on whether the codex_reviewer custom agent remains packet-only and "
@@ -37,17 +38,29 @@ STATUS_VALUES = frozenset(
         "current_without_inline_findings",
         "stale_review",
         "manual_review_requested_pending",
+        "manual_review_request_failed",
         "no_codex_review",
         "no_codex_review_for_current_head",
-        "no_codex_review_bot_visible",
         "gh_unavailable",
         "unknown",
     }
 )
+SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 REVIEWED_COMMIT_RE = re.compile(
     r"\bReviewed commit:\s*([0-9a-fA-F]{7,40})\b", re.IGNORECASE
 )
-MANUAL_REVIEW_RE = re.compile(r"@codex\s+review\b", re.IGNORECASE)
+MANUAL_REVIEW_RE = re.compile(r"^@codex\s+review\b", re.IGNORECASE)
+CODEX_UNAVAILABLE_RE = re.compile(
+    r"\b(usage limits?|limit reached|limits reached|unavailable|"
+    r"unable to review|cannot review|can't review|could not review)\b",
+    re.IGNORECASE,
+)
+REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SECRET_SHAPED_RE = re.compile(
+    r"(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|"
+    r"Bearer\s+[A-Za-z0-9._-]+|token=[^ \t\r\n]+)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -97,13 +110,24 @@ def _user_login(item: Mapping[str, Any]) -> str | None:
 
 
 def _is_codex_bot(item: Mapping[str, Any]) -> bool:
-    return _user_login(item) == CODEX_BOT_LOGIN
+    return _user_login(item) in CODEX_BOT_LOGINS
+
+
+def _normalize_sha(value: object) -> str | None:
+    text = _string(value)
+    if text is None:
+        return None
+    candidate = text.strip().lower()
+    if SHA_RE.fullmatch(candidate):
+        return candidate
+    return None
 
 
 def _short_sha(value: str | None) -> str | None:
-    if value is None:
+    normalized = _normalize_sha(value)
+    if normalized is None:
         return None
-    return value[:12]
+    return normalized[:12]
 
 
 def _timestamp(value: Mapping[str, Any]) -> str:
@@ -111,7 +135,7 @@ def _timestamp(value: Mapping[str, Any]) -> str:
 
 
 def _sha_from_review(review: Mapping[str, Any]) -> tuple[str | None, str | None]:
-    commit_id = _string(review.get("commit_id"))
+    commit_id = _normalize_sha(review.get("commit_id"))
     if commit_id is not None:
         return commit_id, "review.commit_id"
     body = _string(review.get("body"))
@@ -124,29 +148,52 @@ def _sha_from_review(review: Mapping[str, Any]) -> tuple[str | None, str | None]
 
 
 def _sha_matches(candidate: str | None, current: str | None) -> bool:
-    if candidate is None or current is None:
+    normalized_candidate = _normalize_sha(candidate)
+    normalized_current = _normalize_sha(current)
+    if normalized_candidate is None or normalized_current is None:
         return False
-    normalized_candidate = candidate.lower()
-    normalized_current = current.lower()
-    return normalized_candidate == normalized_current or (
-        len(normalized_candidate) >= 7
-        and normalized_current.startswith(normalized_candidate)
+    return (
+        normalized_candidate == normalized_current
+        or normalized_current.startswith(normalized_candidate)
+        or normalized_candidate.startswith(normalized_current)
     )
 
 
 def _comment_head_sha(comment: Mapping[str, Any]) -> str | None:
     return (
-        _string(comment.get("commit_id"))
-        or _string(comment.get("original_commit_id"))
-        or _string(comment.get("pull_request_review_id"))
+        _normalize_sha(comment.get("commit_id"))
+        or _normalize_sha(comment.get("original_commit_id"))
     )
+
+
+def _untrusted_comment_lines(body: str) -> tuple[str, ...]:
+    lines: list[str] = []
+    in_fence = False
+    for raw_line in body.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence or stripped.startswith(">"):
+            continue
+        lines.append(stripped)
+    return tuple(lines)
 
 
 def _is_manual_review_request(comment: Mapping[str, Any]) -> bool:
     if _is_codex_bot(comment):
         return False
     body = _string(comment.get("body"))
-    return body is not None and MANUAL_REVIEW_RE.search(body) is not None
+    if body is None:
+        return False
+    return any(MANUAL_REVIEW_RE.search(line) for line in _untrusted_comment_lines(body))
+
+
+def _is_codex_unavailable_comment(comment: Mapping[str, Any]) -> bool:
+    if not _is_codex_bot(comment):
+        return False
+    body = _string(comment.get("body"))
+    return body is not None and CODEX_UNAVAILABLE_RE.search(body) is not None
 
 
 def _latest_item(items: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
@@ -167,12 +214,31 @@ def _recommended_next_step(status: str) -> str:
     if status == "current_without_inline_findings":
         return "no_codex_github_review_action_needed"
     if status == "manual_review_requested_pending":
-        return "wait_for_codex_review_or_maintainer_post_focused_comment_if_stale"
+        return "wait_for_codex_review"
+    if status == "manual_review_request_failed":
+        return "maintainer_retry_focused_codex_review_later"
     if status == "gh_unavailable":
         return "rerun_when_gh_available"
     if status == "unknown":
         return "inspect_codex_review_status_manually"
     return "maintainer_post_focused_codex_review_comment"
+
+
+def _should_emit_focused_comment(status: str) -> bool:
+    return status in {
+        "stale_review",
+        "manual_review_request_failed",
+        "no_codex_review",
+        "no_codex_review_for_current_head",
+    }
+
+
+def _safe_error(error: str) -> str:
+    collapsed = " ".join(error.split())
+    if not collapsed:
+        collapsed = "gh unavailable"
+    redacted = SECRET_SHAPED_RE.sub("[REDACTED]", collapsed)
+    return redacted[:240]
 
 
 def unavailable_status(
@@ -181,6 +247,7 @@ def unavailable_status(
     pr_number: int,
     error: str,
 ) -> dict[str, object]:
+    safe_error = _safe_error(error)
     return {
         "schema_version": SCHEMA_VERSION,
         "repository": repository,
@@ -203,10 +270,13 @@ def unavailable_status(
         "manual_review_requested_at": None,
         "manual_review_request_comment_id": None,
         "bot_reacted_to_manual_request": None,
+        "codex_review_unavailable_at": None,
+        "codex_review_unavailable_comment_id": None,
         "status": "gh_unavailable",
         "recommended_next_step": _recommended_next_step("gh_unavailable"),
-        "focused_review_comment": FOCUSED_REVIEW_COMMENT,
-        "warnings": [f"GitHub review status unavailable: {error}"],
+        "focused_review_comment": None,
+        "pagination_complete": False,
+        "warnings": [f"GitHub review status unavailable: {safe_error}"],
     }
 
 
@@ -245,12 +315,42 @@ def build_review_status(
     latest_manual_id = (
         _int(latest_manual_request.get("id")) if latest_manual_request else None
     )
+    latest_unavailable_comment: Mapping[str, Any] | None = None
+    if latest_manual_request is not None:
+        manual_timestamp = _timestamp(latest_manual_request)
+        unavailable_comments = [
+            comment
+            for comment in codex_issue_comments
+            if _is_codex_unavailable_comment(comment)
+            and _timestamp(comment) >= manual_timestamp
+        ]
+        latest_unavailable_comment = _latest_item(unavailable_comments)
     bot_reacted: bool | None = None
     if latest_manual_id is not None and latest_manual_id in payloads.reactions_by_comment_id:
         reactions = payloads.reactions_by_comment_id[latest_manual_id]
         bot_reacted = any(_is_codex_bot(reaction) for reaction in reactions)
 
     codex_review_current = _sha_matches(latest_review_sha, current_head_sha)
+    latest_review_timestamp = _timestamp(latest_review) if latest_review else ""
+    latest_manual_timestamp = (
+        _timestamp(latest_manual_request) if latest_manual_request else ""
+    )
+    latest_unavailable_timestamp = (
+        _timestamp(latest_unavailable_comment) if latest_unavailable_comment else ""
+    )
+    manual_after_latest_review = (
+        latest_manual_request is not None
+        and (latest_review is None or latest_manual_timestamp > latest_review_timestamp)
+    )
+    unavailable_after_manual = (
+        latest_unavailable_comment is not None
+        and latest_manual_request is not None
+        and latest_unavailable_timestamp >= latest_manual_timestamp
+        and (
+            latest_review is None
+            or latest_unavailable_timestamp >= latest_review_timestamp
+        )
+    )
     warnings: list[str] = []
     if latest_review is not None and latest_review_sha is None:
         warnings.append(
@@ -262,19 +362,26 @@ def build_review_status(
             "Manual @codex review request timing is observable from comment "
             "timestamps only; this command does not verify head commit time."
         )
+    if latest_unavailable_comment is not None:
+        warnings.append(
+            "Codex bot reported review usage limits or unavailable review "
+            "after a manual @codex review request."
+        )
 
     if codex_review_current and current_head_inline_comments:
         status = "current_with_findings"
     elif codex_review_current:
         status = "current_without_inline_findings"
+    elif unavailable_after_manual:
+        status = "manual_review_request_failed"
+    elif manual_after_latest_review:
+        status = "manual_review_requested_pending"
+    elif current_head_sha is None:
+        status = "unknown"
     elif latest_review_sha is not None and current_head_sha is not None:
         status = "stale_review"
     elif latest_review is not None:
         status = "no_codex_review_for_current_head"
-    elif latest_manual_request is not None:
-        status = "manual_review_requested_pending"
-    elif current_head_sha is None:
-        status = "unknown"
     else:
         status = "no_codex_review"
 
@@ -315,9 +422,22 @@ def build_review_status(
         ),
         "manual_review_request_comment_id": latest_manual_id,
         "bot_reacted_to_manual_request": bot_reacted,
+        "codex_review_unavailable_at": (
+            _string(latest_unavailable_comment.get("created_at"))
+            if latest_unavailable_comment is not None
+            else None
+        ),
+        "codex_review_unavailable_comment_id": (
+            _int(latest_unavailable_comment.get("id"))
+            if latest_unavailable_comment is not None
+            else None
+        ),
         "status": status,
         "recommended_next_step": _recommended_next_step(status),
-        "focused_review_comment": FOCUSED_REVIEW_COMMENT,
+        "focused_review_comment": (
+            FOCUSED_REVIEW_COMMENT if _should_emit_focused_comment(status) else None
+        ),
+        "pagination_complete": True,
         "warnings": warnings,
     }
 
@@ -343,6 +463,25 @@ def _load_json_with_gh(args: Sequence[str]) -> object:
         raise RuntimeError(f"gh returned invalid JSON: {exc}") from exc
 
 
+def _flatten_paginated_list(payload: object, label: str) -> list[object]:
+    if not isinstance(payload, list):
+        raise RuntimeError(f"{label} API returned a non-array paginated payload")
+    if all(isinstance(page, list) for page in payload):
+        flattened: list[object] = []
+        for page in payload:
+            if isinstance(page, list):
+                flattened.extend(page)
+        return flattened
+    return payload
+
+
+def _load_paginated_list_with_gh(endpoint: str, label: str) -> list[object]:
+    return _flatten_paginated_list(
+        _load_json_with_gh(["api", endpoint, "--paginate", "--slurp"]),
+        label,
+    )
+
+
 def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
     owner, name = repository.split("/", 1)
     pr = _load_json_with_gh(
@@ -356,23 +495,20 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
             "number,url,state,isDraft,headRefOid,headRefName,baseRefName,reviewDecision",
         ]
     )
-    reviews = _load_json_with_gh(
-        ["api", f"repos/{owner}/{name}/pulls/{pr_number}/reviews"]
+    reviews = _load_paginated_list_with_gh(
+        f"repos/{owner}/{name}/pulls/{pr_number}/reviews",
+        "pull reviews",
     )
-    inline_comments = _load_json_with_gh(
-        ["api", f"repos/{owner}/{name}/pulls/{pr_number}/comments"]
+    inline_comments = _load_paginated_list_with_gh(
+        f"repos/{owner}/{name}/pulls/{pr_number}/comments",
+        "pull review comments",
     )
-    issue_comments = _load_json_with_gh(
-        ["api", f"repos/{owner}/{name}/issues/{pr_number}/comments"]
+    issue_comments = _load_paginated_list_with_gh(
+        f"repos/{owner}/{name}/issues/{pr_number}/comments",
+        "issue comments",
     )
     if not isinstance(pr, Mapping):
         raise RuntimeError("gh pr view returned a non-object payload")
-    if not isinstance(reviews, list):
-        raise RuntimeError("pull review API returned a non-array payload")
-    if not isinstance(inline_comments, list):
-        raise RuntimeError("pull review comments API returned a non-array payload")
-    if not isinstance(issue_comments, list):
-        raise RuntimeError("issue comments API returned a non-array payload")
 
     reactions_by_comment_id: dict[int, Sequence[Mapping[str, Any]]] = {}
     manual_ids = [
@@ -382,18 +518,15 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
     ]
     for comment_id in sorted(item for item in manual_ids if item is not None):
         try:
-            reactions = _load_json_with_gh(
-                [
-                    "api",
-                    f"repos/{owner}/{name}/issues/comments/{comment_id}/reactions",
-                ]
+            reactions = _load_paginated_list_with_gh(
+                f"repos/{owner}/{name}/issues/comments/{comment_id}/reactions",
+                "issue comment reactions",
             )
         except RuntimeError:
             continue
-        if isinstance(reactions, list):
-            reactions_by_comment_id[comment_id] = [
-                reaction for reaction in reactions if isinstance(reaction, Mapping)
-            ]
+        reactions_by_comment_id[comment_id] = [
+            reaction for reaction in reactions if isinstance(reaction, Mapping)
+        ]
 
     return GhPayloads(
         pr=pr,
@@ -412,6 +545,24 @@ def default_repository() -> str:
     return repo_config.load_repo_policy().repository.full_name
 
 
+def positive_pr_number(value: str) -> int:
+    try:
+        parsed = int(value, 10)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "PR number must be a positive integer"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("PR number must be a positive integer")
+    return parsed
+
+
+def repository_name(value: str) -> str:
+    if not REPOSITORY_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError("repository must use owner/name")
+    return value
+
+
 def render_human(status: Mapping[str, object]) -> str:
     lines = [
         "Codex GitHub review status",
@@ -427,16 +578,24 @@ def render_human(status: Mapping[str, object]) -> str:
         ),
         f"- Codex review current: {status.get('codex_review_current')}",
         (
-            "- Codex inline findings on current head: "
+            "- visible Codex inline findings on current head: "
             f"{status.get('codex_inline_findings_on_current_head_count')}"
         ),
-        f"- Codex inline findings total: {status.get('codex_inline_findings_count')}",
+        (
+            "- visible Codex inline findings total: "
+            f"{status.get('codex_inline_findings_count')}"
+        ),
         f"- Codex issue/PR comments: {status.get('codex_issue_comments_count')}",
         f"- manual @codex review requested_at: {status.get('manual_review_requested_at')}",
         (
             "- manual request bot reaction observable: "
             f"{status.get('bot_reacted_to_manual_request')}"
         ),
+        (
+            "- Codex unavailable/usage-limit response at: "
+            f"{status.get('codex_review_unavailable_at')}"
+        ),
+        f"- pagination complete: {status.get('pagination_complete')}",
         f"- status: {status.get('status')}",
         f"- recommended next step: {status.get('recommended_next_step')}",
     ]
@@ -444,12 +603,13 @@ def render_human(status: Mapping[str, object]) -> str:
     if isinstance(warnings, list) and warnings:
         lines.append("- warnings:")
         lines.extend(f"  - {warning}" for warning in warnings)
-    if status.get("codex_review_current") is not True:
+    focused_comment = status.get("focused_review_comment")
+    if isinstance(focused_comment, str) and focused_comment:
         lines.extend(
             [
                 "",
                 "Maintainer-posted focused review comment:",
-                FOCUSED_REVIEW_COMMENT,
+                focused_comment,
             ]
         )
     return "\n".join(lines) + "\n"
@@ -457,20 +617,31 @@ def render_human(status: Mapping[str, object]) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("pr_number", type=int)
-    parser.add_argument("--repo", help="owner/name repository, defaults to policy")
+    parser.add_argument("pr_number", type=positive_pr_number)
+    parser.add_argument(
+        "--repo",
+        type=repository_name,
+        help="owner/name repository, defaults to policy",
+    )
     parser.add_argument("--json", action="store_true", help="emit deterministic JSON")
     args = parser.parse_args(argv)
 
-    repository = args.repo or default_repository()
+    repository = args.repo or "unknown"
     try:
+        if args.repo is None:
+            repository = repository_name(default_repository())
         payloads = _load_payloads(repository=repository, pr_number=args.pr_number)
         status = build_review_status(
             repository=repository,
             pr_number=args.pr_number,
             payloads=payloads,
         )
-    except (RuntimeError, repo_config.RepoConfigError, ValueError) as exc:
+    except (
+        RuntimeError,
+        repo_config.RepoConfigError,
+        ValueError,
+        argparse.ArgumentTypeError,
+    ) as exc:
         status = unavailable_status(
             repository=repository,
             pr_number=args.pr_number,

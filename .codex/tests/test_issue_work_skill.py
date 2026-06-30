@@ -389,10 +389,19 @@ def test_issue_work_skill_reports_github_codex_review_status() -> None:
     assert "codex-review-status" in skill
     assert "bash .codex/bin/action.sh codex-review-status <pr-number>" in skill
     assert "chatgpt-codex-connector[bot]" in skill
-    for expected in ("current for the PR head", "stale", "missing", "pending"):
+    for expected in (
+        "current for the PR head",
+        "stale",
+        "missing",
+        "pending",
+        "usage-limit/unavailable evidence",
+        "`gh` is unavailable",
+        "evidence is unknown",
+    ):
         assert expected in skill
     assert expected_comment in _skill_text()
     assert "maintainer to post manually" in skill
+    assert "Do not include or recommend that focused text" in skill
     assert "GitHub `@codex review` is advisory PR-diff review" in skill
     assert "does not prove local packet validity" in skill
     assert "does not replace local gates" in skill

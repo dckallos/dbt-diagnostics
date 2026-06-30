@@ -297,12 +297,19 @@ Input: exactly one GitHub issue number.
 
     Report whether the latest GitHub
     `chatgpt-codex-connector[bot]` review is current for the PR head, stale,
-    missing, or pending. If the latest Codex GitHub review is stale or missing,
-    include this exact focused review text for the maintainer to post manually:
+    missing, pending, failed because of bot usage-limit/unavailable evidence,
+    unavailable, or unknown. If the latest Codex GitHub review is stale,
+    missing, or failed because of bot usage-limit/unavailable evidence, include
+    this exact focused review text for the maintainer to post manually:
 
     ```text
     @codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.
     ```
+
+    Do not include or recommend that focused text when the GitHub Codex review
+    is already current, a manual review request is already pending, `gh` is
+    unavailable, or the evidence is unknown. Report those states as limitations
+    or maintainer checks instead.
 
     Keep same-context `$codex-review`, local `codex_reviewer`, and GitHub
     `@codex review` distinct:

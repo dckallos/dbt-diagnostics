@@ -212,9 +212,12 @@ files.
 Use it after a PR is ready for review and after each fix commit that changes
 the PR head. A current status means the latest Codex GitHub review SHA matches
 the current head. A stale, missing, unavailable, or pending status means the
-handoff should report that limitation. When the current head has not been
-reviewed, the command prints this exact focused text for a maintainer to post
-manually:
+handoff should report that limitation. If a manual `@codex review` request is
+pending, or if `gh` evidence is unavailable or unknown, the command reports the
+state without printing a new request to post. When the current head lacks a
+current review, or a bot reply shows that a manual request failed because of
+usage limits or unavailable review, the command prints this exact focused text
+for a maintainer to post manually:
 
 ```text
 @codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.

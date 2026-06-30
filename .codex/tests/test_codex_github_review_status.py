@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
+import pytest
 import sys
 
 
@@ -92,6 +94,7 @@ def test_no_codex_review_exists() -> None:
     assert status["recommended_next_step"] == (
         "maintainer_post_focused_codex_review_comment"
     )
+    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
 
 
 def test_current_review_without_inline_findings() -> None:
@@ -112,6 +115,8 @@ def test_current_review_without_inline_findings() -> None:
     assert status["status"] == "current_without_inline_findings"
     assert status["codex_review_current"] is True
     assert status["codex_inline_findings_on_current_head_count"] == 0
+    assert status["focused_review_comment"] is None
+    assert EXPECTED_FOCUSED_REVIEW_COMMENT not in module.render_human(status)
 
 
 def test_current_review_with_inline_findings_on_current_head() -> None:
@@ -146,6 +151,7 @@ def test_current_review_with_inline_findings_on_current_head() -> None:
     assert status["status"] == "current_with_findings"
     assert status["codex_inline_findings_count"] == 2
     assert status["codex_inline_findings_on_current_head_count"] == 1
+    assert status["focused_review_comment"] is None
 
 
 def test_latest_review_on_different_sha_is_stale() -> None:
@@ -163,6 +169,7 @@ def test_latest_review_on_different_sha_is_stale() -> None:
 
     assert status["status"] == "stale_review"
     assert status["codex_review_current"] is False
+    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
 
 
 def test_manual_codex_review_request_without_bot_review_is_pending() -> None:
@@ -191,7 +198,71 @@ def test_manual_codex_review_request_without_bot_review_is_pending() -> None:
     assert status["status"] == "manual_review_requested_pending"
     assert status["manual_review_request_comment_id"] == 20
     assert status["bot_reacted_to_manual_request"] is True
+    assert status["focused_review_comment"] is None
     assert status["warnings"]
+
+
+def test_manual_codex_review_false_positive_text_is_ignored() -> None:
+    module = _module()
+    status = _status(
+        module,
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("maintainer"),
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": "do not post @codex review",
+            },
+            {
+                "id": 21,
+                "user": _user("maintainer"),
+                "created_at": "2026-06-30T00:02:00Z",
+                "body": "```text\n@codex review\n```",
+            },
+            {
+                "id": 22,
+                "user": _user("maintainer"),
+                "created_at": "2026-06-30T00:03:00Z",
+                "body": "> @codex review",
+            },
+            {
+                "id": 23,
+                "user": _user("chatgpt-codex-connector[bot]"),
+                "created_at": "2026-06-30T00:04:00Z",
+                "body": "@codex review",
+            },
+        ],
+    )
+
+    assert status["status"] == "no_codex_review"
+    assert status["manual_review_request_comment_id"] is None
+
+
+def test_usage_limit_response_after_manual_request_fails_closed() -> None:
+    module = _module()
+    status = _status(
+        module,
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("maintainer"),
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": "@codex review",
+            },
+            {
+                "id": 21,
+                "user": _user("chatgpt-codex-connector[bot]"),
+                "created_at": "2026-06-30T00:02:00Z",
+                "body": "You have reached your Codex usage limits for code reviews.",
+            },
+        ],
+    )
+
+    assert status["status"] == "manual_review_request_failed"
+    assert status["recommended_next_step"] == "maintainer_retry_focused_codex_review_later"
+    assert status["codex_review_unavailable_comment_id"] == 21
+    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert any("usage limits" in warning for warning in status["warnings"])
 
 
 def test_review_body_commit_fallback_is_used_when_commit_id_is_absent() -> None:
@@ -237,6 +308,34 @@ def test_latest_codex_review_by_timestamp_wins() -> None:
 
     assert status["latest_codex_review_id"] == 2
     assert status["status"] == "current_without_inline_findings"
+
+
+def test_pull_request_review_id_is_not_treated_as_sha() -> None:
+    module = _module()
+    head = "abcdef1234567890abcdef1234567890abcdef12"
+    status = _status(
+        module,
+        head_sha=head,
+        reviews=[
+            _codex_review(
+                review_id=1,
+                commit_id=head,
+                submitted_at="2026-06-30T00:00:00Z",
+            )
+        ],
+        inline_comments=[
+            {
+                "id": 10,
+                "user": _user("chatgpt-codex-connector[bot]"),
+                "pull_request_review_id": 123456,
+                "body": "visible finding without commit evidence",
+            }
+        ],
+    )
+
+    assert status["status"] == "current_without_inline_findings"
+    assert status["codex_inline_findings_count"] == 1
+    assert status["codex_inline_findings_on_current_head_count"] == 0
 
 
 def test_non_codex_comments_are_ignored_and_raw_bodies_are_not_emitted() -> None:
@@ -285,7 +384,107 @@ def test_gh_unavailable_status_is_graceful() -> None:
 
     assert status["status"] == "gh_unavailable"
     assert status["recommended_next_step"] == "rerun_when_gh_available"
+    assert status["focused_review_comment"] is None
     assert "gh not found" in status["warnings"][0]
+
+
+def test_unavailable_status_sanitizes_secret_shaped_errors() -> None:
+    module = _module()
+    status = module.unavailable_status(
+        repository="dckallos/dbt-diagnostics",
+        pr_number=148,
+        error="fatal: token=ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+    )
+    rendered = module.canonical_json(status)
+
+    assert "ghp_" not in rendered
+    assert "token=" not in rendered
+    assert "[REDACTED]" in rendered
+
+
+def test_flatten_paginated_lists_from_gh_slurp() -> None:
+    module = _module()
+    payload = [[{"id": 1}], [{"id": 2}], []]
+
+    assert module._flatten_paginated_list(payload, "reviews") == [
+        {"id": 1},
+        {"id": 2},
+    ]
+
+
+def test_load_payloads_uses_paginated_review_and_comment_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _module()
+    calls: list[list[str]] = []
+
+    def fake_load(args: list[str]) -> object:
+        calls.append(args)
+        if args[:2] == ["pr", "view"]:
+            return {
+                "number": 148,
+                "url": "https://github.example/pr/148",
+                "state": "OPEN",
+                "isDraft": False,
+                "headRefOid": "abcdef1234567890abcdef1234567890abcdef12",
+            }
+        if args[:1] == ["api"]:
+            return [[]]
+        raise AssertionError(args)
+
+    monkeypatch.setattr(module, "_load_json_with_gh", fake_load)
+
+    module._load_payloads(repository="dckallos/dbt-diagnostics", pr_number=148)
+
+    assert [
+        "api",
+        "repos/dckallos/dbt-diagnostics/pulls/148/reviews",
+        "--paginate",
+        "--slurp",
+    ] in calls
+    assert [
+        "api",
+        "repos/dckallos/dbt-diagnostics/pulls/148/comments",
+        "--paginate",
+        "--slurp",
+    ] in calls
+    assert [
+        "api",
+        "repos/dckallos/dbt-diagnostics/issues/148/comments",
+        "--paginate",
+        "--slurp",
+    ] in calls
+
+
+def test_invalid_cli_inputs_fail_without_traceback(capsys: pytest.CaptureFixture[str]) -> None:
+    module = _module()
+
+    with pytest.raises(SystemExit) as pr_error:
+        module.main(["0", "--json"])
+    assert pr_error.value.code == 2
+    assert "positive integer" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as repo_error:
+        module.main(["148", "--repo", "not-a-repo", "--json"])
+    assert repo_error.value.code == 2
+    assert "owner/name" in capsys.readouterr().err
+
+
+def test_json_output_stays_clean_for_json_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _module()
+
+    def fake_load_payloads(*, repository: str, pr_number: int) -> object:
+        return _payloads(module)
+
+    monkeypatch.setattr(module, "_load_payloads", fake_load_payloads)
+
+    assert module.main(["148", "--json"]) == 0
+    output = capsys.readouterr()
+    parsed = json.loads(output.out)
+
+    assert output.err == ""
+    assert parsed["status"] == "no_codex_review"
 
 
 def test_agents_review_guidelines_cover_codex_governance_risks() -> None:
@@ -315,6 +514,8 @@ def test_codex_readme_documents_review_status_boundaries() -> None:
         "read-only",
         "does not post `@codex review`",
         EXPECTED_FOCUSED_REVIEW_COMMENT,
+        "manual `@codex review` request is\npending",
+        "usage limits or unavailable review",
         "`@codex review` is GitHub PR code review",
         "$codex-security:security-diff-scan",
         "not automated in this PR",

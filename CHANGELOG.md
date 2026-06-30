@@ -11,8 +11,8 @@
   review fields.
 - I added the read-only `codex-review-status` local diagnostic so maintainers
   can see whether the GitHub Codex review is current for a PR head and get the
-  exact focused `@codex review` text to post manually when it is stale or
-  missing.
+  exact focused `@codex review` text to post manually when it is stale,
+  missing, or failed because of bot usage-limit/unavailable evidence.
 - I added protected/governance Codex GitHub review guidance and made
   `.codex/config.toml` part of the policy-driven semantic scan roots.
 - I added protected project-agent config for the reviewer path and kept the
