@@ -516,6 +516,31 @@ def test_governance_boundary_checker_rejects_toml_command_values() -> None:
     assert violations[0].excerpt.startswith("hooks.command = gh issue edit")
 
 
+def test_governance_boundary_checker_rejects_toml_command_tables() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text = (
+        "[hooks]\n"
+        "commands = [\n"
+        "  { command = \"python scripts/triage/triage.py apply --execute\" },\n"
+        "  { command = \"rg -n 'gh issue edit' docs\" },\n"
+        "]\n"
+        "[[tasks.commands]]\n"
+        "command = \"gh pr merge 148\"\n"
+    )
+
+    violations = checker.scan_text(text, path=".codex/config.toml")
+
+    assert [(violation.line, violation.code) for violation in violations] == [
+        (3, "forbidden-mutation-command"),
+        (7, "forbidden-mutation-command"),
+    ]
+    assert (
+        "hooks.commands.command = python scripts/triage/triage.py apply --execute"
+        in violations[0].excerpt
+    )
+    assert "tasks.commands.command = gh pr merge 148" in violations[1].excerpt
+
+
 def test_governance_boundary_checker_allows_safe_toml_command_values() -> None:
     checker = _load_codex_script("check_governance_boundary")
     text = "[hooks]\ncommand = \"rg -n 'gh issue edit' docs\"\n"

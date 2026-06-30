@@ -72,6 +72,7 @@ class GhPayloads:
     inline_comments: Sequence[Mapping[str, Any]]
     issue_comments: Sequence[Mapping[str, Any]]
     reactions_by_comment_id: Mapping[int, Sequence[Mapping[str, Any]]]
+    reaction_load_errors: Sequence[str] = ()
 
 
 def canonical_json(value: object) -> str:
@@ -233,6 +234,15 @@ def _is_manual_review_request(comment: Mapping[str, Any]) -> bool:
     return _is_manual_review_request_text(comment) and _is_maintainer_owned(comment)
 
 
+def _comment_mentions_sha(comment: Mapping[str, Any], sha: str | None) -> bool:
+    normalized_sha = _normalize_sha(sha)
+    body = _string(comment.get("body"))
+    if normalized_sha is None or body is None:
+        return False
+    lowered = body.casefold()
+    return normalized_sha in lowered or normalized_sha[:12] in lowered
+
+
 def _bot_reacted_to_comment(
     comment: Mapping[str, Any],
     reactions_by_comment_id: Mapping[int, Sequence[Mapping[str, Any]]],
@@ -263,11 +273,53 @@ def _latest_item(items: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None
     )[-1]
 
 
-def _recommended_next_step(status: str) -> str:
+def _manual_request_availability(
+    *,
+    status: str,
+    usage_limit_or_unavailable_evidence: bool,
+) -> tuple[bool | None, str | None]:
+    if usage_limit_or_unavailable_evidence:
+        return False, "usage_limit_or_unavailable_evidence"
+    if status in {
+        "stale_review",
+        "no_codex_review",
+        "no_codex_review_for_current_head",
+    }:
+        return True, None
+    if status == "manual_review_requested_pending":
+        return None, "manual_review_request_pending"
+    if status in {"current_with_findings", "current_without_inline_findings"}:
+        return None, "github_codex_review_current"
+    if status == "gh_unavailable":
+        return None, "gh_unavailable"
+    if status == "unknown":
+        return None, "unknown"
+    if status == "manual_review_request_failed":
+        return False, "usage_limit_or_unavailable_evidence"
+    return None, "not_currently_useful"
+
+
+def _focused_review_comment(current_head_sha: str | None) -> str:
+    normalized_sha = _normalize_sha(current_head_sha)
+    if normalized_sha is None:
+        return FOCUSED_REVIEW_COMMENT
+    return f"{FOCUSED_REVIEW_COMMENT}\n\nCurrent PR head SHA: {normalized_sha}"
+
+
+def _recommended_next_step(
+    status: str,
+    *,
+    manual_request_available: bool | None = None,
+    usage_limit_or_unavailable_evidence: bool = False,
+) -> str:
     if status == "current_with_findings":
         return "review_codex_findings"
     if status == "current_without_inline_findings":
         return "no_codex_github_review_action_needed"
+    if usage_limit_or_unavailable_evidence:
+        return "maintainer_retry_focused_codex_review_later"
+    if manual_request_available is True:
+        return "maintainer_post_focused_codex_review_comment"
     if status == "manual_review_requested_pending":
         return "wait_for_codex_review"
     if status == "manual_review_request_failed":
@@ -277,15 +329,6 @@ def _recommended_next_step(status: str) -> str:
     if status == "unknown":
         return "inspect_codex_review_status_manually"
     return "maintainer_post_focused_codex_review_comment"
-
-
-def _should_emit_focused_comment(status: str) -> bool:
-    return status in {
-        "stale_review",
-        "manual_review_request_failed",
-        "no_codex_review",
-        "no_codex_review_for_current_head",
-    }
 
 
 def _safe_error(error: str) -> str:
@@ -305,6 +348,8 @@ def unavailable_status(
     safe_error = _safe_error(error)
     return {
         "schema_version": SCHEMA_VERSION,
+        "github_codex_review_best_effort": True,
+        "github_codex_review_guaranteed": False,
         "repository": repository,
         "pr_number": pr_number,
         "pr_url": None,
@@ -328,6 +373,13 @@ def unavailable_status(
         "bot_reacted_to_manual_request": None,
         "codex_review_unavailable_at": None,
         "codex_review_unavailable_comment_id": None,
+        "review_thread_triage_required": None,
+        "review_thread_relevance_basis": "unavailable",
+        "review_thread_sha_mismatch_is_disposition": False,
+        "manual_request_available": None,
+        "manual_request_unavailable_reason": "gh_unavailable",
+        "usage_limit_or_unavailable_evidence": False,
+        "current_head_usage_limit_or_unavailable_evidence": False,
         "status": "gh_unavailable",
         "recommended_next_step": _recommended_next_step("gh_unavailable"),
         "focused_review_comment": None,
@@ -407,12 +459,13 @@ def build_review_status(
         latest_manual_request is not None
         and (latest_review is None or latest_manual_timestamp > latest_review_timestamp)
     )
+    manual_request_matches_current_head = (
+        latest_manual_request is not None
+        and _comment_mentions_sha(latest_manual_request, current_head_sha)
+    )
     manual_after_current_head = (
         latest_manual_request is not None
-        and (
-            current_head_committed_at is None
-            or latest_manual_timestamp >= current_head_committed_at
-        )
+        and manual_request_matches_current_head
     )
     unavailable_after_manual = (
         latest_unavailable_comment is not None
@@ -431,15 +484,10 @@ def build_review_status(
             "or body text."
         )
     if latest_manual_request is not None:
-        if current_head_committed_at is None:
+        if not manual_request_matches_current_head:
             warnings.append(
-                "Manual @codex review request timing is observable from comment "
-                "timestamps only; this command could not verify head commit time."
-            )
-        elif latest_manual_timestamp < current_head_committed_at:
-            warnings.append(
-                "Latest actionable manual @codex review request predates the "
-                "current PR head commit timestamp."
+                "Latest actionable manual @codex review request is not tied to "
+                "the current PR head SHA."
             )
     if manual_request_candidates and not manual_requests:
         warnings.append(
@@ -447,9 +495,21 @@ def build_review_status(
             "ownership or observable Codex bot acknowledgement."
         )
     if latest_unavailable_comment is not None:
+        if unavailable_after_manual:
+            warnings.append(
+                "Codex bot reported review usage limits or unavailable review "
+                "after a current-head manual @codex review request."
+            )
+        else:
+            warnings.append(
+                "Codex bot reported review usage limits or unavailable review "
+                "after a manual @codex review request not tied to the current "
+                "PR head SHA."
+            )
+    if payloads.reaction_load_errors:
         warnings.append(
-            "Codex bot reported review usage limits or unavailable review "
-            "after a manual @codex review request."
+            "Codex bot reaction evidence is incomplete; pagination_complete is "
+            "false and manual request acknowledgement may be under-reported."
         )
 
     if codex_review_current and current_head_inline_comments:
@@ -469,9 +529,28 @@ def build_review_status(
     else:
         status = "no_codex_review"
 
+    usage_limit_or_unavailable_evidence = latest_unavailable_comment is not None
+    current_head_usage_limit_or_unavailable_evidence = unavailable_after_manual
+    manual_request_available, manual_request_unavailable_reason = (
+        _manual_request_availability(
+            status=status,
+            usage_limit_or_unavailable_evidence=(
+                current_head_usage_limit_or_unavailable_evidence
+            ),
+        )
+    )
+    recommended_next_step = _recommended_next_step(
+        status,
+        manual_request_available=manual_request_available,
+        usage_limit_or_unavailable_evidence=(
+            current_head_usage_limit_or_unavailable_evidence
+        ),
+    )
     assert status in STATUS_VALUES
     return {
         "schema_version": SCHEMA_VERSION,
+        "github_codex_review_best_effort": True,
+        "github_codex_review_guaranteed": False,
         "repository": repository,
         "pr_number": pr_number,
         "pr_url": _string(pr.get("url")),
@@ -517,12 +596,25 @@ def build_review_status(
             if latest_unavailable_comment is not None
             else None
         ),
-        "status": status,
-        "recommended_next_step": _recommended_next_step(status),
-        "focused_review_comment": (
-            FOCUSED_REVIEW_COMMENT if _should_emit_focused_comment(status) else None
+        "review_thread_triage_required": bool(codex_inline_comments),
+        "review_thread_relevance_basis": (
+            "separate_live_thread_metadata_required"
         ),
-        "pagination_complete": True,
+        "review_thread_sha_mismatch_is_disposition": False,
+        "manual_request_available": manual_request_available,
+        "manual_request_unavailable_reason": manual_request_unavailable_reason,
+        "usage_limit_or_unavailable_evidence": usage_limit_or_unavailable_evidence,
+        "current_head_usage_limit_or_unavailable_evidence": (
+            current_head_usage_limit_or_unavailable_evidence
+        ),
+        "status": status,
+        "recommended_next_step": recommended_next_step,
+        "focused_review_comment": (
+            _focused_review_comment(current_head_sha)
+            if manual_request_available is True
+            else None
+        ),
+        "pagination_complete": not payloads.reaction_load_errors,
         "warnings": warnings,
     }
 
@@ -599,6 +691,7 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
         raise RuntimeError("gh pr view returned a non-object payload")
 
     reactions_by_comment_id: dict[int, Sequence[Mapping[str, Any]]] = {}
+    reaction_load_errors: list[str] = []
     manual_ids = [
         _int(comment.get("id"))
         for comment in issue_comments
@@ -610,7 +703,8 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
                 f"repos/{owner}/{name}/issues/comments/{comment_id}/reactions",
                 "issue comment reactions",
             )
-        except RuntimeError:
+        except RuntimeError as exc:
+            reaction_load_errors.append(_safe_error(str(exc)))
             continue
         reactions_by_comment_id[comment_id] = [
             reaction for reaction in reactions if isinstance(reaction, Mapping)
@@ -626,6 +720,7 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
             comment for comment in issue_comments if isinstance(comment, Mapping)
         ],
         reactions_by_comment_id=reactions_by_comment_id,
+        reaction_load_errors=tuple(reaction_load_errors),
     )
 
 
@@ -654,6 +749,10 @@ def repository_name(value: str) -> str:
 def render_human(status: Mapping[str, object]) -> str:
     lines = [
         "Codex GitHub review status",
+        "- GitHub Codex review best-effort: "
+        f"{status.get('github_codex_review_best_effort')}",
+        "- GitHub Codex review guaranteed: "
+        f"{status.get('github_codex_review_guaranteed')}",
         f"- repository: {status['repository']}",
         f"- PR: #{status['pr_number']} {status.get('pr_url') or ''}".rstrip(),
         f"- state: {status.get('pr_state')} draft={status.get('is_draft')}",
@@ -675,6 +774,18 @@ def render_human(status: Mapping[str, object]) -> str:
             f"{status.get('codex_inline_findings_count')}"
         ),
         f"- Codex issue/PR comments: {status.get('codex_issue_comments_count')}",
+        (
+            "- review thread triage required: "
+            f"{status.get('review_thread_triage_required')}"
+        ),
+        (
+            "- review thread relevance basis: "
+            f"{status.get('review_thread_relevance_basis')}"
+        ),
+        (
+            "- review thread SHA mismatch is disposition: "
+            f"{status.get('review_thread_sha_mismatch_is_disposition')}"
+        ),
         f"- manual @codex review requested_at: {status.get('manual_review_requested_at')}",
         (
             "- manual request bot reaction observable: "
@@ -683,6 +794,15 @@ def render_human(status: Mapping[str, object]) -> str:
         (
             "- Codex unavailable/usage-limit response at: "
             f"{status.get('codex_review_unavailable_at')}"
+        ),
+        f"- manual request available now: {status.get('manual_request_available')}",
+        (
+            "- manual request unavailable reason: "
+            f"{status.get('manual_request_unavailable_reason')}"
+        ),
+        (
+            "- usage-limit/unavailable evidence: "
+            f"{status.get('usage_limit_or_unavailable_evidence')}"
         ),
         f"- pagination complete: {status.get('pagination_complete')}",
         f"- status: {status.get('status')}",

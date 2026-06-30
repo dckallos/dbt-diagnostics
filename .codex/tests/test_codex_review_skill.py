@@ -28,6 +28,7 @@ def test_codex_review_skill_frontmatter_preserves_packet_only_scope() -> None:
     assert "without mutating GitHub" in text
     assert "packet generation" not in text.split("---", 2)[1]
     assert "issue-work integration" not in text.split("---", 2)[1]
+    assert "does not fetch, review, or triage live GitHub PR review comments" in _compact(text)
 
 
 def test_codex_review_skill_loads_only_bounded_inputs() -> None:

@@ -479,6 +479,8 @@ def _toml_command_values(
                     for child in item:
                         if isinstance(child, str):
                             yield path, child
+                        else:
+                            yield from _toml_command_values(child, key_path=path)
                 elif isinstance(item, Mapping):
                     yield from _toml_command_values(item, key_path=path)
                 continue
@@ -489,11 +491,21 @@ def _toml_command_values(
             yield from _toml_command_values(item, key_path=key_path)
 
 
-def _toml_key_line(text: str, key_path: tuple[str, ...]) -> int:
+def _toml_key_line(
+    text: str, key_path: tuple[str, ...], *, command: str | None = None
+) -> int:
     if not key_path:
         return 1
     leaf_key = re.escape(key_path[-1])
     pattern = re.compile(rf"^\s*{leaf_key}\s*=", re.IGNORECASE)
+    inline_pattern = re.compile(rf"\b{leaf_key}\s*=", re.IGNORECASE)
+    if command is not None:
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if command in line and inline_pattern.search(line):
+                return line_number
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if pattern.search(line) and (command is None or command in line):
+            return line_number
     for line_number, line in enumerate(text.splitlines(), start=1):
         if pattern.search(line):
             return line_number
@@ -516,7 +528,7 @@ def _scan_toml_commands(text: str, *, path: str) -> list[Violation]:
         violations.append(
             Violation(
                 path=path,
-                line=_toml_key_line(text, key_path),
+                line=_toml_key_line(text, key_path, command=command),
                 code="forbidden-mutation-command",
                 message=(
                     "possible executable mutation command in structured TOML "

@@ -193,8 +193,8 @@ are recorded as findings or omissions instead of expanding into live GitHub
 fetches, LLM calls, issue writes, workflow dispatches, or a full-repository
 prompt bundle.
 
-The local Codex GitHub review-status command checks whether the
-`chatgpt-codex-connector[bot]` GitHub review is current for a PR head:
+The local Codex GitHub review-status command reports observable GitHub Codex
+review freshness for a PR head:
 
 ```bash
 bash .codex/bin/action.sh codex-review-status 148
@@ -210,19 +210,41 @@ reviewers, mark draft/ready, dispatch workflows, merge PRs, or mutate labels,
 milestones, Projects, branches, or files.
 
 Use it after a PR is ready for review and after each fix commit that changes
-the PR head. A current status means the latest Codex GitHub review SHA matches
-the current head. A stale, missing, unavailable, or pending status means the
-handoff should report that limitation. A manual `@codex review` request only
-suppresses the focused text when the request is maintainer-owned or
-bot-acknowledged and is not older than the current head commit time. If a manual
-request is pending, or if `gh` evidence is unavailable or unknown, the command
-reports the state without printing a new request to post. When the current head
-lacks a current review, or a bot reply shows that a manual request for the
-current head failed because of usage limits or unavailable review, the command
-prints this exact focused text for a maintainer to post manually:
+the PR head. The command is a diagnostic only: GitHub Codex review is
+best-effort, quota/availability-dependent, and not guaranteed for every PR,
+every PR head, or every commit. The repository tooling can observe review
+freshness and usage-limit/unavailable evidence; it cannot force the GitHub
+Codex service to run.
+
+A current status means the latest submitted Codex GitHub review SHA matches the
+current head. A stale, missing, unavailable, or pending status means the handoff
+should report that limitation. It does not prove negligence or workflow failure
+by itself. It also does not make existing GitHub Codex review comments
+obsolete: live review threads must be triaged from GitHub thread metadata, and
+a comment should be skipped for implementation only when GitHub marks its
+thread `is_outdated: true`. `codex-review-status` can report visible Codex
+inline comment counts and that separate thread triage is required, but it does
+not fetch or decide thread `is_outdated` metadata itself.
+
+A manual `@codex review` request only suppresses the focused text when the
+request is maintainer-owned or bot-acknowledged and tied to the current PR head
+SHA. A request that merely predates or postdates the commit timestamp is not
+enough to prove that it targeted the current head. `manual_review_request_failed`
+means observable bot text indicates usage limits or unavailable review after a
+manual request tied to the current head. In that case the next useful action may
+be to retry later, not to ask again immediately. If a manual request is pending,
+usage limits or unavailable review have already been observed, or if `gh`
+evidence is unavailable or unknown, the command reports the state without
+printing a new request to post. When the current head lacks a current review and
+no such limitation makes posting again currently unhelpful, the command prints
+focused text for a maintainer to post manually. The emitted text includes the
+current head SHA so a later status run can recognize the request as targeting
+that head:
 
 ```text
 @codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.
+
+Current PR head SHA: <current-head-sha>
 ```
 
 `@codex review` is GitHub PR code review over a pull-request diff, not Codex
@@ -231,6 +253,13 @@ separate manual/plugin workflow for security-sensitive change review, and it is
 not automated in this PR. `@codex fix` is not the default for protected or
 governance-sensitive PRs because it can start a cloud task that may push fixes
 when permitted.
+
+For current issue implementation work that needs to address GitHub Codex review
+comments, run `$issue-work <issue>` and tell it to triage the live PR review
+threads. `$codex-review` consumes one bounded local `codex-review-packet.json`;
+it must not fetch or review live GitHub comments. The `codex_reviewer` custom
+agent is the independent local packet reviewer, not the live GitHub
+review-comment triage tool.
 
 ## Issue governance workflow
 

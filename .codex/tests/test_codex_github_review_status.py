@@ -9,6 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = ROOT / ".codex" / "scripts" / "codex_github_review_status.py"
+DEFAULT_HEAD_SHA = "abcdef1234567890abcdef1234567890abcdef12"
 EXPECTED_FOCUSED_REVIEW_COMMENT = (
     "@codex review for regressions in protected Codex/governance surfaces. "
     "Focus on whether the codex_reviewer custom agent remains packet-only and "
@@ -18,6 +19,10 @@ EXPECTED_FOCUSED_REVIEW_COMMENT = (
     "GitHub comments/reviews/mutation, apply payloads, issue-body writes, "
     "full-repository prompt bundles, or packet schema changes."
 )
+
+
+def _expected_focused_review_comment(head_sha: str = DEFAULT_HEAD_SHA) -> str:
+    return f"{EXPECTED_FOCUSED_REVIEW_COMMENT}\n\nCurrent PR head SHA: {head_sha}"
 
 
 def _module():
@@ -37,7 +42,7 @@ def _user(login: str) -> dict[str, object]:
 def _payloads(
     module: object,
     *,
-    head_sha: str = "abcdef1234567890abcdef1234567890abcdef12",
+    head_sha: str = DEFAULT_HEAD_SHA,
     head_committed_at: str = "2026-06-30T00:00:00Z",
     reviews: list[dict[str, object]] | None = None,
     inline_comments: list[dict[str, object]] | None = None,
@@ -99,11 +104,22 @@ def test_no_codex_review_exists() -> None:
     status = _status(module)
 
     assert status["status"] == "no_codex_review"
+    assert status["github_codex_review_best_effort"] is True
+    assert status["github_codex_review_guaranteed"] is False
     assert status["codex_review_current"] is False
+    assert status["manual_request_available"] is True
+    assert status["manual_request_unavailable_reason"] is None
+    assert status["usage_limit_or_unavailable_evidence"] is False
+    assert status["review_thread_triage_required"] is False
+    assert status["current_head_usage_limit_or_unavailable_evidence"] is False
+    assert status["review_thread_relevance_basis"] == (
+        "separate_live_thread_metadata_required"
+    )
+    assert status["review_thread_sha_mismatch_is_disposition"] is False
     assert status["recommended_next_step"] == (
         "maintainer_post_focused_codex_review_comment"
     )
-    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert status["focused_review_comment"] == _expected_focused_review_comment()
 
 
 def test_current_review_without_inline_findings() -> None:
@@ -124,6 +140,8 @@ def test_current_review_without_inline_findings() -> None:
     assert status["status"] == "current_without_inline_findings"
     assert status["codex_review_current"] is True
     assert status["codex_inline_findings_on_current_head_count"] == 0
+    assert status["manual_request_available"] is None
+    assert status["manual_request_unavailable_reason"] == "github_codex_review_current"
     assert status["focused_review_comment"] is None
     assert EXPECTED_FOCUSED_REVIEW_COMMENT not in module.render_human(status)
 
@@ -160,6 +178,57 @@ def test_current_review_with_inline_findings_on_current_head() -> None:
     assert status["status"] == "current_with_findings"
     assert status["codex_inline_findings_count"] == 2
     assert status["codex_inline_findings_on_current_head_count"] == 1
+    assert status["review_thread_triage_required"] is True
+    assert status["review_thread_relevance_basis"] == (
+        "separate_live_thread_metadata_required"
+    )
+    assert status["review_thread_sha_mismatch_is_disposition"] is False
+    assert status["focused_review_comment"] is None
+
+
+def test_current_review_with_old_usage_limit_evidence_still_reviews_findings() -> None:
+    module = _module()
+    head = "abcdef1234567890abcdef1234567890abcdef12"
+    status = _status(
+        module,
+        head_sha=head,
+        reviews=[
+            _codex_review(
+                review_id=1,
+                commit_id=head,
+                submitted_at="2026-06-30T00:05:00Z",
+            )
+        ],
+        inline_comments=[
+            {
+                "id": 10,
+                "user": _user("chatgpt-codex-connector[bot]"),
+                "commit_id": head,
+                "body": "finding",
+            }
+        ],
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("maintainer"),
+                "author_association": "OWNER",
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": "@codex review",
+            },
+            {
+                "id": 21,
+                "user": _user("chatgpt-codex-connector[bot]"),
+                "created_at": "2026-06-30T00:02:00Z",
+                "body": "You have reached your Codex usage limits for code reviews.",
+            },
+        ],
+    )
+
+    assert status["status"] == "current_with_findings"
+    assert status["usage_limit_or_unavailable_evidence"] is True
+    assert status["current_head_usage_limit_or_unavailable_evidence"] is False
+    assert status["recommended_next_step"] == "review_codex_findings"
+    assert status["manual_request_available"] is None
     assert status["focused_review_comment"] is None
 
 
@@ -178,20 +247,23 @@ def test_latest_review_on_different_sha_is_stale() -> None:
 
     assert status["status"] == "stale_review"
     assert status["codex_review_current"] is False
-    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert status["manual_request_available"] is True
+    assert status["focused_review_comment"] == _expected_focused_review_comment()
 
 
 def test_manual_codex_review_request_without_bot_review_is_pending() -> None:
     module = _module()
+    head = "abcdef1234567890abcdef1234567890abcdef12"
     status = _status(
         module,
+        head_sha=head,
         issue_comments=[
             {
                 "id": 20,
                 "user": _user("maintainer"),
                 "author_association": "OWNER",
                 "created_at": "2026-06-30T00:01:00Z",
-                "body": "@codex review for regressions",
+                "body": f"@codex review for regressions on {head[:12]}",
             }
         ],
         reactions_by_comment_id={
@@ -208,6 +280,8 @@ def test_manual_codex_review_request_without_bot_review_is_pending() -> None:
     assert status["status"] == "manual_review_requested_pending"
     assert status["manual_review_request_comment_id"] == 20
     assert status["bot_reacted_to_manual_request"] is True
+    assert status["manual_request_available"] is None
+    assert status["manual_request_unavailable_reason"] == "manual_review_request_pending"
     assert status["focused_review_comment"] is None
     assert status["current_head_committed_at"] == "2026-06-30T00:00:00Z"
 
@@ -278,20 +352,22 @@ def test_pending_or_dismissed_codex_review_is_not_current(state: str) -> None:
     assert status["status"] == "no_codex_review"
     assert status["latest_codex_review_state"] is None
     assert status["codex_review_current"] is False
-    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert status["focused_review_comment"] == _expected_focused_review_comment()
 
 
 def test_usage_limit_response_after_manual_request_fails_closed() -> None:
     module = _module()
+    head = "abcdef1234567890abcdef1234567890abcdef12"
     status = _status(
         module,
+        head_sha=head,
         issue_comments=[
             {
                 "id": 20,
                 "user": _user("maintainer"),
                 "author_association": "OWNER",
                 "created_at": "2026-06-30T00:01:00Z",
-                "body": "@codex review",
+                "body": f"@codex review {head[:12]}",
             },
             {
                 "id": 21,
@@ -305,7 +381,13 @@ def test_usage_limit_response_after_manual_request_fails_closed() -> None:
     assert status["status"] == "manual_review_request_failed"
     assert status["recommended_next_step"] == "maintainer_retry_focused_codex_review_later"
     assert status["codex_review_unavailable_comment_id"] == 21
-    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert status["manual_request_available"] is False
+    assert status["manual_request_unavailable_reason"] == (
+        "usage_limit_or_unavailable_evidence"
+    )
+    assert status["usage_limit_or_unavailable_evidence"] is True
+    assert status["current_head_usage_limit_or_unavailable_evidence"] is True
+    assert status["focused_review_comment"] is None
     assert any("usage limits" in warning for warning in status["warnings"])
 
 
@@ -326,7 +408,7 @@ def test_manual_review_request_from_outside_commenter_does_not_suppress_retry() 
 
     assert status["status"] == "no_codex_review"
     assert status["manual_review_request_comment_id"] is None
-    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert status["focused_review_comment"] == _expected_focused_review_comment()
     assert any("without maintainer ownership" in warning for warning in status["warnings"])
 
 
@@ -362,8 +444,45 @@ def test_manual_review_request_before_current_head_is_stale_not_pending() -> Non
     assert status["status"] == "stale_review"
     assert status["manual_review_request_comment_id"] == 20
     assert status["codex_review_unavailable_comment_id"] == 21
-    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
-    assert any("predates the current PR head" in warning for warning in status["warnings"])
+    assert status["recommended_next_step"] == (
+        "maintainer_post_focused_codex_review_comment"
+    )
+    assert status["manual_request_available"] is True
+    assert status["manual_request_unavailable_reason"] is None
+    assert status["usage_limit_or_unavailable_evidence"] is True
+    assert status["current_head_usage_limit_or_unavailable_evidence"] is False
+    assert status["focused_review_comment"] == _expected_focused_review_comment()
+    assert any("not tied to the current PR head SHA" in warning for warning in status["warnings"])
+
+
+def test_manual_review_request_after_commit_time_without_head_sha_is_not_pending() -> None:
+    module = _module()
+    status = _status(
+        module,
+        head_committed_at="2026-06-29T00:00:00Z",
+        reviews=[
+            _codex_review(
+                review_id=1,
+                commit_id="1111111111111111111111111111111111111111",
+                submitted_at="2026-06-30T00:00:00Z",
+            )
+        ],
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("maintainer"),
+                "author_association": "OWNER",
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": "@codex review",
+            }
+        ],
+    )
+
+    assert status["status"] == "stale_review"
+    assert status["manual_review_request_comment_id"] == 20
+    assert status["manual_request_available"] is True
+    assert status["focused_review_comment"] == _expected_focused_review_comment()
+    assert any("not tied to the current PR head SHA" in warning for warning in status["warnings"])
 
 
 def test_review_body_commit_fallback_is_used_when_commit_id_is_absent() -> None:
@@ -437,6 +556,8 @@ def test_pull_request_review_id_is_not_treated_as_sha() -> None:
     assert status["status"] == "current_without_inline_findings"
     assert status["codex_inline_findings_count"] == 1
     assert status["codex_inline_findings_on_current_head_count"] == 0
+    assert status["review_thread_triage_required"] is True
+    assert status["review_thread_sha_mismatch_is_disposition"] is False
 
 
 def test_non_codex_comments_are_ignored_and_raw_bodies_are_not_emitted() -> None:
@@ -472,7 +593,40 @@ def test_focused_review_comment_text_is_exact() -> None:
     module = _module()
 
     assert module.FOCUSED_REVIEW_COMMENT == EXPECTED_FOCUSED_REVIEW_COMMENT
-    assert _status(module)["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert _status(module)["focused_review_comment"] == (
+        _expected_focused_review_comment()
+    )
+
+
+def test_emitted_focused_review_comment_matches_pending_detection() -> None:
+    module = _module()
+    emitted = _status(module)["focused_review_comment"]
+
+    status = _status(
+        module,
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("maintainer"),
+                "author_association": "OWNER",
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": emitted,
+            }
+        ],
+        reactions_by_comment_id={
+            20: [
+                {
+                    "id": 30,
+                    "user": _user("chatgpt-codex-connector[bot]"),
+                    "content": "eyes",
+                }
+            ]
+        },
+    )
+
+    assert status["status"] == "manual_review_requested_pending"
+    assert status["manual_request_available"] is None
+    assert status["focused_review_comment"] is None
 
 
 def test_gh_unavailable_status_is_graceful() -> None:
@@ -484,6 +638,15 @@ def test_gh_unavailable_status_is_graceful() -> None:
     )
 
     assert status["status"] == "gh_unavailable"
+    assert status["github_codex_review_best_effort"] is True
+    assert status["github_codex_review_guaranteed"] is False
+    assert status["manual_request_available"] is None
+    assert status["manual_request_unavailable_reason"] == "gh_unavailable"
+    assert status["usage_limit_or_unavailable_evidence"] is False
+    assert status["current_head_usage_limit_or_unavailable_evidence"] is False
+    assert status["review_thread_triage_required"] is None
+    assert status["review_thread_relevance_basis"] == "unavailable"
+    assert status["review_thread_sha_mismatch_is_disposition"] is False
     assert status["recommended_next_step"] == "rerun_when_gh_available"
     assert status["focused_review_comment"] is None
     assert "gh not found" in status["warnings"][0]
@@ -558,6 +721,59 @@ def test_load_payloads_uses_paginated_review_and_comment_reads(monkeypatch: pyte
     ] in calls
 
 
+def test_reaction_read_failure_marks_pagination_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+
+    def fake_load(args: list[str]) -> object:
+        if args[:2] == ["pr", "view"]:
+            return {
+                "number": 148,
+                "url": "https://github.example/pr/148",
+                "state": "OPEN",
+                "isDraft": False,
+                "headRefOid": "abcdef1234567890abcdef1234567890abcdef12",
+            }
+        raise AssertionError(args)
+
+    def fake_paginated(endpoint: str, label: str) -> list[dict[str, object]]:
+        if endpoint.endswith("/pulls/148/reviews"):
+            return []
+        if endpoint.endswith("/pulls/148/comments"):
+            return []
+        if endpoint.endswith("/issues/148/comments"):
+            return [
+                {
+                    "id": 20,
+                    "user": _user("maintainer"),
+                    "author_association": "CONTRIBUTOR",
+                    "created_at": "2026-06-30T00:01:00Z",
+                    "body": "@codex review",
+                }
+            ]
+        if endpoint.endswith("/issues/comments/20/reactions"):
+            raise RuntimeError("rate limit")
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(module, "_load_json_with_gh", fake_load)
+    monkeypatch.setattr(module, "_load_paginated_list_with_gh", fake_paginated)
+
+    payloads = module._load_payloads(
+        repository="dckallos/dbt-diagnostics",
+        pr_number=148,
+    )
+    status = module.build_review_status(
+        repository="dckallos/dbt-diagnostics",
+        pr_number=148,
+        payloads=payloads,
+    )
+
+    assert payloads.reaction_load_errors
+    assert status["pagination_complete"] is False
+    assert any("reaction evidence is incomplete" in item for item in status["warnings"])
+
+
 def test_invalid_cli_inputs_fail_without_traceback(capsys: pytest.CaptureFixture[str]) -> None:
     module = _module()
 
@@ -603,7 +819,9 @@ def test_agents_review_guidelines_cover_codex_governance_risks() -> None:
         "semantic-scan coverage",
         "GitHub comments/reviews/mutation paths",
         "same-context self-review being described as independent review",
+        "best-effort, quota/availability-dependent advisory evidence",
         "stale Codex GitHub review evidence",
+        "GitHub `is_outdated` thread metadata",
         "non-UTF-8 filenames",
         "secret redaction around truncation boundaries",
     ):
@@ -616,12 +834,27 @@ def test_codex_readme_documents_review_status_boundaries() -> None:
     for expected in (
         "codex-review-status",
         "read-only",
+        "reports observable GitHub Codex\nreview freshness",
+        "best-effort, quota/availability-dependent",
+        "not guaranteed for every PR,\nevery PR head, or every commit",
+        "cannot force the GitHub\nCodex service to run",
         "current-head commit time",
         "does not post\n`@codex review`",
         EXPECTED_FOCUSED_REVIEW_COMMENT,
-        "maintainer-owned or\nbot-acknowledged",
+        "maintainer-owned or bot-acknowledged",
+        "current PR head\nSHA",
+        "merely predates or postdates the commit timestamp",
+        "manual_review_request_failed",
         "usage limits or unavailable review",
+        "retry later, not to ask again immediately",
+        "does not make existing GitHub Codex review comments\nobsolete",
+        "is_outdated: true",
+        "thread metadata",
+        "does\nnot fetch or decide thread `is_outdated` metadata itself",
         "`@codex review` is GitHub PR code review",
+        "run `$issue-work <issue>` and tell it to triage the live PR review\nthreads",
+        "$codex-review` consumes one bounded local `codex-review-packet.json`",
+        "not the live GitHub\nreview-comment triage tool",
         "$codex-security:security-diff-scan",
         "not automated in this PR",
         "`@codex fix` is not the default",

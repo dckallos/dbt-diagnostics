@@ -17,7 +17,8 @@ and emit advisory Markdown for maintainer decision.
 
 This skill is not a writer, not a validator implementation, not packet
 generation, not issue-work wiring, not an apply-plan generator, and not a
-GitHub tool. Maintainers decide what to do with the handoff.
+GitHub tool. It does not fetch, review, or triage live GitHub PR review
+comments. Maintainers decide what to do with the handoff.
 
 ## 1. Load only bounded inputs
 

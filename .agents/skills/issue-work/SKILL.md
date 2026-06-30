@@ -309,21 +309,74 @@ Input: exactly one GitHub issue number.
     bash .codex/bin/action.sh codex-review-status <pr-number>
     ```
 
+    GitHub Codex review is best-effort and quota/availability-dependent. A
+    current GitHub Codex review may not exist for every PR, every PR head, or
+    every commit. A missing or stale GitHub Codex review does not prove
+    negligence or workflow failure by itself. A maintainer may not always be
+    able to request `@codex review`; service availability, repository setup,
+    authorization, trigger behavior, and usage or quota limits can prevent a
+    review from running.
+
     Report whether the latest GitHub
     `chatgpt-codex-connector[bot]` review is current for the PR head, stale,
     missing, pending, failed because of bot usage-limit/unavailable evidence,
-    unavailable, or unknown. If the latest Codex GitHub review is stale,
-    missing, or failed because of bot usage-limit/unavailable evidence, include
-    this exact focused review text for the maintainer to post manually:
+    unavailable, or unknown. Treat `manual_review_request_failed`, usage-limit
+    text, and unavailable-service text as reportable limitations. Do not loop
+    on `@codex review` requests when usage-limit or unavailable evidence
+    already exists; report the limitation and retry-later guidance instead.
+
+    When the latest Codex GitHub review is stale or missing and no
+    usage-limit, unavailable-service, pending-request, unknown-evidence, or
+    `gh`-unavailable limitation makes posting again currently unhelpful,
+    include this exact focused review text for the maintainer to post manually:
 
     ```text
     @codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.
     ```
 
     Do not include or recommend that focused text when the GitHub Codex review
-    is already current, a manual review request is already pending, `gh` is
-    unavailable, or the evidence is unknown. Report those states as limitations
-    or maintainer checks instead.
+    is already current, a manual review request is already pending, usage-limit
+    or unavailable-service evidence exists, `gh` is unavailable, or the
+    evidence is unknown. Report those states as limitations or maintainer
+    checks instead.
+
+    GitHub Codex review-thread comments are separate evidence from latest
+    GitHub Codex review freshness. Do not use review-current, stale, missing,
+    failed, unavailable, or unknown status as a proxy for review-comment
+    relevance. Do not disregard a live review thread merely because it was made
+    on an older reviewed commit, the latest PR head is newer, the review object
+    SHA differs from the current PR head, or a newer commit was pushed after
+    the review. Review-thread relevance is governed by GitHub thread metadata
+    and current code evidence.
+
+    For implementation PRs with Codex GitHub review threads, fetch and inspect
+    every live GitHub PR review thread/comment from
+    `chatgpt-codex-connector[bot]` or `chatgpt-codex-connector`. Review and
+    disposition every thread unless GitHub explicitly marks the thread
+    `is_outdated: true`. Treat missing `is_outdated` metadata as
+    actionable/non-outdated and requiring review. If `is_outdated: true`, the
+    thread may be skipped for implementation but must still appear in the
+    ledger. If a thread is resolved but not outdated, include it in the ledger
+    and classify it as already dispositioned only when maintainer resolution
+    evidence is available. "Reviewed on older commit" is not a disposition.
+
+    Include a review-thread ledger in final handoff when Codex GitHub review
+    threads exist. Each ledger entry must include:
+    - thread id when available;
+    - path;
+    - line/start line when available;
+    - author;
+    - created_at;
+    - is_outdated;
+    - is_resolved;
+    - review commit SHA if available;
+    - title/summary;
+    - disposition;
+    - rationale/evidence;
+    - likely files/tests;
+    - whether implementation is required;
+    - whether a maintainer-only GitHub write would be needed to resolve or
+      comment.
 
     Keep same-context `$codex-review`, local `codex_reviewer`, and GitHub
     `@codex review` distinct:
@@ -334,6 +387,22 @@ Input: exactly one GitHub issue number.
     - GitHub `@codex review` is advisory PR-diff review and does not prove local
       packet validity, digest validity, receipt usability, check coverage,
       safety compliance, or maintainer readiness.
+    - live GitHub Codex review comments are triaged by `$issue-work <issue>`
+      when doing current implementation work; `$codex-review` consumes only one
+      bounded local `codex-review-packet.json` and must not fetch or review
+      live GitHub comments; `codex_reviewer` is the independent local packet
+      reviewer, not the live GitHub review-comment triage tool.
+
+    If a reusable workflow for Codex GitHub review comments is desired, draft a
+    follow-up issue for a new read-only `$codex-review-comments` or
+    `$github-review-triage` skill. That follow-up skill should read supplied PR
+    review comments or one bounded local comment packet, classify comments as
+    valid, already fixed, outdated, out of scope, or follow-up, map each comment
+    to likely files/tests, forbid GitHub mutation, comment posting, review
+    submission, issue edits, labels, milestones, Projects, merges, workflow
+    dispatches, and `@codex fix`, and emit maintainer-applied summary text
+    only. Do not implement that new skill inside issue-work unless the current
+    issue explicitly adds that scope.
 
     Do not use `@codex fix` by default for protected or governance-sensitive
     PRs. If the maintainer wants Codex to fix a GitHub review finding, they

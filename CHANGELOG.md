@@ -19,9 +19,17 @@
   inspection of the bounded packet inputs when the runtime requires shell/exec
   for local file reads.
 - I registered `codex-review-status` as a pending schema-versioned artifact,
-  made manual `@codex review` status account for current-head commit time and
-  maintainer-owned or bot-acknowledged request evidence, and broadened
-  GitHub-token redaction for sanitized `gh` errors.
+  made manual `@codex review` pending status require maintainer-owned or
+  bot-acknowledged request evidence tied to the current PR head SHA, and
+  broadened GitHub-token redaction for sanitized `gh` errors.
+- I clarified that GitHub Codex review is best-effort,
+  quota/availability-dependent advisory evidence, not guaranteed per PR or
+  commit, and that usage-limit or unavailable evidence should be reported as a
+  limitation rather than prompting an immediate request loop.
+- I added a mandatory `$issue-work` review-thread ledger rule: live
+  `chatgpt-codex-connector` review threads must be triaged from GitHub
+  `is_outdated` metadata, not discarded because they were authored on an older
+  reviewed commit.
 - I made the governance-boundary scanner parse structured TOML `command` values
   through the shared mutation-command classifier so protected project config
   semantic scans catch command-bearing mutation paths.

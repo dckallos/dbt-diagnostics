@@ -134,7 +134,11 @@ as high-priority review risks:
   anything consumable by `triage.py apply`;
 - reviewer independence erosion, including
   same-context self-review being described as independent review;
+- GitHub Codex review being treated as guaranteed per PR or commit instead of
+  best-effort, quota/availability-dependent advisory evidence;
 - stale Codex GitHub review evidence that does not match the current PR head;
+- live GitHub Codex review threads being disregarded because the reviewed commit
+  is older, rather than triaged from GitHub `is_outdated` thread metadata;
 - path containment, non-UTF-8 filenames, JSON non-finite numbers, timestamp
   freshness, secret redaction around truncation boundaries, command execution,
   and read-only artifact integrity.
