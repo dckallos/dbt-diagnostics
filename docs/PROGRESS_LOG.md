@@ -2846,15 +2846,46 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
   prior Codex usage-limit reply. These local amended-scope edits have not been
   pushed, so that live status is for the current remote PR head, not the local
   worktree changes.
+- This continuation fixed the two independent `codex_reviewer` blocking
+  findings in narrow #133 scope. `codex-quality --path` now keeps existing
+  protected freshness-only `.py`/`.sh` files out of the governance text scan
+  while still recording them in `freshness_bound_protected_paths`; direct
+  governance-boundary explicit path checks still fail closed for missing or
+  ineligible paths.
+- The regenerated `codex-quality` receipt passed with digest
+  `046ac8e2519bcfd1d92dbb27d034dc993fcc989b45817bc6fa8a34c37dbcf663`,
+  generated at `2026-06-30T20:37:12Z`, and freshness-covered every changed
+  protected path in the packet, including `.codex/scripts/codex_quality.py`.
+- The regenerated `codex-review-packet` used
+  `--path .codex/scripts/codex_github_review_status.py --snippet-bytes 50000`;
+  the status-script diff was included at 23696 serialized bytes with
+  `truncated: false`, and `quality_receipt.usable_as_evidence` is now true.
+- The configured read-only `codex_reviewer` custom agent could not read local
+  files directly without shell execution, so it was rerun with bounded
+  caller-supplied packet fields. It cleared both prior blockers and left only
+  warning-only caveats for `command-output-omitted`, `secret-redacted`, the
+  bounded nature of `codex-quality`, and untrusted packet snippets/commands.
+- `bash .codex/bin/action.sh codex-review-status 148` now reports
+  `current_with_findings` for head `4e996b20d3ee3c9eb7047072016460e19aa623af`,
+  with six visible current-head inline findings, eight total visible inline
+  findings, two Codex issue/PR comments, complete pagination, and the existing
+  usage-limit/unavailable warning after the manual review request.
+- Focused and adjacent checks passed:
+  `.codex/tests/test_codex_quality.py` at 63 tests,
+  `.codex/tests/test_codex_review_packet.py` at 35 tests,
+  `.codex/tests/test_agent_regression.py` at 21 tests,
+  `.codex/tests/test_codex_hooks.py` at 51 tests, and `py_compile` for the
+  changed quality script/test. `bash .codex/bin/action.sh check` passed with
+  `.codex/tests` at 281 passed and the normal offline gate at 828 passed,
+  2 skipped, 20 deselected, and 1 existing warning.
 
 **Current state**
 - PR #148 is open and non-draft against `donkey-kong-sandbox`; the branch
   contains only #133 workflow/config/policy/test/changelog work, the review
-  fixes, the read-only GitHub Codex review-status diagnostic, and this
-  progress-log entry.
-- The local worktree contains uncommitted amended-scope hardening changes for
-  `codex-review-status`; no GitHub write or PR-body update was performed under
-  the latest read-only prompt.
+  fixes, the read-only GitHub Codex review-status diagnostic, the narrow
+  `codex-quality` explicit freshness fix, and this progress-log entry.
+- The latest source changes are included in the final pushed commit for this
+  continuation. No GitHub comment, review, or PR-body update was performed.
 - Follow-up issues #149-#158 exist under #134 and are not implemented in
   PR #148.
 - The live issue does not authorize passing a bounded issue-work scope excerpt
@@ -2862,8 +2893,8 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
   the accepted live issue contract.
 
 **Next steps**
-- Review PR #148, wait for CI, and address any remaining review or check
-  feedback.
+- Wait for remote PR checks, then rerun `codex-review-status 148` against the
+  new remote head if another GitHub Codex review is requested.
 
 **Be careful**
 - Keep #133 scoped to `$issue-work` review wiring and the custom reviewer

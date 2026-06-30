@@ -598,6 +598,22 @@ def test_codex_quality_missing_explicit_path_records_failed_receipt(
     assert check["findings"][0]["code"] == "explicit-path-missing"
 
 
+def test_codex_quality_nonprotected_ineligible_explicit_path_fails_closed(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    binary = tmp_path / "fixture.bin"
+    binary.write_bytes(b"\x00\x01")
+
+    receipt = quality.run_quality(root=tmp_path, paths=[Path("fixture.bin")])
+
+    assert receipt["passed"] is False
+    check = _checks_by_name(receipt)["governance-boundary"]
+    assert check["status"] == "failed"
+    assert check["checked_files"] == []
+    assert check["findings"][0]["code"] == "explicit-path-ineligible"
+
+
 def test_codex_quality_records_artifact_contract_failures_in_receipt(
     tmp_path: Path,
 ) -> None:
@@ -985,6 +1001,10 @@ def test_codex_quality_does_not_semantically_cover_unscanned_hook_files(
         ],
     )
 
+    checks = _checks_by_name(receipt)
+    assert receipt["passed"] is True
+    assert checks["governance-boundary"]["status"] == "passed"
+    assert checks["governance-boundary"]["checked_files"] == []
     assert receipt["semantically_checked_protected_paths"] == [
         *SYNTHETIC_AGENT_PATHS,
         ".codex/artifact-contracts-v1.json",

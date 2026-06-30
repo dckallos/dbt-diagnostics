@@ -117,6 +117,35 @@ def freshness_bound_protected_paths(
     return codex_surface.protected_paths(existing_candidates, repo_policy=repo_policy)
 
 
+def _existing_protected_freshness_only_path(
+    path: Path, *, root: Path, repo_policy: repo_config.RepoPolicy
+) -> bool:
+    local_path = path if path.is_absolute() else root / path
+    if not local_path.exists() or local_path.is_dir():
+        return False
+    if check_governance_boundary._eligible(local_path, root):
+        return False
+    normalized = codex_surface.normalize_requested_path(path, root=root)
+    return codex_surface.is_protected_path(normalized, repo_policy=repo_policy)
+
+
+def governance_scan_paths(
+    *,
+    root: Path,
+    requested_paths: Sequence[Path] | None,
+    repo_policy: repo_config.RepoPolicy,
+) -> Sequence[Path] | None:
+    if requested_paths is None:
+        return None
+    return tuple(
+        path
+        for path in requested_paths
+        if not _existing_protected_freshness_only_path(
+            path, root=root, repo_policy=repo_policy
+        )
+    )
+
+
 def governance_check_entry(
     result: check_governance_boundary.CheckResult,
 ) -> dict[str, object]:
@@ -200,7 +229,13 @@ def run_quality(
         receipt_path = root / receipt_path
 
     governance_result = check_governance_boundary.run_check(
-        paths, root=root, repo_policy=active_policy
+        governance_scan_paths(
+            root=root,
+            requested_paths=paths,
+            repo_policy=active_policy,
+        ),
+        root=root,
+        repo_policy=active_policy,
     )
     artifact_result = check_artifact_contracts.run_check(root=root)
     agent_regression_result = check_agent_regression.run_check(root=root)
