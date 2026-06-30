@@ -2734,6 +2734,14 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
   `.codex/agents` semantically scanned.
 - Added static regression coverage for reviewer config, issue-work review
   gating, policy protection, and codex-quality semantic coverage.
+- Revised PR #148 after review: removed `docs/CODE_STANDARDS.md` from the
+  packet-only reviewer agent's allowed inputs, added `.codex/config.toml` and
+  `.codex/agents/**` to `$issue-work` protected-surface orientation examples,
+  and tightened the issue-work skill test so those examples must appear in the
+  orientation section.
+- Created the #149-#158 Codex robustness follow-up issues and updated epic
+  #134 with the new scope subsection and recommended order. No optional epic
+  comment was posted.
 
 **Validation**
 - Focused suites passed:
@@ -2756,17 +2764,40 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
 - `bash .codex/bin/action.sh codex-review-packet --issue 133 --parent-epic 134
   --output output/codex/review-packet.json` passed and wrote a valid local
   packet.
+- After the PR #148 revision, focused and adjacent suites passed:
+  `.codex/tests/test_codex_reviewer_agent.py`,
+  `.codex/tests/test_issue_work_skill.py`,
+  `scripts/triage/test_repo_config.py`,
+  `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_codex_review_skill.py`, and
+  `.codex/tests/test_environment.py`; `py_compile` passed for the two changed
+  test modules.
+- The full `bash .codex/bin/action.sh check` gate passed after the revision
+  with `.codex/tests` at 256 tests and the normal offline gate at 828 passed,
+  2 skipped, 20 deselected, and 1 existing warning.
+- `codex-quality --json` passed with a digest-valid receipt covering the
+  currently changed protected paths. A targeted attempt to include all prior
+  branch/base protected paths was not viable because
+  `scripts/triage/test_repo_config.py` is not an eligible explicit scan path;
+  this is left as follow-up freshness semantics work rather than changed in
+  PR #148.
+- The current runtime did not expose the repo-scoped `codex_reviewer` custom
+  agent with confirmable read-only sandbox behavior, so no independent reviewer
+  spawn was claimed.
 
 **Current state**
-- The local branch contains only #133 workflow/config/policy/test/changelog
-  work plus this progress-log entry.
+- PR #148 is open and non-draft against `donkey-kong-sandbox`; the branch
+  contains only #133 workflow/config/policy/test/changelog work, this narrow
+  review fix, and this progress-log entry.
+- Follow-up issues #149-#158 exist under #134 and are not implemented in
+  PR #148.
 - The live issue does not authorize passing a bounded issue-work scope excerpt
   to the reviewer, so this implementation keeps reviewer inputs aligned with
   the accepted live issue contract.
 
 **Next steps**
-- Review the implementation PR once created, wait for CI, and address any
-  review or check feedback.
+- Review PR #148, wait for CI, and address any remaining review or check
+  feedback.
 
 **Be careful**
 - Keep #133 scoped to `$issue-work` review wiring and the custom reviewer

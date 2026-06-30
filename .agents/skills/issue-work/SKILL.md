@@ -88,6 +88,8 @@ Input: exactly one GitHub issue number.
    - `.codex/agent-regression-cases-v1.json`
    - `.codex/agent-regression/**`
    - `.codex/artifact-contracts-v1.json`
+   - `.codex/config.toml`
+   - `.codex/agents/**`
    - `.codex/bin/**`
    - `.codex/scripts/**`
    - `.codex/hooks/**`

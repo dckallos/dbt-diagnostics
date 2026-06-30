@@ -58,21 +58,32 @@ def test_codex_reviewer_agent_limits_default_inputs_to_named_docs_and_evidence()
     for allowed in (
         "AGENTS.md",
         "docs/CODEX_REVIEW_PACKET_SCHEMA_V1.md",
-        "docs/CODE_STANDARDS.md",
         ".codex/README.md",
         "supplied codex-review-packet.json",
         "supplied independent validation evidence",
     ):
         assert allowed in instructions
 
-    for forbidden in (
+    assert "docs/CODE_STANDARDS.md" not in instructions
+
+    for forbidden_expansion in (
         "read the full repository",
         "read all docs",
+        "all docs",
+        "arbitrary source files",
+        "raw diff outside the packet",
+        "GitHub pages/comments/state",
         "inspect every file",
         "load the whole repository",
         "browse GitHub",
     ):
-        assert forbidden not in instructions.lower()
+        assert forbidden_expansion.lower() not in instructions.lower()
+
+    for bounded_forbidden in (
+        "Do not inspect the whole repository",
+        "Do not fetch live GitHub",
+    ):
+        assert bounded_forbidden in instructions
 
 
 def test_codex_reviewer_agent_forbids_mutation_and_expansion() -> None:

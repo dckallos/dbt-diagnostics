@@ -16,6 +16,12 @@ def _normalized_skill() -> str:
     return re.sub(r"\s+", " ", _skill_text())
 
 
+def _section_between(text: str, start: str, end: str) -> str:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index)
+    return text[start_index:end_index]
+
+
 def test_issue_work_skill_frontmatter_preserves_scope() -> None:
     skill = _skill_text()
 
@@ -70,6 +76,11 @@ def test_issue_work_skill_requires_risk_contract_refresh() -> None:
 
 def test_issue_work_skill_uses_policy_for_protected_surfaces() -> None:
     skill = _skill_text()
+    orientation_section = _section_between(
+        skill,
+        "Current examples include:",
+        "Policy is authoritative.",
+    )
 
     assert "scripts/triage/policy.toml" in skill
     assert "governance.paths.protected_surfaces" in skill
@@ -92,7 +103,7 @@ def test_issue_work_skill_uses_policy_for_protected_surfaces() -> None:
         "AGENTS.md",
         ".github/workflows/**",
     ):
-        assert example in skill
+        assert example in orientation_section
 
 
 def test_issue_work_skill_requires_codex_quality_for_protected_changes() -> None:

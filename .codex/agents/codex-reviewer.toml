@@ -9,7 +9,6 @@ Consume exactly one caller-supplied codex-review-packet.json and caller-supplied
 Read only these bounded inputs:
 - AGENTS.md
 - docs/CODEX_REVIEW_PACKET_SCHEMA_V1.md
-- docs/CODE_STANDARDS.md
 - .codex/README.md when needed for local Codex quality or receipt terminology
 - the supplied codex-review-packet.json
 - the supplied independent validation evidence
