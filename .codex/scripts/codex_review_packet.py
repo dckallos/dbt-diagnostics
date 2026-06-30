@@ -650,13 +650,12 @@ def _collect_branch_base_evidence(
     head_ref = str(source_refs["head_ref"])
     command = f"git diff --name-status {base_ref}...{head_ref}"
     if not source_refs.get("merge_base_sha"):
-        omissions.append(
-            _omission(
-                "branch-base-diff-unavailable",
-                "Branch/base diff was not run because refs or merge base were unavailable.",
-                evidence_source="branch_base_diff",
-            )
+        unavailable_omission = _omission(
+            "branch-base-diff-unavailable",
+            "Branch/base diff was not run because refs or merge base were unavailable.",
+            evidence_source="branch_base_diff",
         )
+        omissions.append(unavailable_omission)
         if not any(
             item.get("code") == "missing-branch-base-diff"
             for item in findings
@@ -847,7 +846,8 @@ def _diff_for_path(
         path_obj = recorder.root / safe_path
         if path_obj.is_file():
             try:
-                text = path_obj.read_text(encoding="utf-8", errors="replace")
+                with path_obj.open(encoding="utf-8", errors="replace") as handle:
+                    text = handle.read()
             except OSError:
                 return "", f"local file read failed: {path}"
             parts.append(text)
@@ -1705,9 +1705,11 @@ class CodexReviewPacketValidator:
             )
             for field_name in blocking_coverage_fields:
                 if receipt.get(field_name) != []:
-                    context.errors.append(
-                        f"quality_receipt.usable_as_evidence requires empty {field_name}"
+                    message = (
+                        "quality_receipt.usable_as_evidence requires empty "
+                        f"{field_name}"
                     )
+                    context.errors.append(message)
             statuses = receipt.get("check_statuses")
             if not isinstance(statuses, Mapping):
                 context.errors.append("quality_receipt.check_statuses must be an object")
@@ -1751,9 +1753,8 @@ class CodexReviewPacketValidator:
             if not isinstance(sources, list) or not all(
                 source in allowed_sources for source in sources
             ):
-                context.errors.append(
-                    f"changed_files change_sources invalid for {item.get('path')}"
-                )
+                path_label = item.get("path")
+                context.errors.append(f"changed_files change_sources invalid for {path_label}")
             path = item.get("path")
             if isinstance(path, str) and _safe_repo_relative_path(path, root=ROOT_DIR) is None:
                 context.errors.append(f"changed_files path is not repository-relative: {path}")
