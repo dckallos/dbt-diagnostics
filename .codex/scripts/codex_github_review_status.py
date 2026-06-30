@@ -23,6 +23,8 @@ from scripts.triage import repo_config
 SCHEMA_VERSION = 1
 CODEX_BOT_LOGIN = "chatgpt-codex-connector[bot]"
 CODEX_BOT_LOGINS = frozenset({CODEX_BOT_LOGIN, "chatgpt-codex-connector"})
+MAINTAINER_AUTHOR_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+IGNORED_REVIEW_STATES = frozenset({"PENDING", "DISMISSED"})
 FOCUSED_REVIEW_COMMENT = (
     "@codex review for regressions in protected Codex/governance surfaces. "
     "Focus on whether the codex_reviewer custom agent remains packet-only and "
@@ -57,7 +59,7 @@ CODEX_UNAVAILABLE_RE = re.compile(
 )
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SECRET_SHAPED_RE = re.compile(
-    r"(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|"
+    r"(gh[opsur]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|"
     r"Bearer\s+[A-Za-z0-9._-]+|token=[^ \t\r\n]+)",
     re.IGNORECASE,
 )
@@ -109,8 +111,24 @@ def _user_login(item: Mapping[str, Any]) -> str | None:
     return _string(user.get("login"))
 
 
+def _author_association(item: Mapping[str, Any]) -> str | None:
+    return _string(item.get("author_association")) or _string(
+        item.get("authorAssociation")
+    )
+
+
+def _is_maintainer_owned(item: Mapping[str, Any]) -> bool:
+    association = _author_association(item)
+    return association in MAINTAINER_AUTHOR_ASSOCIATIONS
+
+
 def _is_codex_bot(item: Mapping[str, Any]) -> bool:
     return _user_login(item) in CODEX_BOT_LOGINS
+
+
+def _is_submitted_codex_review(item: Mapping[str, Any]) -> bool:
+    state = _string(item.get("state"))
+    return _is_codex_bot(item) and state not in IGNORED_REVIEW_STATES
 
 
 def _normalize_sha(value: object) -> str | None:
@@ -166,10 +184,32 @@ def _comment_head_sha(comment: Mapping[str, Any]) -> str | None:
     )
 
 
+def _pr_head_committed_at(pr: Mapping[str, Any]) -> str | None:
+    commits = pr.get("commits")
+    if not isinstance(commits, list):
+        return None
+    current_head_sha = _normalize_sha(pr.get("headRefOid"))
+    fallback: Mapping[str, Any] | None = None
+    for item in commits:
+        if isinstance(item, Mapping):
+            fallback = item
+            if _sha_matches(_string(item.get("oid")), current_head_sha):
+                return _string(item.get("committedDate")) or _string(
+                    item.get("authoredDate")
+                )
+    if fallback is None:
+        return None
+    return _string(fallback.get("committedDate")) or _string(
+        fallback.get("authoredDate")
+    )
+
+
 def _untrusted_comment_lines(body: str) -> tuple[str, ...]:
     lines: list[str] = []
     in_fence = False
     for raw_line in body.splitlines():
+        if raw_line.startswith(("    ", "\t")):
+            continue
         stripped = raw_line.strip()
         if stripped.startswith("```") or stripped.startswith("~~~"):
             in_fence = not in_fence
@@ -180,13 +220,28 @@ def _untrusted_comment_lines(body: str) -> tuple[str, ...]:
     return tuple(lines)
 
 
-def _is_manual_review_request(comment: Mapping[str, Any]) -> bool:
+def _is_manual_review_request_text(comment: Mapping[str, Any]) -> bool:
     if _is_codex_bot(comment):
         return False
     body = _string(comment.get("body"))
     if body is None:
         return False
     return any(MANUAL_REVIEW_RE.search(line) for line in _untrusted_comment_lines(body))
+
+
+def _is_manual_review_request(comment: Mapping[str, Any]) -> bool:
+    return _is_manual_review_request_text(comment) and _is_maintainer_owned(comment)
+
+
+def _bot_reacted_to_comment(
+    comment: Mapping[str, Any],
+    reactions_by_comment_id: Mapping[int, Sequence[Mapping[str, Any]]],
+) -> bool:
+    comment_id = _int(comment.get("id"))
+    if comment_id is None:
+        return False
+    reactions = reactions_by_comment_id.get(comment_id, ())
+    return any(_is_codex_bot(reaction) for reaction in reactions)
 
 
 def _is_codex_unavailable_comment(comment: Mapping[str, Any]) -> bool:
@@ -257,6 +312,7 @@ def unavailable_status(
         "is_draft": None,
         "current_head_sha": None,
         "current_head_short_sha": None,
+        "current_head_committed_at": None,
         "latest_codex_review_id": None,
         "latest_codex_review_state": None,
         "latest_codex_review_sha": None,
@@ -288,7 +344,10 @@ def build_review_status(
 ) -> dict[str, object]:
     pr = payloads.pr
     current_head_sha = _string(pr.get("headRefOid"))
-    codex_reviews = [review for review in payloads.reviews if _is_codex_bot(review)]
+    current_head_committed_at = _pr_head_committed_at(pr)
+    codex_reviews = [
+        review for review in payloads.reviews if _is_submitted_codex_review(review)
+    ]
     latest_review = _latest_item(codex_reviews)
     latest_review_sha: str | None = None
     latest_review_commit_source: str | None = None
@@ -306,10 +365,16 @@ def build_review_status(
     codex_issue_comments = [
         comment for comment in payloads.issue_comments if _is_codex_bot(comment)
     ]
-    manual_requests = [
+    manual_request_candidates = [
         comment
         for comment in payloads.issue_comments
+        if _is_manual_review_request_text(comment)
+    ]
+    manual_requests = [
+        comment
+        for comment in manual_request_candidates
         if _is_manual_review_request(comment)
+        or _bot_reacted_to_comment(comment, payloads.reactions_by_comment_id)
     ]
     latest_manual_request = _latest_item(manual_requests)
     latest_manual_id = (
@@ -342,10 +407,18 @@ def build_review_status(
         latest_manual_request is not None
         and (latest_review is None or latest_manual_timestamp > latest_review_timestamp)
     )
+    manual_after_current_head = (
+        latest_manual_request is not None
+        and (
+            current_head_committed_at is None
+            or latest_manual_timestamp >= current_head_committed_at
+        )
+    )
     unavailable_after_manual = (
         latest_unavailable_comment is not None
         and latest_manual_request is not None
         and latest_unavailable_timestamp >= latest_manual_timestamp
+        and manual_after_current_head
         and (
             latest_review is None
             or latest_unavailable_timestamp >= latest_review_timestamp
@@ -358,9 +431,20 @@ def build_review_status(
             "or body text."
         )
     if latest_manual_request is not None:
+        if current_head_committed_at is None:
+            warnings.append(
+                "Manual @codex review request timing is observable from comment "
+                "timestamps only; this command could not verify head commit time."
+            )
+        elif latest_manual_timestamp < current_head_committed_at:
+            warnings.append(
+                "Latest actionable manual @codex review request predates the "
+                "current PR head commit timestamp."
+            )
+    if manual_request_candidates and not manual_requests:
         warnings.append(
-            "Manual @codex review request timing is observable from comment "
-            "timestamps only; this command does not verify head commit time."
+            "Ignored manual @codex review request text without maintainer "
+            "ownership or observable Codex bot acknowledgement."
         )
     if latest_unavailable_comment is not None:
         warnings.append(
@@ -374,7 +458,7 @@ def build_review_status(
         status = "current_without_inline_findings"
     elif unavailable_after_manual:
         status = "manual_review_request_failed"
-    elif manual_after_latest_review:
+    elif manual_after_latest_review and manual_after_current_head:
         status = "manual_review_requested_pending"
     elif current_head_sha is None:
         status = "unknown"
@@ -395,6 +479,7 @@ def build_review_status(
         "is_draft": _bool(pr.get("isDraft")),
         "current_head_sha": current_head_sha,
         "current_head_short_sha": _short_sha(current_head_sha),
+        "current_head_committed_at": current_head_committed_at,
         "latest_codex_review_id": (
             _int(latest_review.get("id")) if latest_review is not None else None
         ),
@@ -492,7 +577,10 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
             "--repo",
             repository,
             "--json",
-            "number,url,state,isDraft,headRefOid,headRefName,baseRefName,reviewDecision",
+            (
+                "number,url,state,isDraft,headRefOid,headRefName,baseRefName,"
+                "reviewDecision,commits"
+            ),
         ]
     )
     reviews = _load_paginated_list_with_gh(
@@ -514,7 +602,7 @@ def _load_payloads(*, repository: str, pr_number: int) -> GhPayloads:
     manual_ids = [
         _int(comment.get("id"))
         for comment in issue_comments
-        if isinstance(comment, Mapping) and _is_manual_review_request(comment)
+        if isinstance(comment, Mapping) and _is_manual_review_request_text(comment)
     ]
     for comment_id in sorted(item for item in manual_ids if item is not None):
         try:
@@ -570,6 +658,7 @@ def render_human(status: Mapping[str, object]) -> str:
         f"- PR: #{status['pr_number']} {status.get('pr_url') or ''}".rstrip(),
         f"- state: {status.get('pr_state')} draft={status.get('is_draft')}",
         f"- current head: {status.get('current_head_sha')}",
+        f"- current head committed_at: {status.get('current_head_committed_at')}",
         f"- latest Codex review SHA: {status.get('latest_codex_review_sha')}",
         f"- latest Codex review state: {status.get('latest_codex_review_state')}",
         (

@@ -231,6 +231,19 @@ Input: exactly one GitHub issue number.
     - parent epic when already known;
     - instruction to invoke/use `$codex-review` on that bounded packet.
 
+    Preferred reviewer input mode is `path_direct_bounded_packet`: the
+    `codex_reviewer` consumes the supplied packet path and allowed docs
+    directly. If the runtime exposes local file reads only through shell/exec,
+    acceptable fallback input mode is
+    `exact_read_only_file_inspection_for_bounded_inputs`: the reviewer may use
+    only exact read-only file-inspection commands for the bounded packet path,
+    allowed docs, and supplied validation evidence. The caveated fallback input
+    mode `bounded_caller_supplied_contents` is allowed only after both direct
+    path read and exact read-only bounded-input inspection fail; label it as a
+    fallback and do not claim it is the preferred strict path-readable review.
+    Same-context `$codex-review`, generic subagents, and GitHub `@codex review`
+    must not satisfy the #133 local `codex_reviewer` requirement.
+
     The parent authoring context must not preload the whole repository into the
     reviewer and must not weaken sandbox/approval settings before spawning the
     reviewer. If the reviewer cannot be spawned, if
@@ -267,6 +280,7 @@ Input: exactly one GitHub issue number.
     - reviewer_agent_config_path
     - reviewer_configured_sandbox_mode
     - reviewer_effective_sandbox_confirmation
+    - reviewer_input_mode
     - reviewer_context
     - independent_review
     - same_context_review_used

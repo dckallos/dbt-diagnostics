@@ -313,7 +313,25 @@ def test_issue_work_skill_requires_read_only_reviewer_subagent() -> None:
         "must not weaken sandbox/approval settings",
         ".codex/agents/codex-reviewer.toml",
         "effective read-only behavior",
+        "reviewer_input_mode",
         "blocked/not ready",
+    ):
+        assert expected in skill
+
+
+def test_issue_work_skill_distinguishes_codex_reviewer_input_modes() -> None:
+    skill = _normalized_skill()
+
+    for expected in (
+        "path_direct_bounded_packet",
+        "exact_read_only_file_inspection_for_bounded_inputs",
+        "bounded_caller_supplied_contents",
+        "Preferred reviewer input mode",
+        "acceptable fallback input mode",
+        "caveated fallback input mode",
+        "only after both direct path read and exact read-only bounded-input inspection fail",
+        "do not claim it is the preferred strict path-readable review",
+        "Same-context `$codex-review`, generic subagents, and GitHub `@codex review` must not satisfy",
     ):
         assert expected in skill
 
@@ -349,6 +367,7 @@ def test_issue_work_skill_reports_codex_review_handoff_fields_and_blockers() -> 
         "reviewer_agent_config_path",
         "reviewer_configured_sandbox_mode",
         "reviewer_effective_sandbox_confirmation",
+        "reviewer_input_mode",
         "reviewer_context",
         "independent_review",
         "same_context_review_used",

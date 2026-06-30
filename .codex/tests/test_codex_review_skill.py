@@ -39,6 +39,10 @@ def test_codex_review_skill_loads_only_bounded_inputs() -> None:
     assert "AGENTS.md" in text
     assert ".codex/README.md" in text
     assert "validator output" in compact
+    assert "Reading exactly the caller-supplied bounded packet path" in text
+    assert "exact read-only file inspection required to consume those bounded inputs" in compact
+    assert "reading, printing, parsing, or computing hashes of the exact allowed files" in compact
+    assert "stop and produce a blocker handoff" in compact
 
     for forbidden in (
         "full repository tree",
@@ -51,6 +55,10 @@ def test_codex_review_skill_loads_only_bounded_inputs() -> None:
         "retrieval indexes",
         "all open issues",
         "command output not bounded into the packet",
+        "broad repository reads",
+        "file discovery",
+        "raw full diffs",
+        "arbitrary files",
     ):
         assert forbidden in text
 
@@ -168,7 +176,9 @@ def test_codex_review_skill_requires_independent_validator_for_ready_review() ->
         "local `codex-review-packet` validation result",
         "Only independent validator output/status",
         "can establish that the packet is validated",
-        "Do not run commands as part of this skill",
+        "Do not run validation or other commands as part of this skill",
+        "Exact read-only file-inspection commands",
+        "do not establish validation",
     ):
         assert phrase in text or phrase in compact
 

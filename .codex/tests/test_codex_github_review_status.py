@@ -38,6 +38,7 @@ def _payloads(
     module: object,
     *,
     head_sha: str = "abcdef1234567890abcdef1234567890abcdef12",
+    head_committed_at: str = "2026-06-30T00:00:00Z",
     reviews: list[dict[str, object]] | None = None,
     inline_comments: list[dict[str, object]] | None = None,
     issue_comments: list[dict[str, object]] | None = None,
@@ -50,6 +51,13 @@ def _payloads(
             "state": "OPEN",
             "isDraft": False,
             "headRefOid": head_sha,
+            "commits": [
+                {
+                    "oid": head_sha,
+                    "committedDate": head_committed_at,
+                    "authoredDate": head_committed_at,
+                }
+            ],
         },
         reviews=reviews or [],
         inline_comments=inline_comments or [],
@@ -72,11 +80,12 @@ def _codex_review(
     commit_id: str | None,
     submitted_at: str,
     body: str = "",
+    state: str = "COMMENTED",
 ) -> dict[str, object]:
     value: dict[str, object] = {
         "id": review_id,
         "user": _user("chatgpt-codex-connector[bot]"),
-        "state": "COMMENTED",
+        "state": state,
         "submitted_at": submitted_at,
         "body": body,
     }
@@ -180,6 +189,7 @@ def test_manual_codex_review_request_without_bot_review_is_pending() -> None:
             {
                 "id": 20,
                 "user": _user("maintainer"),
+                "author_association": "OWNER",
                 "created_at": "2026-06-30T00:01:00Z",
                 "body": "@codex review for regressions",
             }
@@ -199,7 +209,7 @@ def test_manual_codex_review_request_without_bot_review_is_pending() -> None:
     assert status["manual_review_request_comment_id"] == 20
     assert status["bot_reacted_to_manual_request"] is True
     assert status["focused_review_comment"] is None
-    assert status["warnings"]
+    assert status["current_head_committed_at"] == "2026-06-30T00:00:00Z"
 
 
 def test_manual_codex_review_false_positive_text_is_ignored() -> None:
@@ -210,20 +220,30 @@ def test_manual_codex_review_false_positive_text_is_ignored() -> None:
             {
                 "id": 20,
                 "user": _user("maintainer"),
+                "author_association": "OWNER",
                 "created_at": "2026-06-30T00:01:00Z",
                 "body": "do not post @codex review",
             },
             {
                 "id": 21,
                 "user": _user("maintainer"),
+                "author_association": "OWNER",
                 "created_at": "2026-06-30T00:02:00Z",
                 "body": "```text\n@codex review\n```",
             },
             {
                 "id": 22,
                 "user": _user("maintainer"),
+                "author_association": "OWNER",
                 "created_at": "2026-06-30T00:03:00Z",
                 "body": "> @codex review",
+            },
+            {
+                "id": 24,
+                "user": _user("maintainer"),
+                "author_association": "OWNER",
+                "created_at": "2026-06-30T00:03:30Z",
+                "body": "    @codex review",
             },
             {
                 "id": 23,
@@ -238,6 +258,29 @@ def test_manual_codex_review_false_positive_text_is_ignored() -> None:
     assert status["manual_review_request_comment_id"] is None
 
 
+@pytest.mark.parametrize("state", ["PENDING", "DISMISSED"])
+def test_pending_or_dismissed_codex_review_is_not_current(state: str) -> None:
+    module = _module()
+    head = "abcdef1234567890abcdef1234567890abcdef12"
+    status = _status(
+        module,
+        head_sha=head,
+        reviews=[
+            _codex_review(
+                review_id=1,
+                commit_id=head,
+                submitted_at="2026-06-30T00:00:00Z",
+                state=state,
+            )
+        ],
+    )
+
+    assert status["status"] == "no_codex_review"
+    assert status["latest_codex_review_state"] is None
+    assert status["codex_review_current"] is False
+    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+
+
 def test_usage_limit_response_after_manual_request_fails_closed() -> None:
     module = _module()
     status = _status(
@@ -246,6 +289,7 @@ def test_usage_limit_response_after_manual_request_fails_closed() -> None:
             {
                 "id": 20,
                 "user": _user("maintainer"),
+                "author_association": "OWNER",
                 "created_at": "2026-06-30T00:01:00Z",
                 "body": "@codex review",
             },
@@ -263,6 +307,63 @@ def test_usage_limit_response_after_manual_request_fails_closed() -> None:
     assert status["codex_review_unavailable_comment_id"] == 21
     assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
     assert any("usage limits" in warning for warning in status["warnings"])
+
+
+def test_manual_review_request_from_outside_commenter_does_not_suppress_retry() -> None:
+    module = _module()
+    status = _status(
+        module,
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("outside-contributor"),
+                "author_association": "CONTRIBUTOR",
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": "@codex review",
+            }
+        ],
+    )
+
+    assert status["status"] == "no_codex_review"
+    assert status["manual_review_request_comment_id"] is None
+    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert any("without maintainer ownership" in warning for warning in status["warnings"])
+
+
+def test_manual_review_request_before_current_head_is_stale_not_pending() -> None:
+    module = _module()
+    status = _status(
+        module,
+        head_committed_at="2026-06-30T00:05:00Z",
+        reviews=[
+            _codex_review(
+                review_id=1,
+                commit_id="1111111111111111111111111111111111111111",
+                submitted_at="2026-06-30T00:00:00Z",
+            )
+        ],
+        issue_comments=[
+            {
+                "id": 20,
+                "user": _user("maintainer"),
+                "author_association": "OWNER",
+                "created_at": "2026-06-30T00:01:00Z",
+                "body": "@codex review",
+            },
+            {
+                "id": 21,
+                "user": _user("chatgpt-codex-connector[bot]"),
+                "created_at": "2026-06-30T00:02:00Z",
+                "body": "You have reached your Codex usage limits for code reviews.",
+            },
+        ],
+    )
+
+    assert status["status"] == "stale_review"
+    assert status["manual_review_request_comment_id"] == 20
+    assert status["codex_review_unavailable_comment_id"] == 21
+    assert status["focused_review_comment"] == EXPECTED_FOCUSED_REVIEW_COMMENT
+    assert any("predates the current PR head" in warning for warning in status["warnings"])
 
 
 def test_review_body_commit_fallback_is_used_when_commit_id_is_absent() -> None:
@@ -388,16 +489,17 @@ def test_gh_unavailable_status_is_graceful() -> None:
     assert "gh not found" in status["warnings"][0]
 
 
-def test_unavailable_status_sanitizes_secret_shaped_errors() -> None:
+@pytest.mark.parametrize("prefix", ["ghp", "ghs", "gho", "ghu", "ghr"])
+def test_unavailable_status_sanitizes_secret_shaped_errors(prefix: str) -> None:
     module = _module()
     status = module.unavailable_status(
         repository="dckallos/dbt-diagnostics",
         pr_number=148,
-        error="fatal: token=ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        error=f"fatal: token={prefix}_abcdefghijklmnopqrstuvwxyz1234567890",
     )
     rendered = module.canonical_json(status)
 
-    assert "ghp_" not in rendered
+    assert f"{prefix}_" not in rendered
     assert "token=" not in rendered
     assert "[REDACTED]" in rendered
 
@@ -434,6 +536,8 @@ def test_load_payloads_uses_paginated_review_and_comment_reads(monkeypatch: pyte
 
     module._load_payloads(repository="dckallos/dbt-diagnostics", pr_number=148)
 
+    pr_view_call = next(call for call in calls if call[:2] == ["pr", "view"])
+    assert any("commits" in token for token in pr_view_call)
     assert [
         "api",
         "repos/dckallos/dbt-diagnostics/pulls/148/reviews",
@@ -512,9 +616,10 @@ def test_codex_readme_documents_review_status_boundaries() -> None:
     for expected in (
         "codex-review-status",
         "read-only",
-        "does not post `@codex review`",
+        "current-head commit time",
+        "does not post\n`@codex review`",
         EXPECTED_FOCUSED_REVIEW_COMMENT,
-        "manual `@codex review` request is\npending",
+        "maintainer-owned or\nbot-acknowledged",
         "usage limits or unavailable review",
         "`@codex review` is GitHub PR code review",
         "$codex-security:security-diff-scan",

@@ -202,22 +202,24 @@ bash .codex/bin/action.sh codex-review-status 148 --json
 bash .codex/bin/action.sh codex-review-status 148 --repo dckallos/dbt-diagnostics
 ```
 
-This diagnostic is read-only. It reads observable GitHub PR metadata, reviews,
-inline review comments, issue/PR conversation comments, and bot reactions when
-available through `gh`. It does not post `@codex review`, add comments, submit
-reviews, edit issues or PRs, request reviewers, mark draft/ready, dispatch
-workflows, merge PRs, or mutate labels, milestones, Projects, branches, or
-files.
+This diagnostic is read-only. It reads observable GitHub PR metadata including
+current-head commit time, reviews, inline review comments, issue/PR conversation
+comments, and bot reactions when available through `gh`. It does not post
+`@codex review`, add comments, submit reviews, edit issues or PRs, request
+reviewers, mark draft/ready, dispatch workflows, merge PRs, or mutate labels,
+milestones, Projects, branches, or files.
 
 Use it after a PR is ready for review and after each fix commit that changes
 the PR head. A current status means the latest Codex GitHub review SHA matches
 the current head. A stale, missing, unavailable, or pending status means the
-handoff should report that limitation. If a manual `@codex review` request is
-pending, or if `gh` evidence is unavailable or unknown, the command reports the
-state without printing a new request to post. When the current head lacks a
-current review, or a bot reply shows that a manual request failed because of
-usage limits or unavailable review, the command prints this exact focused text
-for a maintainer to post manually:
+handoff should report that limitation. A manual `@codex review` request only
+suppresses the focused text when the request is maintainer-owned or
+bot-acknowledged and is not older than the current head commit time. If a manual
+request is pending, or if `gh` evidence is unavailable or unknown, the command
+reports the state without printing a new request to post. When the current head
+lacks a current review, or a bot reply shows that a manual request for the
+current head failed because of usage limits or unavailable review, the command
+prints this exact focused text for a maintainer to post manually:
 
 ```text
 @codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.

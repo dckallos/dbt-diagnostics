@@ -9,7 +9,8 @@ import json
 from pathlib import Path
 import re
 import sys
-from typing import Iterable, Iterator, Sequence
+import tomllib
+from typing import Iterable, Iterator, Mapping, Sequence
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -39,6 +40,7 @@ TEXT_FILE_NAMES = {
     "Rakefile",
     "SECURITY",
 }
+TOML_COMMAND_KEYS = frozenset({"command", "commands"})
 IGNORED_PARTS = {
     ".git",
     ".hypothesis",
@@ -218,6 +220,11 @@ def _eligible(path: Path, root: Path) -> bool:
         or path.name in TEXT_FILE_NAMES
         or (not path.suffix and path.name[:1].isupper())
     )
+
+
+def is_eligible_scan_path(path: Path, root: Path) -> bool:
+    """Return whether the governance scanner can inspect this path."""
+    return _eligible(path, root)
 
 
 def _path_violation(
@@ -453,8 +460,77 @@ def _safe_command_context(
     )
 
 
+def _normalized_toml_key(value: str) -> str:
+    return value.strip().casefold().replace("-", "_")
+
+
+def _toml_command_values(
+    value: object, *, key_path: tuple[str, ...] = ()
+) -> Iterator[tuple[tuple[str, ...], str]]:
+    if isinstance(value, Mapping):
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            path = (*key_path, key)
+            normalized = _normalized_toml_key(key)
+            if normalized in TOML_COMMAND_KEYS:
+                if isinstance(item, str):
+                    yield path, item
+                elif isinstance(item, list):
+                    for child in item:
+                        if isinstance(child, str):
+                            yield path, child
+                elif isinstance(item, Mapping):
+                    yield from _toml_command_values(item, key_path=path)
+                continue
+            yield from _toml_command_values(item, key_path=path)
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from _toml_command_values(item, key_path=key_path)
+
+
+def _toml_key_line(text: str, key_path: tuple[str, ...]) -> int:
+    if not key_path:
+        return 1
+    leaf_key = re.escape(key_path[-1])
+    pattern = re.compile(rf"^\s*{leaf_key}\s*=", re.IGNORECASE)
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if pattern.search(line):
+            return line_number
+    return 1
+
+
+def _scan_toml_commands(text: str, *, path: str) -> list[Violation]:
+    if not path.casefold().endswith(".toml"):
+        return []
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return []
+    violations: list[Violation] = []
+    for key_path, command in _toml_command_values(parsed):
+        reason = repo_config.governance_mutation_command_reason(command)
+        if reason is None:
+            continue
+        key = ".".join(key_path)
+        violations.append(
+            Violation(
+                path=path,
+                line=_toml_key_line(text, key_path),
+                code="forbidden-mutation-command",
+                message=(
+                    "possible executable mutation command in structured TOML "
+                    "governance surface"
+                ),
+                excerpt=f"{key} = {command}"[:240],
+            )
+        )
+    return violations
+
+
 def scan_text(text: str, *, path: str) -> list[Violation]:
     violations: list[Violation] = []
+    violations.extend(_scan_toml_commands(text, path=path))
     seen: set[tuple[int, str, int]] = set()
     previous_normalized = ""
     previous_paragraph = ""

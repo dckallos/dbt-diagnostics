@@ -487,6 +487,42 @@ def test_governance_boundary_checker_uses_repo_config_for_operation_ids() -> Non
     assert set(checker.FORBIDDEN_OPERATION_IDS) == repo_config.FORBIDDEN_OPERATION_IDS
 
 
+def test_governance_boundary_exposes_public_scan_eligibility_helper(
+    tmp_path: Path,
+) -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text_file = tmp_path / "config.toml"
+    text_file.write_text("[tool]\n", encoding="ascii")
+    python_file = tmp_path / "tool.py"
+    python_file.write_text("# not a semantic text surface\n", encoding="ascii")
+
+    assert checker.is_eligible_scan_path(text_file, tmp_path) is True
+    assert checker.is_eligible_scan_path(python_file, tmp_path) is False
+
+
+def test_governance_boundary_checker_rejects_toml_command_values() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text = (
+        "[hooks]\n"
+        "command = \"gh issue edit 133 --body unsafe\"\n"
+        "safe_command = \"rg -n 'gh issue edit' docs\"\n"
+    )
+
+    violations = checker.scan_text(text, path=".codex/config.toml")
+
+    assert [(violation.line, violation.code) for violation in violations] == [
+        (2, "forbidden-mutation-command")
+    ]
+    assert violations[0].excerpt.startswith("hooks.command = gh issue edit")
+
+
+def test_governance_boundary_checker_allows_safe_toml_command_values() -> None:
+    checker = _load_codex_script("check_governance_boundary")
+    text = "[hooks]\ncommand = \"rg -n 'gh issue edit' docs\"\n"
+
+    assert checker.scan_text(text, path=".codex/config.toml") == []
+
+
 def test_default_governance_boundary_scan_includes_issue_contract() -> None:
     checker = _load_codex_script("check_governance_boundary")
 
@@ -612,6 +648,28 @@ def test_codex_quality_nonprotected_ineligible_explicit_path_fails_closed(
     assert check["status"] == "failed"
     assert check["checked_files"] == []
     assert check["findings"][0]["code"] == "explicit-path-ineligible"
+
+
+def test_codex_quality_protected_symlink_outside_root_fails_closed(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write_pending_artifact_contract_manifest(root)
+    outside = tmp_path / "outside.py"
+    outside.write_text("# outside\n", encoding="ascii")
+    protected = root / ".codex" / "hooks" / "stop.py"
+    protected.parent.mkdir(parents=True)
+    protected.symlink_to(outside)
+
+    receipt = quality.run_quality(root=root, paths=[Path(".codex/hooks/stop.py")])
+
+    assert receipt["passed"] is False
+    check = _checks_by_name(receipt)["governance-boundary"]
+    assert check["status"] == "failed"
+    assert check["checked_files"] == []
+    assert check["findings"][0]["code"] == "explicit-path-outside-root"
 
 
 def test_codex_quality_records_artifact_contract_failures_in_receipt(

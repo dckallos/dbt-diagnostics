@@ -15,6 +15,16 @@
   missing, or failed because of bot usage-limit/unavailable evidence.
 - I added protected/governance Codex GitHub review guidance and made
   `.codex/config.toml` part of the policy-driven semantic scan roots.
+- I kept the `codex_reviewer` agent read-only while allowing exact read-only
+  inspection of the bounded packet inputs when the runtime requires shell/exec
+  for local file reads.
+- I registered `codex-review-status` as a pending schema-versioned artifact,
+  made manual `@codex review` status account for current-head commit time and
+  maintainer-owned or bot-acknowledged request evidence, and broadened
+  GitHub-token redaction for sanitized `gh` errors.
+- I made the governance-boundary scanner parse structured TOML `command` values
+  through the shared mutation-command classifier so protected project config
+  semantic scans catch command-bearing mutation paths.
 - I added protected project-agent config for the reviewer path and kept the
   workflow local/offline with no GitHub mutation, issue or comment creation,
   automated `@codex review` posting, `@codex fix`, Codex Security CI

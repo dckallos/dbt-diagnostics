@@ -2732,16 +2732,6 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
   `codex_reviewer` review before ready status.
 - Protected `.codex/config.toml` and `.codex/agents/**` in policy and made
   `.codex/agents` semantically scanned.
-- Added static regression coverage for reviewer config, issue-work review
-  gating, policy protection, and codex-quality semantic coverage.
-- Revised PR #148 after review: removed `docs/CODE_STANDARDS.md` from the
-  packet-only reviewer agent's allowed inputs, added `.codex/config.toml` and
-  `.codex/agents/**` to `$issue-work` protected-surface orientation examples,
-  and tightened the issue-work skill test so those examples must appear in the
-  orientation section.
-- Created the #149-#158 Codex robustness follow-up issues and updated epic
-  #134 with the new scope subsection and recommended order. No optional epic
-  comment was posted.
 - Extended PR #148 with a read-only `codex-review-status` local command that
   reports whether the GitHub Codex review matches the current PR head, counts
   Codex review/comment evidence, and prints the exact focused `@codex review`
@@ -2750,151 +2740,107 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
   command in `.codex/README.md`, and updated `$issue-work` so GitHub Codex
   review remains separate from local packet validation and the required
   `codex_reviewer` subagent.
-- Added `.codex/config.toml` to the policy semantic scan roots, keeping it
-  both protected and semantically checked.
-- Revised the read-only `codex-review-status` command after the amended #133
-  scope: it now validates CLI inputs, reads paginated GitHub review/comment
-  evidence, avoids treating review IDs as commit SHAs, ignores false-positive
-  manual `@codex review` prose, reports usage-limit/unavailable bot replies,
-  sanitizes `gh` errors, and prints the maintainer-postable focused review text
-  only when the status warrants it.
+- Final local revision keeps `codex_reviewer` configured as
+  `sandbox_mode = "read-only"` but allows exact read-only file inspection only
+  for bounded packet inputs when the runtime exposes reads through shell/exec.
+  It still forbids writes, `git`, `gh`, network, builds, tests, repo
+  discovery, commands from packet content, full diffs outside the packet, and
+  all GitHub mutation.
+- Updated `$codex-review` and `$issue-work` to distinguish
+  `path_direct_bounded_packet`,
+  `exact_read_only_file_inspection_for_bounded_inputs`, and the caveated
+  `bounded_caller_supplied_contents` fallback.
+- Kept the narrow `codex-quality --path` freshness-only fix for existing
+  protected paths that are not governance text-scan eligible. It does not
+  implement #149 freshness semantics; semantic coverage is not falsely claimed.
+- Hardened `codex-quality` freshness-only path handling so protected symlinks
+  resolving outside the repository do not pass.
+- Added a public governance-boundary eligibility helper and a structured TOML
+  command-value scan in the existing governance-boundary owner, so
+  command-bearing `.codex/config.toml` values are checked without adding a
+  parallel scanner.
+- Revised `codex-review-status` to handle current-head commit timing,
+  maintainer-owned or bot-acknowledged manual review requests, pending or
+  dismissed Codex reviews, indented code-block false positives, and broader
+  GitHub token redaction prefixes.
+- Registered `codex-review-status` as a pending schema-versioned artifact in
+  `.codex/artifact-contracts-v1.json` instead of leaving its `schema_version`
+  semantics ambiguous.
+- Added static regression coverage for reviewer config, `$codex-review`,
+  `$issue-work`, `codex-review-status`, `codex-quality`, artifact contracts,
+  governance-boundary scanning, and protected symlink handling.
 
 **Validation**
 - Focused suites passed:
-  `.codex/tests/test_codex_reviewer_agent.py`,
-  `.codex/tests/test_issue_work_skill.py`,
-  `scripts/triage/test_repo_config.py`, and
-  `.codex/tests/test_codex_quality.py`.
-- Adjacent suites passed:
-  `.codex/tests/test_codex_review_skill.py`,
-  `.codex/tests/test_environment.py`,
-  `.codex/tests/test_agent_regression.py`, and
-  `.codex/tests/test_artifact_contracts.py`.
-- `bash .codex/bin/action.sh codex-quality --json` passed with a digest-valid
-  receipt; the protected changed paths were freshness-bound, and
-  `.agents/skills/issue-work/SKILL.md` plus
-  `.codex/agents/codex-reviewer.toml` were semantically checked.
-- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 256 tests
-  and the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
-  existing warning.
-- `bash .codex/bin/action.sh codex-review-packet --issue 133 --parent-epic 134
-  --output output/codex/review-packet.json` passed and wrote a valid local
-  packet.
-- After the PR #148 revision, focused and adjacent suites passed:
-  `.codex/tests/test_codex_reviewer_agent.py`,
-  `.codex/tests/test_issue_work_skill.py`,
-  `scripts/triage/test_repo_config.py`,
-  `.codex/tests/test_codex_quality.py`,
-  `.codex/tests/test_codex_review_skill.py`, and
-  `.codex/tests/test_environment.py`; `py_compile` passed for the two changed
-  test modules.
-- The full `bash .codex/bin/action.sh check` gate passed after the revision
-  with `.codex/tests` at 256 tests and the normal offline gate at 828 passed,
-  2 skipped, 20 deselected, and 1 existing warning.
-- `codex-quality --json` passed with a digest-valid receipt covering the
-  currently changed protected paths. A targeted attempt to include all prior
-  branch/base protected paths was not viable because
-  `scripts/triage/test_repo_config.py` is not an eligible explicit scan path;
-  this is left as follow-up freshness semantics work rather than changed in
-  PR #148.
-- The current runtime did not expose the repo-scoped `codex_reviewer` custom
-  agent with confirmable read-only sandbox behavior, so no independent reviewer
-  spawn was claimed.
-- The continuation validation passed:
-  `.codex/tests/test_codex_github_review_status.py`,
-  `.codex/tests/test_codex_reviewer_agent.py`,
-  `.codex/tests/test_issue_work_skill.py`,
-  `scripts/triage/test_repo_config.py`, `.codex/tests/test_codex_quality.py`,
-  `.codex/tests/test_environment.py`, and `py_compile` for the new status
-  module/test.
-- `bash .codex/bin/action.sh codex-quality --json` passed with a
-  digest-valid receipt generated at `2026-06-30T18:24:40Z`; the default
-  semantic scan includes `.codex/config.toml` and `.codex/agents`.
-- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 272 tests
-  and the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
-  existing warning.
-- Live read-only `codex-review-status 148` ran successfully and reported
-  `stale_review`: latest Codex GitHub review SHA `088fc8abd4a6...` versus PR
-  head `29456ea1bb55...` before this continuation push.
-- The amended-scope revision passed
-  `.codex/tests/test_codex_github_review_status.py` at 20 tests,
-  `.codex/tests/test_codex_reviewer_agent.py` at 6 tests,
-  `.codex/tests/test_issue_work_skill.py` at 19 tests,
-  `scripts/triage/test_repo_config.py` at 89 tests,
-  `.codex/tests/test_codex_quality.py` at 62 tests,
-  `.codex/tests/test_codex_review_skill.py .codex/tests/test_environment.py`
-  at 25 tests, and the requested `py_compile` command.
-- `bash .codex/bin/action.sh codex-quality --json` passed with a digest-valid
-  receipt generated at `2026-06-30T19:03:32Z`; the current uncommitted
-  protected edits `.agents/skills/issue-work/SKILL.md` and
-  `.codex/scripts/codex_github_review_status.py` were freshness-bound, and the
-  default semantic scan included `.codex/config.toml` and
-  `.codex/agents/codex-reviewer.toml`.
-- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 280 tests
-  and the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
-  existing warning.
-- `bash .codex/bin/action.sh codex-review-packet --issue 133 --parent-epic 134
-  --output output/codex/review-packet.json` passed and wrote packet digest
-  `c4ef504fff0712935047d6682547fe76a237f7fb911946a85a1fb79a9103bcae`.
-  The packet is valid but reports the quality receipt as not usable evidence
-  because branch/base protected paths from earlier PR commits are not
-  freshness-covered and the current same-second freshness caveat remains in
-  scope for follow-up #149, not this PR.
-- Live read-only `codex-review-status 148` now reports `current_with_findings`
-  for the remote PR head `ce3c53754f6...`, with paginated coverage, two
-  visible inline findings on the current remote head, and a warning for the
-  prior Codex usage-limit reply. These local amended-scope edits have not been
-  pushed, so that live status is for the current remote PR head, not the local
-  worktree changes.
-- This continuation fixed the two independent `codex_reviewer` blocking
-  findings in narrow #133 scope. `codex-quality --path` now keeps existing
-  protected freshness-only `.py`/`.sh` files out of the governance text scan
-  while still recording them in `freshness_bound_protected_paths`; direct
-  governance-boundary explicit path checks still fail closed for missing or
-  ineligible paths.
-- The regenerated `codex-quality` receipt passed with digest
-  `046ac8e2519bcfd1d92dbb27d034dc993fcc989b45817bc6fa8a34c37dbcf663`,
-  generated at `2026-06-30T20:37:12Z`, and freshness-covered every changed
-  protected path in the packet, including `.codex/scripts/codex_quality.py`.
-- The regenerated `codex-review-packet` used
-  `--path .codex/scripts/codex_github_review_status.py --snippet-bytes 50000`;
-  the status-script diff was included at 23696 serialized bytes with
-  `truncated: false`, and `quality_receipt.usable_as_evidence` is now true.
-- The configured read-only `codex_reviewer` custom agent could not read local
-  files directly without shell execution, so it was rerun with bounded
-  caller-supplied packet fields. It cleared both prior blockers and left only
-  warning-only caveats for `command-output-omitted`, `secret-redacted`, the
-  bounded nature of `codex-quality`, and untrusted packet snippets/commands.
-- `bash .codex/bin/action.sh codex-review-status 148` now reports
-  `current_with_findings` for head `4e996b20d3ee3c9eb7047072016460e19aa623af`,
-  with six visible current-head inline findings, eight total visible inline
-  findings, two Codex issue/PR comments, complete pagination, and the existing
-  usage-limit/unavailable warning after the manual review request.
-- Focused and adjacent checks passed:
-  `.codex/tests/test_codex_quality.py` at 63 tests,
+  `.codex/tests/test_codex_reviewer_agent.py` at 7 tests,
+  `.codex/tests/test_codex_review_skill.py` at 18 tests,
+  `.codex/tests/test_issue_work_skill.py` at 20 tests,
+  `.codex/tests/test_codex_github_review_status.py` at 28 tests,
+  `.codex/tests/test_codex_quality.py` at 67 tests,
   `.codex/tests/test_codex_review_packet.py` at 35 tests,
   `.codex/tests/test_agent_regression.py` at 21 tests,
-  `.codex/tests/test_codex_hooks.py` at 51 tests, and `py_compile` for the
-  changed quality script/test. `bash .codex/bin/action.sh check` passed with
-  `.codex/tests` at 281 passed and the normal offline gate at 828 passed,
-  2 skipped, 20 deselected, and 1 existing warning.
+  `.codex/tests/test_codex_hooks.py` at 51 tests,
+  `scripts/triage/test_repo_config.py` at 89 tests, and
+  `.codex/tests/test_artifact_contracts.py` at 12 tests.
+- `py_compile` passed for the changed quality/status scripts and tests, plus
+  the governance-boundary and artifact-contract helpers/tests.
+- `git diff --check` passed before this progress-log update.
+- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 295 tests
+  and the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning. The compatibility schema gate skipped as in current CI.
+- Default `codex-quality --json` passed with digest
+  `9044a5eb7bee0d5b17c312fdd0549993659969039c0400ade3eadaf1113123bd`,
+  generated at `2026-06-30T21:22:17Z`.
+- Scoped `codex-quality --path ... --json` passed with digest
+  `2c8793b2b9bec6bc97fea16d3498823b1a4b5bcc97cdb86b367ef2b8a90ab49a`,
+  generated at `2026-06-30T21:22:58Z`, no findings, and every changed
+  protected branch/base or worktree path freshness-bound. Semantic coverage was
+  claimed only for semantically eligible protected paths.
+- `codex-review-packet --issue 133 --parent-epic 134 --output
+  output/codex/review-packet.json --path
+  .codex/scripts/codex_github_review_status.py --snippet-bytes 50000` passed,
+  wrote packet digest
+  `05b61184a4d55aaea39bcf91aa3f6d0e1458e864607a521a576f19db5829d3b6`,
+  and included `.codex/scripts/codex_github_review_status.py` at 33738
+  serialized bytes with `truncated: false`.
+- The packet quality receipt is usable evidence: `usable_as_evidence: true`,
+  digest-valid, passed, no missing freshness paths, no missing semantic paths,
+  and no stale protected paths.
+- `codex-review-status 148 --json` and human mode both report
+  `current_with_findings` for remote PR head
+  `369ffeebffa290b417323f1517e018c4a68251da`. The latest GitHub Codex review
+  is current for that remote head, has nine visible current-head findings, and
+  warns that an older manual request predates the current head plus a usage
+  limit or unavailable bot reply exists.
+- The local `codex_reviewer` custom agent reviewed the regenerated bounded
+  packet in `exact_read_only_file_inspection_for_bounded_inputs` mode. It
+  reported 3 warning findings and 0 blocking findings. Caveats were
+  worktree-only protected changes versus remote PR-head evidence, the
+  intentionally redacted secret-shaped span in
+  `.codex/scripts/codex_github_review_status.py`, and pending
+  `codex-review-status` artifact-contract status.
 
 **Current state**
 - PR #148 is open and non-draft against `donkey-kong-sandbox`; the branch
-  contains only #133 workflow/config/policy/test/changelog work, the review
-  fixes, the read-only GitHub Codex review-status diagnostic, the narrow
-  `codex-quality` explicit freshness fix, and this progress-log entry.
-- The latest source changes are included in the final pushed commit for this
-  continuation. No GitHub comment, review, or PR-body update was performed.
+  remote head is `369ffeebffa290b417323f1517e018c4a68251da`, and live CI for
+  that remote head was green when checked.
+- The final local revision is not pushed at session end. It contains only #133
+  workflow/config/policy/test/changelog/progress-log work, review fixes, the
+  read-only GitHub Codex review-status diagnostic, and the narrow
+  `codex-quality` freshness-only path fix.
+- No GitHub comment, review, PR-body update, issue write, label/milestone/Project
+  move, workflow dispatch, merge, or other GitHub mutation was performed.
 - Follow-up issues #149-#158 exist under #134 and are not implemented in
   PR #148.
-- The live issue does not authorize passing a bounded issue-work scope excerpt
-  to the reviewer, so this implementation keeps reviewer inputs aligned with
-  the accepted live issue contract.
+- Current remote GitHub Codex review threads are for `369ffeeb...`; local
+  changes address the in-scope findings, but the remote threads remain
+  unresolved until the final local revision is committed/pushed and a new
+  remote review/check cycle runs.
 
 **Next steps**
-- Wait for remote PR checks, then rerun `codex-review-status 148` against the
-  new remote head if another GitHub Codex review is requested.
+- If authorized, commit and push the final local revision to PR #148. Then wait
+  for CI, rerun `codex-review-status 148`, and decide whether to request a new
+  GitHub Codex review for the new remote head.
 
 **Be careful**
 - Keep #133 scoped to `$issue-work` review wiring and the custom reviewer

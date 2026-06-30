@@ -123,7 +123,11 @@ def _existing_protected_freshness_only_path(
     local_path = path if path.is_absolute() else root / path
     if not local_path.exists() or local_path.is_dir():
         return False
-    if check_governance_boundary._eligible(local_path, root):
+    try:
+        local_path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    if check_governance_boundary.is_eligible_scan_path(local_path, root):
         return False
     normalized = codex_surface.normalize_requested_path(path, root=root)
     return codex_surface.is_protected_path(normalized, repo_policy=repo_policy)

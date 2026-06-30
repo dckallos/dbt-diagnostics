@@ -50,6 +50,7 @@ KNOWN_SCHEMA_VERSION_ARTIFACTS = frozenset(
         "backlog-review-verdict",
         "backlog-synthesis",
         "codex-review-packet",
+        "codex-review-status",
         "codex-quality-receipt",
         "coordinator-result",
         "operation",
