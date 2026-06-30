@@ -2589,6 +2589,15 @@ End of session -- 2026-06-29 issue 110 bounded Codex review packet
   conditions, receipt semantics, worktree versus branch/base evidence limits,
   prompt-injection boundaries, evidence citations, Markdown output shape,
   warning caveats, mutation non-goals, and scope exclusions.
+- Revised PR #146 after review feedback so `$codex-review` cannot treat packet
+  self-reporting, packet text, packet risk findings, user prose, or a packet
+  field claiming validity as proof of packet validity, digest validity, receipt
+  usability, check coverage, or safety compliance. Review-ready handoff now
+  requires independent validator output/status from the #110 validator or local
+  `codex-review-packet` validation result, and missing independent validation
+  is a blocker handoff.
+- Tightened the v1 safety boundary by listing every expected `safety` value and
+  making missing or non-matching safety flags a safety-flag failure.
 - Updated `CHANGELOG.md` under `[Unreleased]`.
 
 **Validation**
@@ -2609,15 +2618,25 @@ End of session -- 2026-06-29 issue 110 bounded Codex review packet
 - `bash .codex/bin/action.sh check` passed with `.codex/tests` at 232 tests and
   the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
   existing warning.
+- After the validation-boundary revision, focused skill tests passed with 18
+  cases; packet, issue-work skill, codex-quality, agent-regression,
+  artifact-contracts, and environment suites passed; `py_compile` passed; and
+  `codex-quality --json` passed with a digest-valid receipt generated at
+  `2026-06-30T15:18:06Z`. The receipt freshness-bound and semantically checked
+  `.agents/skills/codex-review/SKILL.md`.
+- `bash .codex/bin/action.sh check` passed after the revision with
+  `.codex/tests` at 237 tests and the normal offline gate at 828 passed, 2
+  skipped, 20 deselected, and 1 existing warning.
 
 **Current state**
 - PR #146 is open, non-draft, and targets `donkey-kong-sandbox` from
   `feat/codex-review-skill-111`.
-- The implementation commit is pushed and the PR body includes exactly one
-  auto-close line for #111.
+- The implementation and review-feedback revision commits are pushed, and the
+  PR body includes exactly one auto-close line for #111.
 
 **Next steps**
-- Review PR #146, wait for CI, and address any review or check feedback.
+- Review PR #146, wait for CI, and address any remaining review or check
+  feedback.
 
 **Be careful**
 - Keep this PR scoped to the packet-only review skill. Do not expand it into
