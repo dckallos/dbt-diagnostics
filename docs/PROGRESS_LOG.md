@@ -2497,6 +2497,12 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   requires a present, valid, timezone-bearing `generated_at` timestamp, and
   mutation-shaped `--command-log` input now fails closed through packet
   validation without executing command-log entries.
+- Addressed the remaining automated PR review comments locally by rejecting
+  unsafe explicit paths before fallback reads, redacting all command-log string
+  fields, requiring required receipt checks to pass, recomputing protected
+  classification and receipt coverage in validation, keeping hard-budget snippet
+  omissions consistent, allowing forbidden-operation names as inert evidence,
+  and covering current GitHub token prefixes.
 
 **Validation**
 - Focused suites passed:
@@ -2517,12 +2523,21 @@ End of session -- 2026-06-29 orphaned review-comment hygiene
   `bash .codex/bin/action.sh check` passed with `.codex/tests` at 208 tests and
   the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
   existing warning.
+- After the automated-review hardening pass, focused packet tests passed with
+  25 cases, artifact/environment/codex-quality/repo-config checks passed,
+  packet direct and wrapper commands validated, `codex-quality --json` passed
+  with a digest-valid receipt generated at `2026-06-30T00:11:12Z`, and
+  `bash .codex/bin/action.sh check` passed with `.codex/tests` at 215 tests and
+  the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
 
 **Current state**
 - PR #145 is open, non-draft, and clean against `donkey-kong-sandbox` from
   branch `feat/codex-review-packet-110`.
 - The implementation, progress-log, and review-revision commits are pushed on
   that branch, and the PR body includes exactly one auto-close line for #110.
+- The latest automated-review hardening changes are included in the pushed PR
+  #145 branch revision.
 - The progress log entry was added after PR publication because the initial
   handoff missed the wrap-up update required by `AGENTS.md`.
 - The latest normal `codex-quality --json` receipt covers the review revision's

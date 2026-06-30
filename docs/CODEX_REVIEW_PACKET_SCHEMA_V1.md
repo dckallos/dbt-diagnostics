@@ -83,6 +83,11 @@ skills, hooks, wrappers, quality checks, artifact manifests, stable JSON
 surfaces, and public CLI contracts. They contain required check hints, not
 executable commands.
 
+Explicit paths supplied with `--path` must be repository-relative and must not
+use absolute prefixes, backslashes, empty segments, or parent-directory
+traversal. Rejected explicit paths are represented as findings and omissions;
+the builder must not read fallback excerpts outside the repository root.
+
 ## Quality Receipt
 
 The packet reads a local receipt from `output/codex/quality-receipt.json` unless
@@ -103,8 +108,10 @@ timestamp-invalid receipts are not usable evidence. `generated_at` may be null
 only for non-usable summaries, such as missing or unreadable receipts. A receipt
 with `usable_as_evidence: true` must have a present, non-empty,
 timezone-bearing ISO timestamp in `generated_at`; Python validation owns this
-invariant. A receipt is evidence only for the checks and path coverage it names;
-it is not universal proof.
+invariant. Each required check status must also be `passed`. Python validation
+recomputes changed protected paths and receipt coverage before trusting
+`usable_as_evidence`. A receipt is evidence only for the checks and path
+coverage it names; it is not universal proof.
 
 ## Diff Snippets
 
@@ -124,7 +131,9 @@ log is supplied, the packet records an omission.
 Command strings must not be GitHub/tracker mutation commands. Validation routes
 command text through the shared governance mutation classifier. Mutation-shaped
 command-log input is recorded as an error-severity finding and the packet is not
-a clean valid artifact; the builder never executes command-log entries.
+a clean valid artifact; the builder never executes command-log entries. All
+string values in supplied command-log entries are treated as untrusted command
+evidence and are redacted and bounded before inclusion.
 
 ## Budget
 
@@ -139,7 +148,9 @@ The byte budget is authoritative:
 - `budget_warnings`
 
 The validator recomputes `serialized_bytes` and rejects packets that under-report
-their size or exceed `hard_bytes`.
+their size or exceed `hard_bytes`. When hard-budget enforcement drops snippets,
+the builder updates the matching changed-file flags and omitted-count fields
+before signing the packet.
 
 ## Safety
 
@@ -163,8 +174,9 @@ The safety object is part of the contract and must keep these exact values:
 
 The builder redacts known secret-shaped text with `[REDACTED_SECRET]` and emits
 a finding. The validator rejects raw known secret shapes in diff snippets and
-command output, including GitHub tokens, AWS access key IDs, private key block
-markers, and `password=`, `token=`, `secret=`, or `api_key=` assignments.
+command output, including GitHub token prefixes `ghp_`, `github_pat_`, `gho_`,
+`ghu_`, `ghs_`, and `ghr_`, AWS access key IDs, private key block markers, and
+`password=`, `token=`, `secret=`, or `api_key=` assignments.
 
 ## Forbidden Shape
 
@@ -176,6 +188,10 @@ tracker snapshots, full repository bundles, approval batches, or command strings
 such as `triage.py apply --execute`.
 
 Use bounded evidence excerpts instead of embedding write-shaped payloads.
+Dangerous operation names may appear as inert text inside untrusted diff
+snippets or command output; they are not executable instructions and must not by
+themselves invalidate the packet. Structured write-shaped keys and payloads
+remain forbidden.
 
 ## Null And Empty Values
 
@@ -188,7 +204,8 @@ SHAs, missing generated timestamp, or unavailable git errors.
 `.codex/scripts/codex_review_packet.py:validate_codex_review_packet` validates
 required keys, field types, safety constants, recursive forbidden shapes,
 mutation command strings, secret redaction, quality receipt evidence rules,
-error-severity findings, canonical digest, and serialized byte budget.
+policy-derived protected classification, receipt coverage, error-severity
+findings, canonical digest, and serialized byte budget.
 
 Local validation commands:
 

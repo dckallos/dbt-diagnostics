@@ -121,6 +121,9 @@ FORBIDDEN_KEYS = frozenset(
 )
 SECRET_PATTERNS = (
     re.compile(r"ghp_[A-Za-z0-9_]{20,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"gh[our]_[A-Za-z0-9_]{20,}"),
+    re.compile(r"ghs_[A-Za-z0-9_]{8,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(
@@ -175,6 +178,60 @@ def _parse_timestamp(value: object) -> datetime | None:
 
 def _normalize_path(path: str) -> str:
     return codex_surface.normalize_path(path)
+
+
+def _safe_repo_relative_path(path: str, *, root: Path) -> str | None:
+    if "\\" in path:
+        return None
+    if Path(path).is_absolute():
+        return None
+    normalized = _normalize_path(path)
+    if not normalized or normalized.startswith("/"):
+        return None
+    if any(part in {"", ".", ".."} for part in normalized.split("/")):
+        return None
+    try:
+        resolved = (root / normalized).resolve()
+        resolved.relative_to(root.resolve())
+    except (OSError, ValueError):
+        return None
+    return normalized
+
+
+def _normalize_explicit_paths(
+    paths: Sequence[str] | None,
+    *,
+    root: Path,
+    findings: list[dict[str, Any]],
+    omissions: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    result: set[str] = set()
+    for raw_path in paths or ():
+        if not raw_path:
+            continue
+        normalized = _safe_repo_relative_path(str(raw_path), root=root)
+        if normalized is None:
+            omissions.append(
+                _omission(
+                    "explicit-path-rejected",
+                    "An explicit packet path was rejected because it is not a safe repository-relative path.",
+                    path=str(raw_path),
+                    evidence_source="explicit_paths",
+                )
+            )
+            findings.append(
+                _finding(
+                    "explicit-path-rejected",
+                    "warning",
+                    "An explicit packet path was rejected before reading local evidence.",
+                    "Use a repository-relative path without absolute prefixes, backslashes, or parent-directory traversal.",
+                    path=str(raw_path),
+                    evidence_source="explicit_paths",
+                )
+            )
+            continue
+        result.add(normalized)
+    return tuple(sorted(result))
 
 
 def _relative_path(path: Path, *, root: Path) -> str:
@@ -294,12 +351,50 @@ def _redact_secrets(text: str) -> tuple[str, bool]:
     return redacted, changed
 
 
+def _value_contains_secret(value: object) -> bool:
+    if isinstance(value, str):
+        return _contains_secret(value)
+    if isinstance(value, Mapping):
+        return any(_value_contains_secret(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_value_contains_secret(item) for item in value)
+    return False
+
+
 def _bounded_text(text: str, *, byte_limit: int) -> tuple[str, bool]:
     data = text.encode("utf-8")
     if len(data) <= byte_limit:
         return text, False
     bounded = data[:byte_limit].decode("utf-8", errors="ignore")
     return bounded, True
+
+
+def _sanitize_command_log_value(value: object) -> tuple[object, bool, bool]:
+    if isinstance(value, str):
+        redacted, changed = _redact_secrets(value)
+        bounded, truncated = _bounded_text(redacted, byte_limit=COMMAND_OUTPUT_BYTES)
+        return bounded, changed, truncated
+    if isinstance(value, list):
+        sanitized_items: list[object] = []
+        changed_any = False
+        truncated_any = False
+        for item in value:
+            sanitized, changed, truncated = _sanitize_command_log_value(item)
+            sanitized_items.append(sanitized)
+            changed_any = changed_any or changed
+            truncated_any = truncated_any or truncated
+        return sanitized_items, changed_any, truncated_any
+    if isinstance(value, Mapping):
+        sanitized_mapping: dict[str, object] = {}
+        changed_any = False
+        truncated_any = False
+        for key, item in value.items():
+            sanitized, changed, truncated = _sanitize_command_log_value(item)
+            sanitized_mapping[str(key)] = sanitized
+            changed_any = changed_any or changed
+            truncated_any = truncated_any or truncated
+        return sanitized_mapping, changed_any, truncated_any
+    return value, False, False
 
 
 def _finding(
@@ -717,14 +812,17 @@ def _diff_for_path(
             parts.append(result.stdout)
             sources.append(f"git diff -- {path}")
     if not parts and ("worktree_status" in change_sources or "explicit" in change_sources):
-        path_obj = recorder.root / path
+        safe_path = _safe_repo_relative_path(path, root=recorder.root)
+        if safe_path is None:
+            return "", f"local file path rejected: {path}"
+        path_obj = recorder.root / safe_path
         if path_obj.is_file():
             try:
                 text = path_obj.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 return "", f"local file read failed: {path}"
             parts.append(text)
-            sources.append(f"bounded local file excerpt: {path}")
+            sources.append(f"bounded local file excerpt: {safe_path}")
     if parts:
         return "\n".join(parts), " + ".join(sources)
     return "", f"diff unavailable: {path}"
@@ -982,12 +1080,18 @@ def _load_quality_receipt(
     summary["missing_semantically_checked_protected_paths"] = missing_semantic
     summary["stale_protected_paths"] = stale_paths
     required_missing = sorted(set(REQUIRED_QUALITY_CHECKS) - set(check_statuses))
+    required_failed = sorted(
+        name
+        for name in REQUIRED_QUALITY_CHECKS
+        if name in check_statuses and check_statuses.get(name) != "passed"
+    )
     usable = (
         summary["readable"] is True
         and summary["digest_valid"] is True
         and summary["passed"] is True
         and generated_at_valid
         and not required_missing
+        and not required_failed
         and not missing_freshness
         and not missing_semantic
         and not stale_paths
@@ -1036,6 +1140,16 @@ def _load_quality_receipt(
                 "warning",
                 "The codex-quality receipt is missing required check statuses.",
                 "Rerun current codex-quality before relying on the packet.",
+                evidence_source="quality_receipt",
+            )
+        )
+    if required_failed:
+        findings.append(
+            _finding(
+                "quality-receipt-required-check-failed",
+                "warning",
+                "The codex-quality receipt has a required check that did not pass.",
+                "Fix codex-quality findings, rerun codex-quality, then rebuild the packet.",
                 evidence_source="quality_receipt",
             )
         )
@@ -1144,29 +1258,27 @@ def _load_command_log(
                 )
             )
             continue
-        entry = dict(item)
+        entry: dict[str, Any] = {}
+        redacted_any = False
+        for raw_key, raw_value in item.items():
+            key = str(raw_key)
+            sanitized, changed, truncated = _sanitize_command_log_value(raw_value)
+            entry[key] = sanitized
+            redacted_any = redacted_any or changed
+            if isinstance(raw_value, str):
+                entry[f"{key}_truncated"] = truncated
         entry["generated_by_packet_builder"] = False
         entry["untrusted"] = True
-        for field_name in ("stdout", "stderr", "output"):
-            raw_text = entry.get(field_name)
-            if not isinstance(raw_text, str):
-                continue
-            redacted, changed = _redact_secrets(raw_text)
-            bounded, truncated = _bounded_text(
-                redacted, byte_limit=COMMAND_OUTPUT_BYTES
-            )
-            entry[field_name] = bounded
-            entry[f"{field_name}_truncated"] = truncated
-            if changed:
-                findings.append(
-                    _finding(
-                        "secret-redacted",
-                        "warning",
-                        "Secret-shaped text was redacted from command output.",
-                        "Inspect the local source and rotate any real secret before sharing the packet.",
-                        evidence_source="commands",
-                    )
+        if redacted_any:
+            findings.append(
+                _finding(
+                    "secret-redacted",
+                    "warning",
+                    "Secret-shaped text was redacted from command output.",
+                    "Inspect the local source and rotate any real secret before sharing the packet.",
+                    evidence_source="commands",
                 )
+            )
         entry["command_log_index"] = index
         commands.append(entry)
     return commands
@@ -1195,6 +1307,17 @@ def _finalize_packet(packet: dict[str, Any]) -> dict[str, Any]:
     return packet
 
 
+def _recompute_budget_counts(packet: dict[str, Any]) -> None:
+    packet["budget"]["omitted_files_count"] = sum(
+        1
+        for item in packet["changed_files"]
+        if item["diff_snippet_omitted"] and _snippet_needed(item)
+    )
+    packet["budget"]["omitted_snippets_count"] = sum(
+        1 for item in packet["omissions"] if "snippet" in str(item.get("code", ""))
+    )
+
+
 def _enforce_hard_budget(packet: dict[str, Any]) -> dict[str, Any]:
     hard_bytes = int(packet["budget"]["hard_bytes"])
     if len(canonical_json(packet).encode("utf-8")) <= hard_bytes:
@@ -1221,7 +1344,14 @@ def _enforce_hard_budget(packet: dict[str, Any]) -> dict[str, Any]:
                 evidence_source="budget",
             )
         )
+        if path:
+            for item in packet.get("changed_files", []):
+                if isinstance(item, dict) and item.get("path") == path:
+                    item["diff_snippet_included"] = False
+                    item["diff_snippet_omitted"] = True
+                    item["diff_snippet_truncated"] = False
         packet["diff_snippets"] = snippets
+        _recompute_budget_counts(packet)
         packet = _finalize_packet(packet)
     return packet
 
@@ -1248,9 +1378,14 @@ def build_codex_review_packet(
     active_policy = repo_policy or repo_config.load_repo_policy()
     active_base_ref = base_ref or active_policy.repository.default_branch
     active_receipt = receipt or Path(active_policy.codex.quality_receipt_path)
-    explicit = tuple(sorted({_normalize_path(path) for path in explicit_paths or () if path}))
     findings: list[dict[str, Any]] = []
     omissions: list[dict[str, Any]] = []
+    explicit = _normalize_explicit_paths(
+        explicit_paths,
+        root=root,
+        findings=findings,
+        omissions=omissions,
+    )
     if parent_epic is None:
         omissions.append(
             _omission(
@@ -1349,16 +1484,10 @@ def build_codex_review_packet(
         "safety": dict(SAFETY_FLAGS),
         DIGEST_FIELD: "0" * 64,
     }
-    packet["budget"]["omitted_files_count"] = sum(
-        1
-        for item in packet["changed_files"]
-        if item["diff_snippet_omitted"] and _snippet_needed(item)
-    )
-    packet["budget"]["omitted_snippets_count"] = sum(
-        1 for item in packet["omissions"] if "snippet" in str(item.get("code", ""))
-    )
+    _recompute_budget_counts(packet)
     packet = _finalize_packet(packet)
     packet = _enforce_hard_budget(packet)
+    _recompute_budget_counts(packet)
     packet = _finalize_packet(packet)
     return packet
 
@@ -1396,6 +1525,7 @@ class CodexReviewPacketValidator:
         self._validate_commands(context)
         self._validate_receipt(context)
         self._validate_changed_files(context)
+        self._validate_policy_classification(context)
         return context.errors
 
     def _validate_required(self, context: PacketValidationContext) -> None:
@@ -1498,12 +1628,8 @@ class CodexReviewPacketValidator:
                 continue
             if command.get("untrusted") is not True:
                 context.errors.append("command output must be marked untrusted")
-            for field_name in ("stdout", "stderr", "output"):
-                value = command.get(field_name)
-                if isinstance(value, str) and _contains_secret(value):
-                    context.errors.append(
-                        f"commands contains unredacted secret-shaped text: {field_name}"
-                    )
+            if _value_contains_secret(command):
+                context.errors.append("commands contains unredacted secret-shaped text")
 
     def _validate_commands(self, context: PacketValidationContext) -> None:
         for command in self.packet.get("commands", []):
@@ -1554,6 +1680,16 @@ class CodexReviewPacketValidator:
                         "quality_receipt.usable_as_evidence missing check statuses: "
                         + ", ".join(missing)
                     )
+                failed = sorted(
+                    name
+                    for name in REQUIRED_QUALITY_CHECKS
+                    if name in statuses and statuses.get(name) != "passed"
+                )
+                if failed:
+                    context.errors.append(
+                        "quality_receipt.usable_as_evidence requires required checks to pass: "
+                        + ", ".join(failed)
+                    )
         for field_name in (
             "freshness_bound_protected_paths",
             "semantically_checked_protected_paths",
@@ -1580,6 +1716,103 @@ class CodexReviewPacketValidator:
                 context.errors.append(
                     f"changed_files change_sources invalid for {item.get('path')}"
                 )
+            path = item.get("path")
+            if isinstance(path, str) and _safe_repo_relative_path(path, root=ROOT_DIR) is None:
+                context.errors.append(f"changed_files path is not repository-relative: {path}")
+
+    def _validate_policy_classification(self, context: PacketValidationContext) -> None:
+        try:
+            repo_policy = repo_config.load_repo_policy()
+        except repo_config.RepoConfigError as exc:
+            context.errors.append(f"cannot load repo policy for packet validation: {exc}")
+            return
+        normalized_changed: list[dict[str, Any]] = []
+        for item in self.packet.get("changed_files", []):
+            if not isinstance(item, Mapping):
+                continue
+            path = item.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            safe_path = _safe_repo_relative_path(path, root=ROOT_DIR)
+            if safe_path is None:
+                continue
+            risk_classes = list(_risk_classes_for_path(safe_path))
+            expected = {
+                "protected": codex_surface.is_protected_path(
+                    safe_path, repo_policy=repo_policy
+                ),
+                "matched_protected_patterns": list(
+                    _matched_patterns(safe_path, repo_policy=repo_policy)
+                ),
+                "risk_classes": risk_classes,
+                "contract_surface": _is_contract_surface(safe_path, risk_classes),
+            }
+            expected["semantic_scan_applies"] = bool(
+                expected["protected"]
+                and _is_semantic_scan_path(safe_path, repo_policy=repo_policy)
+            )
+            for key, expected_value in expected.items():
+                if item.get(key) != expected_value:
+                    context.errors.append(
+                        f"changed_files protected classification mismatch for {safe_path}: {key}"
+                    )
+            normalized_changed.append(dict(item, path=safe_path))
+        expected_protected_surfaces = _protected_surfaces(normalized_changed)
+        if self.packet.get("protected_surfaces") != expected_protected_surfaces:
+            context.errors.append("protected_surfaces does not match changed_files classification")
+        self._validate_receipt_coverage(
+            context,
+            changed_files=normalized_changed,
+            repo_policy=repo_policy,
+        )
+
+    def _validate_receipt_coverage(
+        self,
+        context: PacketValidationContext,
+        *,
+        changed_files: Sequence[Mapping[str, Any]],
+        repo_policy: repo_config.RepoPolicy,
+    ) -> None:
+        receipt = self.packet.get("quality_receipt")
+        if not isinstance(receipt, Mapping):
+            return
+        changed_protected_paths = sorted(
+            str(item["path"]) for item in changed_files if item.get("protected") is True
+        )
+        semantic_paths = sorted(
+            str(item["path"])
+            for item in changed_files
+            if item.get("protected") is True and item.get("semantic_scan_applies") is True
+        )
+        if receipt.get("changed_protected_paths") != changed_protected_paths:
+            context.errors.append("quality_receipt changed_protected_paths mismatch")
+        if receipt.get("usable_as_evidence") is not True:
+            return
+        freshness = receipt.get("freshness_bound_protected_paths")
+        semantic = receipt.get("semantically_checked_protected_paths")
+        freshness_paths = (
+            list(codex_surface.protected_paths(freshness, repo_policy=repo_policy))
+            if isinstance(freshness, list)
+            and all(isinstance(item, str) for item in freshness)
+            else []
+        )
+        semantic_checked_paths = (
+            list(codex_surface.protected_paths(semantic, repo_policy=repo_policy))
+            if isinstance(semantic, list)
+            and all(isinstance(item, str) for item in semantic)
+            else []
+        )
+        expected_missing_freshness = sorted(
+            set(changed_protected_paths) - set(freshness_paths)
+        )
+        expected_missing_semantic = sorted(set(semantic_paths) - set(semantic_checked_paths))
+        if receipt.get("missing_freshness_bound_protected_paths") != expected_missing_freshness:
+            context.errors.append("quality_receipt freshness coverage mismatch")
+        if (
+            receipt.get("missing_semantically_checked_protected_paths")
+            != expected_missing_semantic
+        ):
+            context.errors.append("quality_receipt semantic coverage mismatch")
 
 
 def _normalize_key(value: str) -> str:
@@ -1607,8 +1840,6 @@ def _reject_forbidden_shapes(value: Any, *, errors: list[str], path: str) -> Non
         for index, item in enumerate(value):
             _reject_forbidden_shapes(item, errors=errors, path=f"{path}[{index}]")
         return
-    if isinstance(value, str) and repo_config.FORBIDDEN_OPERATION_RE.search(value):
-        errors.append(f"{path} contains a forbidden operation id")
 
 
 def validate_codex_review_packet(packet: Mapping[str, Any]) -> list[str]:

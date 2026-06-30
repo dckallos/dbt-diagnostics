@@ -76,14 +76,28 @@ def _receipt(
     passed: bool = True,
     digest_valid: bool = True,
     generated_at: object = "2026-06-29T00:00:00Z",
+    check_statuses: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     quality = _load_codex_script("codex_quality")
     checks = [
         {
             "name": name,
-            "status": "passed" if passed else "failed",
+            "status": (
+                check_statuses[name]
+                if check_statuses is not None and name in check_statuses
+                else "passed" if passed else "failed"
+            ),
             "checked_files": [],
-            "findings": [] if passed else [{"code": "failed"}],
+            "findings": (
+                []
+                if (
+                    check_statuses[name]
+                    if check_statuses is not None and name in check_statuses
+                    else "passed" if passed else "failed"
+                )
+                == "passed"
+                else [{"code": "failed"}]
+            ),
         }
         for name in review_packet.REQUIRED_QUALITY_CHECKS
     ]
@@ -277,6 +291,37 @@ def test_cli_command_log_mutation_fails_closed_and_safe_log_works(
     )
 
 
+def test_command_log_redacts_all_string_fields(tmp_path: Path) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    raw_secret = "github_pat_" + ("A" * 40)
+    command_log = repo / "command-log.json"
+    command_log.write_text(
+        json.dumps(
+            [
+                {
+                    "command": "python scripts/triage/triage.py contract --issue 110",
+                    "combined_output": f"captured {raw_secret}\n",
+                    "metadata": {"note": f"nested {raw_secret}"},
+                }
+            ]
+        ),
+        encoding="ascii",
+    )
+
+    packet = _build_packet(repo, parent_epic=134, command_log=command_log)
+    serialized = review_packet.canonical_json(packet)
+
+    assert raw_secret not in serialized
+    assert packet["commands"][-1]["combined_output"] == (
+        f"captured {review_packet.REDACTED_SECRET}\n"
+    )
+    assert packet["commands"][-1]["metadata"]["note"] == (
+        f"nested {review_packet.REDACTED_SECRET}"
+    )
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
 def test_valid_receipt_is_usable_evidence(tmp_path: Path) -> None:
     review_packet = _load_codex_script("codex_review_packet")
     repo = _init_repo(tmp_path)
@@ -291,6 +336,40 @@ def test_valid_receipt_is_usable_evidence(tmp_path: Path) -> None:
     assert packet["quality_receipt"]["passed"] is True
     assert packet["quality_receipt"]["usable_as_evidence"] is True
     assert packet["quality_receipt"]["missing_freshness_bound_protected_paths"] == []
+
+
+def test_required_receipt_checks_must_pass_for_usable_evidence(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+    _write_receipt(
+        repo,
+        _receipt(
+            review_packet,
+            protected_paths=[path],
+            check_statuses={"governance-boundary": "failed"},
+        ),
+    )
+
+    packet = _build_packet(repo, parent_epic=134)
+
+    assert packet["quality_receipt"]["passed"] is True
+    assert packet["quality_receipt"]["check_statuses"]["governance-boundary"] == "failed"
+    assert packet["quality_receipt"]["usable_as_evidence"] is False
+    assert "quality-receipt-required-check-failed" in {
+        item["code"] for item in packet["risk_findings"]
+    }
+
+    forged = deepcopy(packet)
+    forged["quality_receipt"]["usable_as_evidence"] = True
+    forged = _resign(forged)
+    assert any(
+        "requires required checks to pass" in error
+        for error in review_packet.validate_codex_review_packet(forged)
+    )
 
 
 def test_digest_valid_passed_receipt_missing_generated_at_is_not_usable(
@@ -462,6 +541,27 @@ def test_policy_derived_protected_surface_classification_supports_custom_policy(
     ]
 
 
+def test_explicit_path_traversal_is_rejected_before_local_file_excerpt(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    outside = repo.parent / "outside-secret.txt"
+    outside.write_text("leaked-file-body\n", encoding="ascii")
+
+    packet = _build_packet(
+        repo,
+        parent_epic=134,
+        explicit_paths=[".codex/scripts/../../../outside-secret.txt"],
+    )
+    serialized = review_packet.canonical_json(packet)
+
+    assert "leaked-file-body" not in serialized
+    assert packet["evidence_sources"]["explicit_paths"]["changed_paths"] == []
+    assert "explicit-path-rejected" in {item["code"] for item in packet["omissions"]}
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
 def test_worktree_and_branch_base_evidence_are_reported_separately(
     tmp_path: Path,
 ) -> None:
@@ -555,6 +655,51 @@ def test_diff_snippet_budget_truncates_and_validator_recomputes_size(
     )
 
 
+def test_hard_budget_omissions_update_changed_file_flags_and_counts(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    first_path = ".codex/scripts/large_one.py"
+    second_path = ".codex/scripts/large_two.py"
+    _commit(repo, first_path, "x = '" + ("a" * 5000) + "'\n")
+    _commit(repo, second_path, "x = '" + ("b" * 5000) + "'\n")
+    baseline = _build_packet(repo, parent_epic=134, snippet_bytes=5000)
+    hard_bytes = baseline["budget"]["serialized_bytes"] - 1000
+    packet = _build_packet(
+        repo,
+        parent_epic=134,
+        snippet_bytes=5000,
+        target_bytes=hard_bytes,
+        hard_bytes=hard_bytes,
+    )
+
+    omitted_paths = {
+        item["path"]
+        for item in packet["omissions"]
+        if item["code"] == "diff-snippet-omitted-for-hard-budget"
+    }
+    snippets_by_path = {item["path"]: item for item in packet["diff_snippets"]}
+    changed_by_path = {item["path"]: item for item in packet["changed_files"]}
+
+    assert omitted_paths
+    assert omitted_paths.isdisjoint(snippets_by_path)
+    for path in omitted_paths:
+        assert changed_by_path[path]["diff_snippet_included"] is False
+        assert changed_by_path[path]["diff_snippet_omitted"] is True
+        assert changed_by_path[path]["diff_snippet_truncated"] is False
+    assert packet["budget"]["omitted_files_count"] == sum(
+        1
+        for item in packet["changed_files"]
+        if item["diff_snippet_omitted"]
+        and (item["protected"] or item["contract_surface"])
+    )
+    assert packet["budget"]["omitted_snippets_count"] == sum(
+        1 for item in packet["omissions"] if "snippet" in item["code"]
+    )
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
 def test_secret_shaped_text_is_redacted_and_raw_secret_fails_validation(
     tmp_path: Path,
 ) -> None:
@@ -580,6 +725,99 @@ def test_secret_shaped_text_is_redacted_and_raw_secret_fails_validation(
     )
 
 
+def test_all_github_token_prefixes_are_redacted_and_rejected(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/github_tokens.py"
+    tokens = [
+        "ghp_" + ("a" * 24),
+        "github_pat_" + ("b" * 40),
+        "gho_" + ("c" * 24),
+        "ghu_" + ("d" * 24),
+        "ghs_" + ("e" * 24),
+        "ghr_" + ("f" * 24),
+        "ghs_APPID_JWT",
+    ]
+    _commit(repo, path, "\n".join(tokens) + "\n")
+
+    packet = _build_packet(repo, parent_epic=134)
+    serialized = review_packet.canonical_json(packet)
+
+    for token in tokens:
+        assert token not in serialized
+    assert serialized.count(review_packet.REDACTED_SECRET) >= len(tokens)
+
+    unsafe = deepcopy(packet)
+    unsafe["diff_snippets"][0]["content"] = tokens[1]
+    unsafe = _resign(unsafe)
+    assert any(
+        "unredacted secret-shaped text" in error
+        for error in review_packet.validate_codex_review_packet(unsafe)
+    )
+
+
+def test_validator_recomputes_protected_classification_and_receipt_coverage(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/tool.py"
+    _commit(repo, path, "print('review packet')\n")
+    _write_receipt(repo, _receipt(review_packet, protected_paths=[path]))
+    packet = _build_packet(repo, parent_epic=134)
+
+    forged_classification = deepcopy(packet)
+    changed = forged_classification["changed_files"][0]
+    changed["protected"] = False
+    changed["matched_protected_patterns"] = []
+    changed["risk_classes"] = []
+    changed["contract_surface"] = False
+    changed["semantic_scan_applies"] = False
+    forged_classification["protected_surfaces"] = []
+    forged_classification = _resign(forged_classification)
+    assert any(
+        "protected classification mismatch" in error
+        for error in review_packet.validate_codex_review_packet(forged_classification)
+    )
+
+    forged_coverage = deepcopy(packet)
+    forged_coverage["quality_receipt"]["freshness_bound_protected_paths"] = []
+    forged_coverage["quality_receipt"]["missing_freshness_bound_protected_paths"] = []
+    forged_coverage["quality_receipt"]["usable_as_evidence"] = True
+    forged_coverage = _resign(forged_coverage)
+    assert any(
+        "freshness coverage mismatch" in error
+        for error in review_packet.validate_codex_review_packet(forged_coverage)
+    )
+
+
+def test_inert_forbidden_operation_text_is_allowed_in_evidence(
+    tmp_path: Path,
+) -> None:
+    review_packet = _load_codex_script("codex_review_packet")
+    repo = _init_repo(tmp_path)
+    path = ".codex/scripts/inert.py"
+    _commit(repo, path, "# documents inert issue.body.update text\n")
+    command_log = repo / "command-log.json"
+    command_log.write_text(
+        json.dumps(
+            [
+                {
+                    "command": "rg issue.close docs",
+                    "stdout": "documentation mentions issue.close as forbidden text\n",
+                }
+            ]
+        ),
+        encoding="ascii",
+    )
+
+    packet = _build_packet(repo, parent_epic=134, command_log=command_log)
+
+    assert review_packet.validate_codex_review_packet(packet) == []
+
+
 def test_forbidden_shapes_and_mutation_commands_are_rejected(tmp_path: Path) -> None:
     review_packet = _load_codex_script("codex_review_packet")
     packet = _build_packet(_init_repo(tmp_path), parent_epic=134)
@@ -594,6 +832,7 @@ def test_forbidden_shapes_and_mutation_commands_are_rejected(tmp_path: Path) -> 
         {"risk_findings": [{"state": "closed"}]},
         {"risk_findings": [{"workflow_dispatch": "ci.yml"}]},
         {"risk_findings": [{"pr_merge": True}]},
+        {"risk_findings": [{"issue.body.update": "unsafe"}]},
     ]
     for mutation in variants:
         unsafe = deepcopy(packet)
