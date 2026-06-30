@@ -2663,6 +2663,9 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
   snippet counts are recomputed from packet evidence, and quality receipt
   freshness is bound to signed `generated_at` rather than mutable receipt file
   mtime.
+- Clarified the #112 `$issue-work` codex-quality receipt reporting boundary so
+  final handoffs use a digest-validated signed `generated_at`, not receipt file
+  mtime, as protected-change freshness evidence.
 - Updated the packet schema doc and changelog for the tightened evidence
   boundaries.
 
@@ -2681,10 +2684,13 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
   after the local `donkey-kong-sandbox` ref was fast-forwarded to the fetched
   origin tip; the packet covered only this orphaned branch's changed files and
   reported the refreshed quality receipt as usable evidence.
+- The #112 skill clarification passed
+  `.codex/tests/test_issue_work_skill.py` at 12 tests,
+  `.codex/tests/test_codex_review_skill.py` at 18 tests, and
+  `python -m py_compile .codex/tests/test_issue_work_skill.py`.
 - `bash .codex/bin/action.sh codex-quality --json` passed with a digest-valid
-  receipt generated at `2026-06-30T15:58:01Z`; the protected changed paths
-  `.codex/scripts/codex_review_packet.py` and
-  `docs/CODEX_REVIEW_PACKET_SCHEMA_V1.md` are freshness-bound and semantically
+  receipt generated at `2026-06-30T16:07:16Z`; the protected changed path
+  `.agents/skills/issue-work/SKILL.md` is freshness-bound and semantically
   checked.
 - `bash .codex/bin/action.sh check` passed with `.codex/tests` at 243 tests and
   the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
@@ -2693,7 +2699,8 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
 **Current state**
 - PR #147 is open as a draft orphaned PR targeting `donkey-kong-sandbox` from
   `fix/orphan-codex-review-packet-hardening`.
-- The implementation commit is pushed.
+- The branch contains the packet hardening, progress-log update, and narrow
+  #112 receipt-reporting clarification for this orphaned PR.
 - The intended PR is orphaned: no linked issue, no auto-close line, and no
   issue-reference line in the PR body.
 
@@ -2702,9 +2709,10 @@ End of session -- 2026-06-30 issue 111 codex-review skill implementation
   feedback.
 
 **Be careful**
-- Keep this work scoped to packet hardening. Do not add review-skill changes,
-  issue-work wiring, extraction/distribution work, production runtime changes,
-  live GitHub fetches, or any GitHub issue/comment/review/label/milestone/
-  Project/workflow/merge path.
+- Keep this work scoped to packet hardening and the narrow #112 receipt
+  timestamp reporting clarification. Do not expand into codex-review skill
+  behavior, issue-work wiring, extraction/distribution work, production runtime
+  changes, live GitHub fetches, or any GitHub issue/comment/review/label/
+  milestone/Project/workflow/merge path.
 
 End of session -- 2026-06-30 orphaned codex-review-packet hardening

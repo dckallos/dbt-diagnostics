@@ -13,6 +13,9 @@
   safely, quoting recorded git argv, omitting duplicated diff stdout from
   command records, binding receipt freshness to signed `generated_at`, and
   reading fallback file excerpts through bounded prefixes.
+- I clarified `$issue-work` receipt reporting so final handoffs use a
+  digest-validated signed `generated_at`, not receipt file mtime, as freshness
+  evidence for protected changes.
 
 ### Add codex-review skill
 
