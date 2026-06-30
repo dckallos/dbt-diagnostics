@@ -1706,9 +1706,8 @@ class CodexReviewPacketValidator:
             for field_name in blocking_coverage_fields:
                 if receipt.get(field_name) != []:
                     message = (
-                        "quality_receipt.usable_as_evidence requires empty "
-                        f"{field_name}"
-                    )
+                        "quality_receipt.usable_as_evidence requires empty {}"
+                    ).format(field_name)
                     context.errors.append(message)
             statuses = receipt.get("check_statuses")
             if not isinstance(statuses, Mapping):
