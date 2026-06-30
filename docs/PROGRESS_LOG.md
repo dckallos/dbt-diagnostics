@@ -2611,12 +2611,13 @@ End of session -- 2026-06-29 issue 110 bounded Codex review packet
   existing warning.
 
 **Current state**
-- The implementation is local on `feat/codex-review-skill-111`; no PR has been
-  opened yet and no GitHub metadata was mutated.
+- PR #146 is open, non-draft, and targets `donkey-kong-sandbox` from
+  `feat/codex-review-skill-111`.
+- The implementation commit is pushed and the PR body includes exactly one
+  auto-close line for #111.
 
 **Next steps**
-- Review the local diff, commit, push, and open the #111 implementation PR when
-  ready.
+- Review PR #146, wait for CI, and address any review or check feedback.
 
 **Be careful**
 - Keep this PR scoped to the packet-only review skill. Do not expand it into
