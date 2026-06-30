@@ -9,10 +9,18 @@
 - The workflow now requires one validated `codex-review-packet`, independent
   validation evidence, bounded reviewer inputs, and explicit final-handoff
   review fields.
+- I added the read-only `codex-review-status` local diagnostic so maintainers
+  can see whether the GitHub Codex review is current for a PR head and get the
+  exact focused `@codex review` text to post manually when it is stale or
+  missing.
+- I added protected/governance Codex GitHub review guidance and made
+  `.codex/config.toml` part of the policy-driven semantic scan roots.
 - I added protected project-agent config for the reviewer path and kept the
-  workflow local/offline with no GitHub mutation, GitHub comments/reviews,
-  packet schema changes, structured verdict output, full-repository prompt
-  bundle, production runtime change, or extraction/distribution work.
+  workflow local/offline with no GitHub mutation, issue or comment creation,
+  automated `@codex review` posting, `@codex fix`, Codex Security CI
+  automation, deep scan automation, packet schema changes, structured verdict
+  output, full-repository prompt bundle, production runtime change, or
+  extraction/distribution work.
 
 ### Harden Codex review packet evidence bounds
 

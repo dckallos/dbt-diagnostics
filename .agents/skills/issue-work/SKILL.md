@@ -287,6 +287,41 @@ Input: exactly one GitHub issue number.
     Warning-only findings and caveats must be surfaced clearly and must not be
     hidden behind generic passed or ready wording.
 
+    GitHub Codex review status is separate from local bounded packet review.
+    When an implementation PR exists and protected or governance-sensitive
+    surfaces changed, run this read-only local diagnostic:
+
+    ```bash
+    bash .codex/bin/action.sh codex-review-status <pr-number>
+    ```
+
+    Report whether the latest GitHub
+    `chatgpt-codex-connector[bot]` review is current for the PR head, stale,
+    missing, or pending. If the latest Codex GitHub review is stale or missing,
+    include this exact focused review text for the maintainer to post manually:
+
+    ```text
+    @codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.
+    ```
+
+    Keep same-context `$codex-review`, local `codex_reviewer`, and GitHub
+    `@codex review` distinct:
+    - same-context `$codex-review` is caveated self-review and does not satisfy
+      #133;
+    - local `codex_reviewer` is required bounded packet review for protected or
+      governance-sensitive changes;
+    - GitHub `@codex review` is advisory PR-diff review and does not prove local
+      packet validity, digest validity, receipt usability, check coverage,
+      safety compliance, or maintainer readiness.
+
+    Do not use `@codex fix` by default for protected or governance-sensitive
+    PRs. If the maintainer wants Codex to fix a GitHub review finding, they
+    should give a separate explicit instruction.
+
+    GitHub Codex review does not replace local gates, packet generation,
+    independent packet validation evidence, `codex_reviewer`, or maintainer
+    decision.
+
     Preserve the no-mutation review boundary: no GitHub mutation, no
     issue-body writes, no issue title/state writes, no
     labels/milestones/Project moves, no workflow dispatches, no PR merges, no

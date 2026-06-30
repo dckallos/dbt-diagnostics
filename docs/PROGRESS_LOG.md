@@ -2742,6 +2742,16 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
 - Created the #149-#158 Codex robustness follow-up issues and updated epic
   #134 with the new scope subsection and recommended order. No optional epic
   comment was posted.
+- Extended PR #148 with a read-only `codex-review-status` local command that
+  reports whether the GitHub Codex review matches the current PR head, counts
+  Codex review/comment evidence, and prints the exact focused `@codex review`
+  text for maintainer-posted use when review is stale or missing.
+- Added Codex/GitHub review guidance to `AGENTS.md`, documented the status
+  command in `.codex/README.md`, and updated `$issue-work` so GitHub Codex
+  review remains separate from local packet validation and the required
+  `codex_reviewer` subagent.
+- Added `.codex/config.toml` to the policy semantic scan roots, keeping it
+  both protected and semantically checked.
 
 **Validation**
 - Focused suites passed:
@@ -2784,11 +2794,28 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
 - The current runtime did not expose the repo-scoped `codex_reviewer` custom
   agent with confirmable read-only sandbox behavior, so no independent reviewer
   spawn was claimed.
+- The continuation validation passed:
+  `.codex/tests/test_codex_github_review_status.py`,
+  `.codex/tests/test_codex_reviewer_agent.py`,
+  `.codex/tests/test_issue_work_skill.py`,
+  `scripts/triage/test_repo_config.py`, `.codex/tests/test_codex_quality.py`,
+  `.codex/tests/test_environment.py`, and `py_compile` for the new status
+  module/test.
+- `bash .codex/bin/action.sh codex-quality --json` passed with a
+  digest-valid receipt generated at `2026-06-30T18:24:40Z`; the default
+  semantic scan includes `.codex/config.toml` and `.codex/agents`.
+- `bash .codex/bin/action.sh check` passed with `.codex/tests` at 272 tests
+  and the normal offline gate at 828 passed, 2 skipped, 20 deselected, and 1
+  existing warning.
+- Live read-only `codex-review-status 148` ran successfully and reported
+  `stale_review`: latest Codex GitHub review SHA `088fc8abd4a6...` versus PR
+  head `29456ea1bb55...` before this continuation push.
 
 **Current state**
 - PR #148 is open and non-draft against `donkey-kong-sandbox`; the branch
-  contains only #133 workflow/config/policy/test/changelog work, this narrow
-  review fix, and this progress-log entry.
+  contains only #133 workflow/config/policy/test/changelog work, the review
+  fixes, the read-only GitHub Codex review-status diagnostic, and this
+  progress-log entry.
 - Follow-up issues #149-#158 exist under #134 and are not implemented in
   PR #148.
 - The live issue does not authorize passing a bounded issue-work scope excerpt
@@ -2801,8 +2828,9 @@ End of session -- 2026-06-30 orphaned codex-review-packet hardening
 
 **Be careful**
 - Keep #133 scoped to `$issue-work` review wiring and the custom reviewer
-  agent. Do not expand into packet schema/builder changes, GitHub comments or
-  reviews, issue-body writes, retrieval work, extraction/distribution work, or
-  production runtime changes.
+  agent plus the read-only GitHub Codex review-status diagnostic. Do not expand
+  into packet schema/builder changes, automated GitHub comments or reviews,
+  issue-body writes, retrieval work, extraction/distribution work, Codex
+  Security automation, or production runtime changes.
 
 End of session -- 2026-06-30 issue 133 codex-review issue-work wiring

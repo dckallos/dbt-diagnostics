@@ -58,6 +58,7 @@ semantic_scan_roots = [
   ".codex/README.md",
   ".codex/environments",
   ".codex/agents",
+  ".codex/config.toml",
 ]
 
 [governance.official_docs]

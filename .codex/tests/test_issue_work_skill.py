@@ -374,6 +374,31 @@ def test_issue_work_skill_reports_codex_review_handoff_fields_and_blockers() -> 
         assert blocker in skill
 
 
+def test_issue_work_skill_reports_github_codex_review_status() -> None:
+    skill = _normalized_skill()
+    expected_comment = (
+        "@codex review for regressions in protected Codex/governance surfaces. "
+        "Focus on whether the codex_reviewer custom agent remains packet-only and "
+        "aligned with $codex-review; whether .codex/config.toml and "
+        ".codex/agents/** are protected and semantically scanned; whether "
+        "same-context review cannot satisfy #133; and whether this PR adds any "
+        "GitHub comments/reviews/mutation, apply payloads, issue-body writes, "
+        "full-repository prompt bundles, or packet schema changes."
+    )
+
+    assert "codex-review-status" in skill
+    assert "bash .codex/bin/action.sh codex-review-status <pr-number>" in skill
+    assert "chatgpt-codex-connector[bot]" in skill
+    for expected in ("current for the PR head", "stale", "missing", "pending"):
+        assert expected in skill
+    assert expected_comment in _skill_text()
+    assert "maintainer to post manually" in skill
+    assert "GitHub `@codex review` is advisory PR-diff review" in skill
+    assert "does not prove local packet validity" in skill
+    assert "does not replace local gates" in skill
+    assert "Do not use `@codex fix` by default" in skill
+
+
 def test_issue_work_skill_preserves_review_no_mutation_boundary() -> None:
     skill = _normalized_skill()
 

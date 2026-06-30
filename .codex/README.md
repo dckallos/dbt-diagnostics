@@ -193,6 +193,40 @@ are recorded as findings or omissions instead of expanding into live GitHub
 fetches, LLM calls, issue writes, workflow dispatches, or a full-repository
 prompt bundle.
 
+The local Codex GitHub review-status command checks whether the
+`chatgpt-codex-connector[bot]` GitHub review is current for a PR head:
+
+```bash
+bash .codex/bin/action.sh codex-review-status 148
+bash .codex/bin/action.sh codex-review-status 148 --json
+bash .codex/bin/action.sh codex-review-status 148 --repo dckallos/dbt-diagnostics
+```
+
+This diagnostic is read-only. It reads observable GitHub PR metadata, reviews,
+inline review comments, issue/PR conversation comments, and bot reactions when
+available through `gh`. It does not post `@codex review`, add comments, submit
+reviews, edit issues or PRs, request reviewers, mark draft/ready, dispatch
+workflows, merge PRs, or mutate labels, milestones, Projects, branches, or
+files.
+
+Use it after a PR is ready for review and after each fix commit that changes
+the PR head. A current status means the latest Codex GitHub review SHA matches
+the current head. A stale, missing, unavailable, or pending status means the
+handoff should report that limitation. When the current head has not been
+reviewed, the command prints this exact focused text for a maintainer to post
+manually:
+
+```text
+@codex review for regressions in protected Codex/governance surfaces. Focus on whether the codex_reviewer custom agent remains packet-only and aligned with $codex-review; whether .codex/config.toml and .codex/agents/** are protected and semantically scanned; whether same-context review cannot satisfy #133; and whether this PR adds any GitHub comments/reviews/mutation, apply payloads, issue-body writes, full-repository prompt bundles, or packet schema changes.
+```
+
+`@codex review` is GitHub PR code review over a pull-request diff, not Codex
+Security deep scan. Codex Security `$codex-security:security-diff-scan` is the
+separate manual/plugin workflow for security-sensitive change review, and it is
+not automated in this PR. `@codex fix` is not the default for protected or
+governance-sensitive PRs because it can start a cloud task that may push fixes
+when permitted.
+
 ## Issue governance workflow
 
 The full planning surface is available directly:

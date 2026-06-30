@@ -45,6 +45,7 @@ def test_current_dbt_policy_loads_exact_adapter_values() -> None:
         ".codex/README.md",
         ".codex/environments",
         ".codex/agents",
+        ".codex/config.toml",
     )
     assert policy.codex.environment_name == "dbt-diagnostics"
     assert policy.codex.venv_dir == ".venv"

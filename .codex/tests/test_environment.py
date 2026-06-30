@@ -224,3 +224,14 @@ def test_codex_review_packet_wrapper_is_exposed_and_dispatches() -> None:
     assert packet["safety"]["github_api_calls"] is False
     assert packet["safety"]["github_mutations"] is False
     assert "operations" not in packet
+
+
+def test_codex_review_status_wrapper_is_exposed_and_dispatches() -> None:
+    action = (ROOT / ".codex" / "bin" / "action.sh").read_text(encoding="utf-8")
+    wrapper = (ROOT / ".codex" / "bin" / "codex-review-status.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "codex-review-status" in action
+    assert "\n  codex-review-status)" in action
+    assert ".codex/scripts/codex_github_review_status.py" in wrapper

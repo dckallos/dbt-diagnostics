@@ -833,6 +833,61 @@ def test_codex_quality_semantically_scans_configured_codex_agents_root(
     ]
 
 
+def test_codex_quality_semantically_scans_configured_codex_config_file(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [".codex/config.toml"]  # type: ignore[index]
+    paths["protected_surfaces"] = [".codex/config.toml"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    config = tmp_path / ".codex" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[agents]\n"
+        "max_depth = 1\n"
+        "# This read-only config must not close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is True
+    assert _checks_by_name(receipt)["governance-boundary"]["checked_files"] == [
+        ".codex/config.toml"
+    ]
+    assert receipt["semantically_checked_protected_paths"] == [".codex/config.toml"]
+
+
+def test_codex_quality_semantic_scan_catches_mutating_codex_config_text(
+    tmp_path: Path,
+) -> None:
+    quality = _load_codex_script("codex_quality")
+    _write_pending_artifact_contract_manifest(tmp_path)
+    data = repo_config.load_policy_mapping(WIDGETS_POLICY)
+    paths = data["governance"]["paths"]  # type: ignore[index]
+    paths["semantic_scan_roots"] = [".codex/config.toml"]  # type: ignore[index]
+    paths["protected_surfaces"] = [".codex/config.toml"]  # type: ignore[index]
+    policy = repo_config.policy_from_mapping(data)
+    config = tmp_path / ".codex" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[agents]\n"
+        "max_depth = 1\n"
+        "# This read-only config may close GitHub issues.\n",
+        encoding="ascii",
+    )
+
+    receipt = quality.run_quality(root=tmp_path, repo_policy=policy)
+
+    assert receipt["passed"] is False
+    check = _checks_by_name(receipt)["governance-boundary"]
+    assert check["checked_files"] == [".codex/config.toml"]
+    assert check["findings"]
+
+
 def test_codex_quality_default_scan_reports_policy_semantic_violations(
     tmp_path: Path,
 ) -> None:
